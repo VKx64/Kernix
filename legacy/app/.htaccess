@@ -1,0 +1,2 @@
+# Block all web access to this folder. PHP files are included from index.php only.
+Require all denied

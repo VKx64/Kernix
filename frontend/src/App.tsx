@@ -1,0 +1,77 @@
+import { Navigate, Route, Routes, useLocation } from 'react-router'
+import { useAuth } from './auth/AuthProvider'
+import { WorkspaceProvider } from './auth/WorkspaceProvider'
+import { AppShell } from './layout/AppShell'
+import { BRAND_MARK } from './lib/brand'
+import { useCan } from './lib/permissions'
+import { AnalyticsPage } from './pages/AnalyticsPage'
+import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
+import { DashboardPage } from './pages/DashboardPage'
+import { LoginPage } from './pages/LoginPage'
+import { MessagesPage } from './pages/MessagesPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { ProfilePage } from './pages/ProfilePage'
+import { SettingsPage } from './pages/SettingsPage'
+import { TaskDetailPage, TasksPage } from './pages/TasksPage'
+
+function ProtectedApp() {
+  const { status } = useAuth()
+  const location = useLocation()
+
+  if (status === 'loading') {
+    return <main className="boot-screen"><span className="brand-mark">{BRAND_MARK}</span><span className="spinner" /><p>Opening your workspace…</p></main>
+  }
+  if (status === 'guest') return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
+
+  return (
+    <WorkspaceProvider>
+      <AppShell />
+    </WorkspaceProvider>
+  )
+}
+
+function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const can = useCan()
+  return can(permission) ? children : <AccessDenied />
+}
+
+function AccessDenied() {
+  const can = useCan()
+  const hasDashboard = can('dashboard.view')
+  return (
+    <section className="standalone-state">
+      <span className="state-code">403</span>
+      <h1>{hasDashboard ? 'This area is not in your role.' : 'Your role has no workspace access.'}</h1>
+      <p>{hasDashboard ? 'Ask an administrator if you need access to this part of the workspace.' : 'Your profile and sign out remain available while an administrator repairs your role.'}</p>
+      <a className="btn btn-primary" href={hasDashboard ? '/' : '/profile'}>{hasDashboard ? 'Return to dashboard' : 'Open profile'}</a>
+    </section>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<ProtectedApp />}>
+        <Route index element={<PermissionRoute permission="dashboard.view"><DashboardPage /></PermissionRoute>} />
+        <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
+        <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
+        <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksPage /></PermissionRoute>} />
+        <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
+        <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
+        <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
+        <Route path="contacts" element={<PermissionRoute permission="contacts.view"><ContactsPage /></PermissionRoute>} />
+        <Route path="analytics" element={<PermissionRoute permission="analytics.view"><AnalyticsPage /></PermissionRoute>} />
+        <Route path="settings" element={<PermissionRoute permission="settings.view"><SettingsPage /></PermissionRoute>} />
+        <Route path="settings/users" element={<PermissionRoute permission="users.view"><UsersPage /></PermissionRoute>} />
+        <Route path="settings/roles" element={<PermissionRoute permission="roles.view"><RolesPage /></PermissionRoute>} />
+        <Route path="settings/fields" element={<PermissionRoute permission="fields.view"><FieldsPage /></PermissionRoute>} />
+        <Route path="users" element={<Navigate to="/settings/users" replace />} />
+        <Route path="roles" element={<Navigate to="/settings/roles" replace />} />
+        <Route path="fields" element={<Navigate to="/settings/fields" replace />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
+  )
+}

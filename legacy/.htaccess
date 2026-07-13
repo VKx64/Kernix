@@ -1,0 +1,22 @@
+# Kernix legacy PHP fallback — root .htaccess
+
+# Block direct access to dotfiles
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Block sensitive file types from direct access
+<FilesMatch "\.(sql|md|log|env|json|lock|ini)$">
+    Require all denied
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>

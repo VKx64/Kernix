@@ -1,0 +1,4019 @@
+/* ============================================================
+   Kernix — Components stylesheet
+   Consolidated round 44
+   Sources: rounds 7, 8, 9, 10, 11, 13, 17, 18, 19, 20, 21, 22,
+            23, 24, 25, 34, 37 (relevant parts), 41
+   This file holds: task shelf, notes, attachments, emails,
+   subtasks, messages inbox, time tracker UI, clocked-users,
+   inline list edits, popovers, search highlights, mini buttons,
+   profile, time logging chip, theme picker chrome.
+   ============================================================ */
+
+
+/* === From round 7 === */
+/* ============================================================
+   ROUND 7 — task shelf details + subtasks + tz clock
+   ============================================================ */
+
+/* ---------- Timezone cell ---------- */
+.tz-cell {
+  display: inline-flex; flex-direction: column;
+  line-height: 1.2;
+}
+.tz-cell .tz-time {
+  font-weight: 600; font-size: 13px;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.tz-cell .tz-name {
+  font-size: 10px; color: var(--text-muted); margin-top: 2px;
+}
+
+/* ---------- Detached popover layer ---------- */
+/* When grid-filters JS detaches a popover to body, this ensures it sits above everything */
+body > .col-filter-popover {
+  z-index: 1500 !important;
+}
+
+/* ============================================================
+   TASK SHELF — restructured
+   ============================================================ */
+.ts-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; padding: 4px 4px 20px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.ts-header-main { flex: 1; min-width: 0; }
+.ts-breadcrumb {
+  font-size: 11px; color: var(--text-muted);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.ts-title {
+  font-size: 1.4rem; font-weight: 700;
+  margin: 0 0 8px; line-height: 1.3;
+}
+.ts-meta-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+
+/* Two-column body layout */
+.ts-body {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .ts-body { grid-template-columns: 1fr; }
+}
+
+.ts-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ts-right { min-width: 0; }
+
+/* Card inside the shelf */
+.ts-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+.ts-card-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--primary-hover);
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+
+/* Details grid */
+.ts-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px 18px;
+}
+.ts-detail-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted); margin-bottom: 4px;
+}
+.ts-detail-value { font-size: 13px; color: var(--text); }
+
+.ts-description {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-border-2);
+}
+
+/* Time tracking grid */
+.ts-time-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.ts-time-box {
+  padding: 12px 14px;
+  background: var(--popover-input-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+}
+.ts-time-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted); margin-bottom: 4px;
+}
+.ts-time-value {
+  font-size: 1.5rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1; margin-bottom: 4px;
+}
+.ts-time-act { color: var(--primary-hover); }
+.ts-time-sub { font-size: 10px; color: var(--text-soft); }
+
+/* ============================================================
+   SUBTASKS
+   ============================================================ */
+.subtask-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 12px;
+  background: var(--popover-input-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  transition: opacity .15s;
+}
+.subtask-row:last-child { margin-bottom: 0; }
+.subtask-row.subtask-done { opacity: .55; }
+.subtask-row.subtask-done .subtask-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.subtask-check {
+  width: 16px; height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer; flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.subtask-main { flex: 1; min-width: 0; }
+.subtask-title {
+  font-size: 13px; font-weight: 500;
+  color: var(--text); margin-bottom: 4px; word-break: break-word;
+}
+.subtask-meta {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 11px; color: var(--text-muted);
+}
+.subtask-meta-item {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+
+.subtask-actions {
+  display: flex; gap: 4px; flex-shrink: 0;
+  opacity: 0; transition: opacity .12s;
+}
+.subtask-row:hover .subtask-actions { opacity: 1; }
+.subtask-actions .icon-btn { width: 24px; height: 24px; }
+.subtask-actions .icon-btn .icon { width: 12px; height: 12px; }
+
+.subtask-totals {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--glass-border-2);
+  font-size: 11px; color: var(--text-muted);
+}
+
+/* ============================================================
+   Task shelf body needs more horizontal space for two-column.
+   Also flex+overflow so long shelves can scroll within the shelf.
+   Extra bottom padding so notes don't kiss the browser footer.
+   ============================================================ */
+.task-shelf-body {
+  padding: 18px 20px 48px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Firefox scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-glow) transparent;
+}
+.task-shelf-body::-webkit-scrollbar {
+  width: 10px;
+  background: transparent;
+}
+.task-shelf-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.task-shelf-body::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  opacity: 0.4;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.task-shelf-body::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-hover);
+  background-clip: padding-box;
+}
+
+/* === From round 8 === */
+/* ============================================================
+   ROUND 8 — Topbar v2, page header in body, time tracker
+   ============================================================ */
+
+/* ============================================================
+   TOPBAR V2 — search left, time tracker + theme + user right
+   ============================================================ */
+.topbar.topbar-v2 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.topbar.topbar-v2 .topbar-title { display: none; }
+
+.topbar-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+}
+.topbar-search-icon {
+  position: absolute;
+  left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-soft);
+  pointer-events: none;
+  width: 14px; height: 14px;
+}
+.topbar-search-input {
+  width: 100%;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 7px 12px 7px 34px;
+  font-size: 13px; color: var(--text);
+  font-family: inherit;
+  transition: all .12s;
+}
+.topbar-search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--glass-bg-2);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+.topbar-search-input::placeholder { color: var(--text-soft); }
+
+.topbar-actions {
+  display: flex; align-items: center; gap: 10px;
+  margin-left: auto;
+}
+
+/* ============================================================
+   TIME TRACKER WIDGET (topbar)
+   ============================================================ */
+.time-widget { position: relative; }
+.time-widget-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  font-size: 12px; color: var(--text);
+  cursor: pointer; user-select: none;
+  transition: all .15s;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.time-widget-trigger:hover {
+  background: var(--glass-bg-2);
+  border-color: var(--primary-glow);
+}
+.time-widget-trigger.tw-working {
+  border-color: rgba(34,197,94,.4);
+  background: rgba(34,197,94,.08);
+}
+.time-widget-trigger.tw-break {
+  border-color: rgba(245,158,11,.4);
+  background: rgba(245,158,11,.1);
+}
+.time-widget-trigger.tw-out {
+  color: var(--text-muted);
+}
+
+.tw-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.tw-dot-on    { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,.6); animation: tw-pulse 2s infinite; }
+.tw-dot-break { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,.6); }
+.tw-dot-off   { background: var(--text-soft); }
+
+@keyframes tw-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .4; }
+}
+
+/* Dropdown menu */
+.time-widget-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 280px;
+  background: var(--popover-bg);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--popover-shadow);
+  padding: 14px;
+  z-index: 1000;
+  display: none;
+}
+.time-widget-menu.open { display: block; }
+
+.tw-section {
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.tw-label   { font-size: 11px; color: var(--text-muted); }
+.tw-big     { font-size: 1.4rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tw-sub     { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.tw-row     {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 0; font-size: 13px;
+}
+.tw-row + .tw-row { border-top: 1px solid var(--popover-sep); }
+.tw-actions {
+  display: flex; gap: 8px; margin-top: 4px;
+}
+
+/* ============================================================
+   SIDEBAR MINI TIMER — round 47 redesign
+   Stacked HH/MM digits, 12-bar minute progress, BREAK/OUT buttons.
+   Completely hidden when clocked out (topbar widget handles that state).
+   ============================================================ */
+.sidebar-timer {
+  margin-top: auto;
+  padding: 14px 6px 16px;
+  border-top: 1px solid var(--glass-border-2);
+  text-align: center;
+}
+/* Hide entirely when clocked out — no clock, no buttons, no border */
+.sidebar-timer[data-state="out"],
+.sidebar-timer[data-state="loading"] {
+  display: none;
+}
+
+/* Stacked digits */
+.mini-timer-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
+  line-height: 0.95;
+}
+.mt-hh, .mt-mm {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.mt-mm {
+  margin-top: -2px;
+}
+
+/* Working state — primary color tint on digits */
+.sidebar-timer[data-state="working"] .mt-hh,
+.sidebar-timer[data-state="working"] .mt-mm {
+  color: var(--text);
+}
+/* Break state — amber digits */
+.sidebar-timer[data-state="break"] .mt-hh,
+.sidebar-timer[data-state="break"] .mt-mm {
+  color: var(--warning);
+}
+
+/* 12-bar minute progress row */
+.mt-bars {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  margin-top: 6px;
+}
+.mt-bar {
+  width: 2px;
+  height: 10px;
+  background: var(--glass-border);
+  border-radius: 1px;
+  transition: background 0.18s ease, height 0.18s ease, box-shadow 0.18s ease;
+}
+.mt-bar-on {
+  height: 14px;
+  background: var(--primary);
+  box-shadow: 0 0 4px var(--primary-glow);
+}
+.mt-bar-pulse {
+  height: 12px;
+  background: var(--primary);
+  animation: mt-bar-pulse 1s ease-in-out infinite;
+}
+@keyframes mt-bar-pulse {
+  0%, 100% { opacity: 0.35; box-shadow: 0 0 0 var(--primary-glow); }
+  50%      { opacity: 1;    box-shadow: 0 0 6px var(--primary); }
+}
+/* Break mode — bars amber */
+.mt-bars[data-mode="break"] .mt-bar-on,
+.mt-bars[data-mode="break"] .mt-bar-pulse {
+  background: var(--warning);
+  box-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
+}
+.mt-bars[data-mode="break"] .mt-bar-pulse {
+  animation-name: mt-bar-pulse-break;
+}
+@keyframes mt-bar-pulse-break {
+  0%, 100% { opacity: 0.35; box-shadow: 0 0 0 rgba(251, 191, 36, 0); }
+  50%      { opacity: 1;    box-shadow: 0 0 6px var(--warning); }
+}
+
+/* Action buttons (BREAK, OUT, RESUME) */
+.mini-timer-buttons {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-top: 12px;
+}
+.mini-btn {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer; transition: all .12s;
+  font-family: inherit;
+}
+.mini-btn:hover { color: var(--text); border-color: var(--primary-glow); }
+.mini-btn-break {
+  background: var(--warning-bg);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--warning);
+}
+.mini-btn-break:hover {
+  background: rgba(251, 191, 36, 0.2);
+  color: var(--warning);
+}
+.mini-btn-out {
+  background: var(--danger-bg);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--danger);
+}
+.mini-btn-out:hover {
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--danger);
+}
+.mini-btn-resume {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: var(--primary-hover);
+}
+.mini-btn-resume:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Sidebar needs flex layout so .sidebar-timer can margin-top:auto */
+.sidebar {
+  display: flex; flex-direction: column;
+}
+.sidebar .sidebar-nav { flex: 1; }
+
+/* ============================================================
+   CLOCK OUT MODAL
+   ============================================================ */
+.clockout-summary {
+  background: var(--popover-input-bg);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.co-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; font-size: 13px;
+}
+.co-row + .co-row { border-top: 1px solid var(--popover-sep); }
+.co-row.co-big strong { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.co-gap {
+  margin-top: 10px; padding: 10px 12px;
+  background: rgba(245,158,11,.08);
+  border: 1px solid rgba(245,158,11,.25);
+  border-radius: var(--radius);
+}
+
+/* ============================================================
+   PAGE HEADER IN BODY (instead of topbar title)
+   ============================================================ */
+.list-page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 18px;
+  margin-bottom: 14px;
+}
+.list-page-header-left {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  flex: 1; min-width: 0;
+}
+.list-page-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(135deg, var(--text), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.1;
+}
+.list-page-meta {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 12px; color: var(--text-muted);
+}
+.list-page-meta strong { color: var(--text); font-weight: 600; }
+
+/* Scoped dropdowns shown inline in header meta (e.g. Client, Project on tasks) */
+.list-scope-dd {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text-muted);
+  cursor: pointer; position: relative;
+}
+.list-scope-dd select {
+  appearance: none; -webkit-appearance: none;
+  background: transparent; border: 0;
+  font-size: 12px; color: var(--text);
+  padding: 2px 16px 2px 4px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 7px) 50%, calc(100% - 3px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+.list-scope-dd select:focus { outline: none; color: var(--primary-hover); }
+.list-scope-dd select option { background: var(--popover-bg); color: var(--text); }
+
+/* Right side of header: toggles + actions */
+.list-page-header-right {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+/* Smaller toggle pills for header */
+.list-page-header .toggle-pill {
+  padding: 3px 10px;
+  font-size: 11px;
+  gap: 5px;
+}
+.list-page-header .toggle-pill .pill-switch {
+  width: 24px; height: 14px;
+}
+.list-page-header .toggle-pill .pill-switch-thumb { width: 10px; height: 10px; }
+.list-page-header .toggle-pill .pill-switch input:checked ~ .pill-switch-thumb { transform: translateX(10px); }
+
+/* Action bar below header (New X button, columns) */
+.list-page-actions {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+}
+.list-page-actions-left { display: flex; align-items: center; gap: 8px; }
+.list-page-actions-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* === From round 9 === */
+/* ============================================================
+   ROUND 9 — note attachments, lightbox, inline add, debug
+   ============================================================ */
+
+/* ---------- Inline add task row ---------- */
+.inline-add-row td {
+  padding: 0 !important;
+  background: var(--popover-input-bg);
+  border-top: 2px dashed var(--glass-border);
+}
+.inline-add-wrap {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+}
+.inline-add-input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  padding: 4px 0;
+}
+.inline-add-input:focus { outline: none; }
+.inline-add-input::placeholder { color: var(--text-soft); }
+.inline-add-hint {
+  font-size: 10px; color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- Note delete button ---------- */
+.note-card { position: relative; }
+.note-del-btn {
+  background: transparent; border: 0;
+  color: var(--text-soft); cursor: pointer;
+  font-size: 16px; line-height: 1;
+  padding: 0 4px; opacity: 0; transition: all .12s;
+}
+.note-card:hover .note-del-btn { opacity: 1; }
+.note-del-btn:hover { color: var(--danger); }
+
+/* ---------- Note attachments ---------- */
+.note-att-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.note-att-image-wrap {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--glass-border-2);
+}
+.note-att-image {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+  transition: transform .2s;
+}
+.note-att-image:hover { transform: scale(1.04); }
+
+.note-att-files {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 8px;
+}
+.note-att-file {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--popover-input-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: none;
+  transition: all .12s;
+}
+.note-att-file:hover {
+  border-color: var(--primary-glow);
+  background: var(--glass-bg-2);
+  text-decoration: none;
+}
+.note-att-icon { font-size: 14px; flex-shrink: 0; }
+.note-att-filename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-att-size { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+
+/* ---------- Staged attachments in composer (before submit) ---------- */
+.note-attach-preview {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px;
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  border: 1px dashed var(--glass-border-2);
+}
+.note-att-staged {
+  position: relative;
+  width: 80px; height: 80px;
+  border-radius: var(--radius);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border-2);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.note-att-staged img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.note-att-staged .note-att-name {
+  font-size: 9px; padding: 4px;
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+.note-att-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px;
+  border: 0; border-radius: 50%;
+  background: rgba(0,0,0,.7);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.note-att-remove:hover { background: var(--danger); }
+
+/* ---------- Lightbox ---------- */
+#image-lightbox {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.92);
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  cursor: zoom-out;
+}
+#image-lightbox.open { display: flex; }
+#image-lightbox .lb-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: default;
+  border-radius: 8px;
+  box-shadow: 0 20px 80px rgba(0,0,0,.6);
+}
+#image-lightbox .lb-close {
+  position: absolute; top: 20px; right: 24px;
+  width: 40px; height: 40px;
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 24px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px);
+}
+#image-lightbox .lb-close:hover { background: rgba(255,255,255,.2); }
+
+/* ---------- Debug panel ---------- */
+.debug-panel {
+  margin-top: 24px;
+  padding: 14px 18px;
+  background: rgba(245, 158, 11, .06);
+  border: 1px dashed rgba(245, 158, 11, .4);
+  border-radius: var(--radius-lg);
+}
+
+/* === From round 10 === */
+/* ============================================================
+   ROUND 10 — Tabs, emails, activity timeline
+   ============================================================ */
+
+/* ---------- Tabs ---------- */
+.ts-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.ts-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+  margin-bottom: -1px;
+}
+.ts-tab:hover { color: var(--text); }
+.ts-tab.active {
+  color: var(--primary-hover);
+  border-bottom-color: var(--primary);
+}
+.ts-tab-panel { display: none; }
+.ts-tab-panel.ts-tab-panel-active { display: flex; }
+
+/* ---------- Email card ---------- */
+.email-card {
+  padding: 12px 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.email-card:hover {
+  border-color: var(--primary-glow);
+}
+.email-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.email-card-subject {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.email-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.email-card-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--primary-hover);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+}
+.email-card-toggle:hover { text-decoration: underline; }
+.email-card-body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border-2);
+}
+.email-body-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.email-att-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.email-att-image-wrap {
+  aspect-ratio: 1;
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--glass-border-2);
+}
+.email-att-image-wrap img {
+  width: 100%; height: 100%; object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+}
+.email-att-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.email-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(248,113,113,.1);
+  border: 1px solid rgba(248,113,113,.3);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* ---------- Email composer ---------- */
+.email-recipient-picker {
+  position: relative;
+}
+.email-contact-suggestions {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border-2);
+}
+.email-contact-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 6px;
+}
+.email-contact-chip {
+  display: inline-block;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  margin: 3px 4px 3px 0;
+  transition: all .12s;
+  font-family: inherit;
+}
+.email-contact-chip:hover {
+  border-color: var(--primary-glow);
+  background: var(--glass-bg-2);
+}
+.email-contact-chip.active {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: var(--primary-hover);
+}
+.email-contact-chip .muted {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---------- Activity timeline ---------- */
+.activity-timeline {
+  position: relative;
+  padding-left: 10px;
+}
+.activity-timeline::before {
+  content: '';
+  position: absolute;
+  left: 21px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--glass-border-2);
+}
+.activity-item {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.activity-dot {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.activity-body { flex: 1; min-width: 0; padding-top: 3px; }
+.activity-summary { font-size: 13px; line-height: 1.4; }
+.activity-changes {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--popover-input-bg);
+  border-radius: var(--radius);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.activity-change {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.activity-field {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+.activity-val {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.activity-val-old {
+  background: rgba(248,113,113,.1);
+  color: var(--danger);
+  text-decoration: line-through;
+  text-decoration-color: rgba(248,113,113,.5);
+}
+.activity-val-new {
+  background: rgba(34,197,94,.1);
+  color: rgb(34,197,94);
+}
+.activity-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* === From round 11 === */
+/* ============================================================
+   ROUND 11 — UX fixes
+   ============================================================ */
+
+/* ---------- Profile / user dropdown — solid background ---------- */
+.dropdown-menu,
+.user-menu .dropdown-menu,
+.time-widget-menu {
+  background: var(--popover-bg, #1e1530) !important;
+  border: 1px solid var(--popover-border, var(--primary-glow)) !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5),
+              0 0 0 1px rgba(255,255,255,.02) inset !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="light"] .dropdown-menu,
+[data-theme="light"] .user-menu .dropdown-menu,
+[data-theme="light"] .time-widget-menu {
+  background: #ffffff !important;
+  border: 1px solid var(--primary-glow) !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,.15) !important;
+}
+
+/* Make sure dropdown items have solid text */
+.dropdown-menu .dropdown-item,
+.dropdown-menu .dropdown-header {
+  background: transparent;
+}
+.dropdown-menu .dropdown-item:hover {
+  background: var(--primary-glow);
+}
+
+/* ---------- Search icon — fix stacking ---------- */
+.topbar-search-wrap { position: relative; }
+
+.topbar-search-icon {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.topbar-search-input {
+  position: relative;
+  z-index: 1;
+  background-clip: padding-box;
+}
+
+/* ---------- Custom confirm modal ---------- */
+#confirm-modal .modal {
+  max-width: 420px;
+}
+#confirm-modal .modal-body {
+  padding: 18px 20px;
+}
+#confirm-modal .confirm-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+#confirm-modal .confirm-message {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+#confirm-modal .confirm-icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(248,113,113,.12);
+  border: 1px solid rgba(248,113,113,.3);
+  color: var(--danger);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700;
+  flex-shrink: 0;
+}
+#confirm-modal .confirm-row {
+  display: flex; gap: 14px; align-items: flex-start;
+}
+
+/* === From round 13 === */
+/* ============================================================
+   ROUND 13 — Search icon fix + list header reorg
+   ============================================================ */
+
+/* ---------- Search icon — make it actually visible ---------- */
+.topbar-search-wrap {
+  position: relative;
+}
+.topbar-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: rgba(255,255,255,.55) !important;
+  pointer-events: none;
+  z-index: 5;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+[data-theme="light"] .topbar-search-icon {
+  color: rgba(0,0,0,.45) !important;
+}
+.topbar-search-input {
+  position: relative;
+  z-index: 1;
+  background-clip: padding-box;
+  padding-left: 34px !important;
+}
+
+/* ============================================================
+   LIST PAGE HEADER — toggles + columns + New X all on one row,
+   vertically centered with each other (right side of header).
+   Title and meta on the left.
+   ============================================================ */
+.list-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.list-page-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.list-page-header h1 {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.list-page-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.list-page-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Smaller toggle pills */
+.list-page-header .toggle-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+  gap: 5px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Vertical separator between toggles and the action buttons */
+.list-page-header-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--glass-border-2);
+  margin: 0 2px;
+}
+
+/* Action buttons in header */
+.list-page-header-right .btn-sm,
+.list-page-header-right .columns-selector > button {
+  height: 28px;
+  font-size: 11px;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Hide the old below-header action bar entirely */
+.list-page-actions { display: none !important; }
+
+/* === From round 17 === */
+/* ============================================================
+   ROUND 17 — Redesigned task shelf with inline editing
+   ============================================================ */
+
+.ts17 {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 4px;
+}
+
+/* ---------- Header ---------- */
+.ts17-header {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.ts17-breadcrumb {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.ts17-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.25;
+  cursor: text;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border-radius: var(--radius);
+  transition: background .12s;
+  min-height: 1.8em;
+}
+.ts17-title:hover {
+  background: var(--glass-bg-2);
+}
+.ts17-title.ts17-editing {
+  background: var(--popover-input-bg);
+}
+
+/* ---------- 2-column body ---------- */
+.ts17-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 1024px) {
+  .ts17-body { grid-template-columns: 1fr; }
+}
+
+.ts17-col-left,
+.ts17-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.ts17-col-right {
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---------- Cards ---------- */
+.ts17-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.ts17-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--primary-hover);
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+
+/* ---------- Details fields ---------- */
+.ts17-fields {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 6px 14px;
+  align-items: center;
+}
+.ts17-field {
+  display: contents;
+}
+.ts17-flabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.ts17-fvalue {
+  font-size: 13px;
+  color: var(--text);
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+.ts17-fvalue.muted { color: var(--text-muted); }
+
+/* ---------- Inline pill button ---------- */
+.ts17-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 3px 6px 3px 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+}
+.ts17-pill-btn:hover {
+  background: var(--glass-bg-2);
+  border-color: var(--glass-border-2);
+}
+.ts17-pill-btn .icon {
+  width: 12px; height: 12px;
+  transition: opacity .12s;
+}
+
+.ts17-assignee-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ts17-date-current {
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+/* ---------- Description ---------- */
+.ts17-description-wrap {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border-2);
+}
+.ts17-description {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: text;
+  min-height: 60px;
+  transition: background .12s;
+}
+.ts17-description:hover {
+  background: var(--glass-bg-2);
+}
+.ts17-description.is-empty {
+  color: var(--text-soft);
+  font-style: italic;
+}
+.ts17-description.ts17-editing {
+  background: var(--popover-input-bg);
+}
+
+/* ---------- Inline input (used by title, description, durations) ---------- */
+.ts17-inline-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  color: var(--text);
+  line-height: inherit;
+  resize: vertical;
+}
+.ts17-title .ts17-inline-input {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.ts17-description .ts17-inline-input {
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 80px;
+}
+
+/* ---------- Popover for inline pickers ---------- */
+.ts17-popover {
+  display: none;
+  background: var(--popover-bg, #1e1530);
+  border: 1px solid var(--popover-border, var(--primary-glow));
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  z-index: 1500;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.ts17-popover-list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ts17-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  transition: background .1s;
+}
+.ts17-popover-item:hover {
+  background: var(--primary-glow);
+}
+.ts17-popover-item.active {
+  background: var(--primary-glow);
+}
+
+/* ---------- Time tracking strip (slim, one row) ---------- */
+.ts17-time-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+}
+.ts17-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ts17-time-cell.ts17-time-bar-cell {
+  flex: 1;
+}
+.ts17-time-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+.ts17-time-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.ts17-time-actual { color: var(--primary-hover); }
+[data-inline-duration] {
+  cursor: pointer;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius);
+  transition: background .1s;
+}
+[data-inline-duration]:hover {
+  background: var(--glass-bg-2);
+}
+.ts17-time-bar {
+  height: 6px;
+  background: var(--glass-border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.ts17-time-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .25s;
+}
+
+/* === From round 18 === */
+/* ============================================================
+   ROUND 18 — Inline email composer (lives in the Emails tab)
+   ============================================================ */
+
+.email-composer-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Warning banner when SMTP not configured */
+.email-warning {
+  padding: 8px 10px;
+  background: rgba(248,113,113,.1);
+  border: 1px solid rgba(248,113,113,.3);
+  border-radius: var(--radius);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+/* Row layout: label on the left, input flexing right */
+.email-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.email-row-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  flex-shrink: 0;
+  width: 42px;
+}
+.email-row-value {
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.email-row input[type="text"],
+.email-row input[type="email"] {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text);
+  font-family: inherit;
+}
+.email-row input:focus { outline: none; }
+.email-row input::placeholder { color: var(--text-soft); font-size: 12px; }
+
+.email-row-from { border-bottom: 0; padding-bottom: 0; }
+
+/* Cc/Bcc — shorter rows */
+.email-cc-bcc {
+  display: block;
+}
+.email-row-small {
+  padding: 2px 0;
+}
+.email-row-small input { font-size: 11px; }
+
+/* Contact chips — quick-add row */
+.email-contact-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--glass-border-2);
+  min-height: 28px;
+}
+.email-contact-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  width: 100%;
+  margin-bottom: 2px;
+}
+.email-contact-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+}
+.email-contact-chip:hover {
+  border-color: var(--primary-glow);
+  background: var(--glass-bg-2);
+}
+.email-contact-chip.active {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: var(--primary-hover);
+}
+
+/* Body textarea */
+.email-body-input {
+  width: 100%;
+  min-height: 140px;
+  background: transparent;
+  border: 0;
+  padding: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  font-family: inherit;
+  resize: vertical;
+}
+.email-body-input:focus { outline: none; }
+.email-body-input::placeholder { color: var(--text-soft); }
+
+/* Toolbar */
+.email-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border-2);
+}
+.email-toolbar-left {
+  display: flex;
+  gap: 4px;
+}
+.email-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  transition: all .12s;
+}
+.email-toolbar-btn:hover {
+  border-color: var(--primary-glow);
+  color: var(--text);
+}
+.email-toolbar-btn .icon {
+  width: 12px; height: 12px;
+}
+
+/* === From round 19 === */
+/* ============================================================
+   ROUND 19 — Layout tweaks + popover fix + subtask inline edit
+   ============================================================ */
+
+/* ---------- Popover alignment fix ----------
+   Old: anchored to button.left with min-width 180 — looked detached when
+   the button (a small pill) was narrow.
+   New: tighter min-width, no expansion past button width unless needed for
+   content. Aligns visually under the pill.
+*/
+.ts17-popover {
+  min-width: auto !important;
+}
+.ts17-popover-list {
+  padding: 4px;
+  min-width: 140px;
+}
+.ts17-popover-item {
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+/* ---------- Title row with Type pill on left ---------- */
+.ts17-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ts17-type-badge {
+  background: transparent;
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.ts17-type-badge:hover {
+  border-color: var(--primary-glow);
+  background: var(--glass-bg-2);
+}
+.ts17-type-badge .pill {
+  margin: 0;
+}
+
+.ts17-title-row .ts17-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+/* ---------- Details card: 2 sub-columns ---------- */
+.ts17-details-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+@media (max-width: 700px) {
+  .ts17-details-cols { grid-template-columns: 1fr; gap: 12px; }
+}
+
+.ts17-details-cols .ts17-fields {
+  grid-template-columns: 80px 1fr;
+  gap: 8px 12px;
+}
+
+.ts17-fields-meta .ts17-fvalue {
+  font-size: 12px;
+}
+.ts17-fields-meta .ts17-flabel {
+  font-size: 10px;
+}
+
+/* ---------- Subtask inline-add row ---------- */
+.subtask-add-row {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--popover-input-bg);
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--radius);
+  transition: border-color .12s;
+}
+.subtask-add-row:focus-within {
+  border-color: var(--primary);
+  border-style: solid;
+  background: var(--glass-bg);
+}
+.subtask-add-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  padding: 2px 0;
+}
+.subtask-add-input::placeholder {
+  color: var(--text-soft);
+}
+
+/* ---------- Inline subtask title editing ---------- */
+.subtask-row .subtask-title {
+  cursor: text;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  transition: background .12s;
+}
+.subtask-row .subtask-title:hover {
+  background: var(--glass-bg-2);
+}
+.subtask-row .subtask-title.subtask-title-editing {
+  background: var(--popover-input-bg);
+  padding: 2px 6px;
+  margin: -2px -6px;
+}
+.subtask-title-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* Make sure done state still strikes the title even during edit hover */
+.subtask-row.subtask-done .subtask-title:hover {
+  text-decoration: line-through;
+}
+
+/* === From round 20 === */
+/* ============================================================
+   ROUND 20 — Time strip animation
+   ============================================================ */
+
+/* Smoothly animate bar width changes */
+.ts17-time-bar-fill {
+  transition: width .5s cubic-bezier(.4, 0, .2, 1),
+              background .25s ease;
+}
+
+/* Pulse animation when a value updates (estimated/actual/progress) */
+@keyframes ts17-value-flash {
+  0%   { transform: scale(1);    color: var(--primary-hover); }
+  35%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.ts17-value-flash {
+  animation: ts17-value-flash .45s ease-out;
+  transform-origin: left center;
+  display: inline-block;
+}
+
+/* Smooth show/hide of progress cell + bar */
+.ts17-time-strip [id="ts17-pct-cell"],
+.ts17-time-strip [id="ts17-bar-cell"] {
+  transition: opacity .2s ease;
+}
+
+/* === From round 21 === */
+/* ============================================================
+   ROUND 21 — Note time logging UI
+   ============================================================ */
+
+/* ---------- Time chip on existing notes ---------- */
+.note-time-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: var(--primary-glow);
+  border: 1px solid var(--primary-glow);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--primary-hover);
+}
+.note-time-icon { font-size: 12px; }
+.note-time-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.note-time-sub { color: var(--text-muted); font-weight: 400; }
+
+/* ---------- Time row in composer ---------- */
+.note-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--popover-input-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.note-time-row input[type="text"],
+.note-time-row select {
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text);
+  font-family: inherit;
+}
+.note-time-row input[type="text"]:focus,
+.note-time-row select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.note-time-row select option {
+  background: var(--popover-bg);
+  color: var(--text);
+}
+.note-time-clear {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  margin-left: auto;
+  font-family: inherit;
+}
+.note-time-clear:hover { color: var(--danger); }
+
+/* ---------- Note edit button (next to delete) ---------- */
+.note-edit-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity .12s, color .12s;
+  display: inline-flex;
+  align-items: center;
+}
+.note-card:hover .note-edit-btn { opacity: 1; }
+.note-edit-btn:hover { color: var(--primary-hover); }
+.note-edit-btn .icon { width: 12px; height: 12px; }
+
+/* ---------- Note edit mode ---------- */
+.note-edit-mode {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--popover-input-bg);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+}
+.note-edit-mode textarea {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-family: inherit;
+}
+.note-edit-mode textarea:focus { outline: none; border-color: var(--primary); }
+.note-edit-mode input[type="text"] {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+}
+.note-edit-mode input[type="text"]:focus { outline: none; border-color: var(--primary); }
+
+/* Removing edit hover effect from strip values now they're not editable */
+.ts17-time-strip [id="ts17-est-display"],
+.ts17-time-strip [id="ts17-act-display"] {
+  cursor: default;
+}
+.ts17-time-strip [id="ts17-est-display"]:hover,
+.ts17-time-strip [id="ts17-act-display"]:hover {
+  background: transparent;
+}
+
+/* === From round 22 === */
+/* ============================================================
+   ROUND 22 — Header alignment + topbar spacing + assignee + modal
+   ============================================================ */
+
+/* ---------- Page header — force LEFT alignment ----------
+   Round 13 set flex with `justify-content: space-between`, but when the
+   .list-page-header-left has flex:1 and the title is rendered without an
+   explicit alignment, browsers may inherit text-align:center from a parent
+   wrapper. Force everything left.
+*/
+.list-page-header {
+  text-align: left;
+}
+.list-page-header-left {
+  text-align: left;
+  align-items: flex-start !important;
+}
+.list-page-header h1 {
+  text-align: left;
+  margin-left: 0;
+}
+.list-page-meta {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Some wrapper above can center via `text-align:center`; reset explicitly */
+.main-content .list-page-header,
+.main-content .list-page-header * {
+  text-align: inherit;
+}
+.main-content .list-page-header-left,
+.main-content .list-page-header-left h1,
+.main-content .list-page-header-left .list-page-meta {
+  text-align: left;
+}
+
+/* ---------- Topbar green dot — give it breathing room ---------- */
+.tw-dot,
+.tw-dot-on,
+.tw-dot-off,
+.tw-dot-break {
+  margin-right: 6px;
+}
+
+/* ---------- Tasks list — assignee column avatar-only ---------- */
+.assignee-icon-only {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+/* Center the icon within its cell */
+td[data-col="assignee"] {
+  text-align: center;
+}
+th[data-col="assignee"] {
+  text-align: center;
+}
+
+/* ---------- Roles permissions matrix (visible inline, not in modal) ---------- */
+.roles-table { font-size: 12px; }
+.roles-table td, .roles-table th { padding: 8px 10px; }
+.roles-perm-cell { text-align: center; }
+.roles-perm-cell input[type="checkbox"] {
+  width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary);
+}
+
+/* === From round 23 === */
+/* ============================================================
+   ROUND 23 — Profile page styling
+   ============================================================ */
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .profile-grid { grid-template-columns: 1fr; }
+}
+
+.profile-main, .profile-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---------- Identity card ---------- */
+.profile-identity-card { padding: 18px 20px; }
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.profile-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.profile-avatar-img,
+.profile-avatar-fallback {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid var(--glass-border-2);
+}
+.profile-avatar-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.profile-avatar-actions .btn {
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.profile-identity-info { flex: 1; min-width: 0; }
+.profile-name {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.profile-username {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.profile-meta {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- Stats sidebar ---------- */
+.profile-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.profile-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--glass-border-2);
+}
+.profile-stat:last-child { border-bottom: 0; padding-bottom: 0; }
+.profile-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.profile-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.profile-stat-warn { color: var(--accent, #fbbf24); }
+.profile-stats-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border-2);
+  text-align: center;
+}
+
+/* ---------- Recent activity list ---------- */
+.profile-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.profile-activity-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  transition: background .12s;
+  border-left: 2px solid transparent;
+}
+.profile-activity-item:hover {
+  background: var(--glass-bg-2);
+  border-left-color: var(--primary);
+}
+.profile-activity-task {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.profile-activity-body {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.profile-activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-soft);
+}
+
+/* ---------- Profile form: inline form-grid ---------- */
+#profile-form .form-grid,
+#password-form .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+#profile-form .form-grid .full,
+#password-form .form-grid .full { grid-column: 1 / -1; }
+
+#profile-form .form-row label,
+#password-form .form-row label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+#profile-form input[type="text"],
+#profile-form input[type="email"],
+#profile-form input[type="url"],
+#profile-form input[type="date"],
+#profile-form select,
+#password-form input[type="password"] {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+#profile-form input:focus,
+#profile-form select:focus,
+#password-form input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+#profile-form input:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.field-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+@media (max-width: 700px) {
+  #profile-form .form-grid,
+  #password-form .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === From round 24 === */
+/* ============================================================
+   ROUND 24 — Messages inbox
+   ============================================================ */
+
+/* ---------- Two-pane layout ---------- */
+.msg-inbox {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  height: calc(100vh - 200px);
+  min-height: 480px;
+}
+@media (max-width: 900px) {
+  .msg-inbox {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+.msg-list-pane,
+.msg-detail-pane {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- Filter tabs ---------- */
+.msg-filter-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--glass-border-2);
+  flex-shrink: 0;
+}
+.msg-filter-tab {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: all .12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.msg-filter-tab:hover {
+  color: var(--text);
+  background: var(--glass-bg-2);
+}
+.msg-filter-tab.active {
+  color: var(--primary-hover);
+  border-bottom-color: var(--primary);
+}
+.msg-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--primary-glow);
+  color: var(--primary-hover);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ---------- List ---------- */
+.msg-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.msg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  transition: all .1s;
+  position: relative;
+}
+.msg-row:hover {
+  background: var(--glass-bg-2);
+}
+.msg-row.msg-row-active {
+  background: var(--primary-glow);
+  border-left-color: var(--primary);
+}
+.msg-row.msg-row-unread {
+  background: var(--primary-glow);
+}
+.msg-row.msg-row-unread .msg-row-sender {
+  font-weight: 700;
+}
+
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.msg-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.msg-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.msg-row-sender {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-row-time {
+  font-size: 10px;
+  color: var(--text-soft);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.msg-row-task {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-row-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.msg-row-dot {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--glass-bg);
+}
+
+.msg-empty-list {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+/* ---------- Detail pane ---------- */
+.msg-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.msg-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 22px 26px;
+  overflow-y: auto;
+}
+
+.msg-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--glass-border-2);
+  margin-bottom: 16px;
+}
+.msg-detail-sender {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.msg-detail-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  font-size: 14px;
+}
+.msg-detail-sender-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.msg-detail-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.msg-detail-task-card {
+  padding: 12px 14px;
+  background: var(--glass-bg-2);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.msg-detail-breadcrumb {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.msg-detail-task-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.msg-detail-body {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 14px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.msg-detail-atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.msg-att-img-wrap {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--glass-border-2);
+}
+.msg-att-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.msg-att-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--glass-bg-2);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: none;
+  transition: all .12s;
+}
+.msg-att-file:hover {
+  border-color: var(--primary-glow);
+}
+
+.msg-detail-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-border-2);
+  text-align: right;
+}
+
+/* ---------- Sidebar unread badge ---------- */
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--danger);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.sidebar .nav-item {
+  position: relative; /* anchor the badge */
+}
+
+/* === From round 25 === */
+/* ============================================================
+   ROUND 25 — Clocked-in users widget + messages list v2 + better badge
+   ============================================================ */
+
+/* ---------- Clocked-in users (topbar) ---------- */
+#clocked-users-widget {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.cu-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cu-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--app-bg, #0f0820);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;        /* overlap effect */
+  cursor: default;
+  flex-shrink: 0;
+  position: relative;
+  transition: transform .12s, z-index 0s;
+}
+.cu-stack > .cu-avatar:first-child {
+  margin-left: 0;
+}
+.cu-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cu-avatar:hover {
+  transform: translateY(-2px) scale(1.05);
+  z-index: 5;
+}
+
+/* Working state: full color + tiny green dot */
+.cu-avatar-working {
+  opacity: 1;
+}
+.cu-avatar-working::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid var(--app-bg, #0f0820);
+}
+
+/* On break: dimmed + grey dot */
+.cu-avatar-break {
+  opacity: .45;
+  filter: grayscale(.4);
+}
+.cu-avatar-break::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fbbf24;
+  border: 2px solid var(--app-bg, #0f0820);
+}
+
+/* "+N more" chip */
+.cu-avatar-more {
+  background: var(--glass-bg-2);
+  color: var(--text-muted);
+  border-color: var(--glass-border-2);
+  font-size: 10px;
+}
+.cu-avatar-more::after { display: none; }
+
+/* On small screens, hide the widget */
+@media (max-width: 700px) {
+  #clocked-users-widget { display: none !important; }
+}
+
+/* ---------- Boosted sidebar badge ---------- */
+.nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--app-bg, #0f0820), 0 0 12px rgba(239,68,68,.5);
+  animation: nav-badge-pulse 2s ease-in-out infinite;
+}
+@keyframes nav-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--app-bg, #0f0820), 0 0 12px rgba(239,68,68,.5); }
+  50%      { box-shadow: 0 0 0 2px var(--app-bg, #0f0820), 0 0 18px rgba(239,68,68,.8); }
+}
+
+/* ---------- Messages list v2 (single-pane) ---------- */
+.msg-inbox-v2 {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.msg-list-v2 {
+  max-height: calc(100vh - 280px);
+  min-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.msg-row-v2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 2px;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+  transition: all .1s;
+  position: relative;
+}
+.msg-row-v2:hover {
+  background: var(--glass-bg-2);
+  border-left-color: var(--primary);
+  text-decoration: none;
+}
+.msg-row-v2.msg-row-unread {
+  background: var(--primary-glow);
+}
+.msg-row-v2.msg-row-unread .msg-row-sender {
+  font-weight: 700;
+}
+
+/* === From round 34 === */
+/* ============================================================
+   ROUND 34 — Task list inline editing + bottom scroll fix
+   ============================================================ */
+
+/* ---------- Bottom-scroll fix ----------
+   Round 29 set `.app { padding: 16px; min-height: 100vh }`.
+   With padding outside the box, total height = 100vh + 32px, so the page scrolled.
+   Use box-sizing so padding is INCLUDED in 100vh. */
+.app {
+  box-sizing: border-box;
+}
+
+/* ---------- Inline-edit triggers (cells become buttons) ---------- */
+.tl-inline-pill,
+.tl-inline-assignee,
+.tl-inline-date {
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  margin: -4px -6px;       /* compensate so layout doesn't shift */
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background .1s;
+  position: relative;
+}
+.tl-inline-pill:hover,
+.tl-inline-assignee:hover,
+.tl-inline-date:hover {
+  background: var(--primary-glow);
+  outline: 1px dashed var(--primary-glow);
+  outline-offset: -1px;
+}
+
+/* The placeholder when nothing is set */
+.tl-current-pill.muted,
+.tl-current-date.muted {
+  font-style: italic;
+  opacity: .55;
+  font-size: 11px;
+}
+
+.tl-assignee-empty {
+  background: var(--glass-bg-2) !important;
+  color: var(--text-muted) !important;
+  border: 1px dashed var(--glass-border-2);
+  font-weight: 400 !important;
+}
+
+/* ---------- Popover ---------- */
+.tl-popover {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 360px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .4);
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.tl-popover-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.tl-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  font-size: 13px;
+  width: 100%;
+  transition: background .08s;
+}
+.tl-popover-item:hover {
+  background: var(--glass-bg-2);
+}
+.tl-popover-item-active {
+  background: var(--primary-glow);
+  color: var(--primary-hover);
+  font-weight: 600;
+}
+
+.tl-popover-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, .15);
+}
+.tl-popover-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  font-size: 9px;
+}
+.tl-popover-clear {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* ---------- Date picker variant ---------- */
+.tl-popover.tl-popover-date,
+.tl-popover-list.tl-popover-date {
+  max-height: none;
+  overflow: visible;
+}
+
+.tl-popover-date-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-width: 180px;
+}
+.tl-popover-date-input {
+  background: var(--glass-bg-2);
+  border: 1px solid var(--glass-border-2);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.tl-popover-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(.7);
+  cursor: pointer;
+}
+.tl-popover-date-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* Light mode tweaks */
+html[data-theme="light"] .tl-inline-pill:hover,
+html[data-theme="light"] .tl-inline-assignee:hover,
+html[data-theme="light"] .tl-inline-date:hover {
+  background: var(--primary-glow);
+  outline-color: var(--primary);
+}
+html[data-theme="light"] .tl-popover-date-input::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
+/* === From round 41 === */
+/* ============================================================
+   ROUND 41 — Comprehensive purple sweep + shelf fixes
+   ============================================================ */
+
+/* ============================================================
+   PART A — Override every hardcoded purple selector
+   ============================================================ */
+
+/* ----- grid-filters.css purple ----- */
+.toggle-pill:hover {
+  border-color: var(--primary-glow) !important;
+}
+.toggle-pill.active {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-hover) !important;
+}
+
+.btn-columns:hover {
+  border-color: var(--primary-glow) !important;
+}
+
+.col-sort-btn:hover {
+  border-color: var(--primary-glow) !important;
+}
+.col-sort-btn.active {
+  color: var(--primary-hover) !important;
+  border-color: var(--primary) !important;
+  background: var(--primary-glow) !important;
+}
+
+.filter-chip {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+
+.proj-task-row:hover {
+  background: var(--primary-glow) !important;
+}
+
+.settings-nav-item.active {
+  background: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+
+/* Popover vars moved to app.css (round 44 consolidation) */
+
+/* ----- audit app.css legacy rules ----- */
+.btn:hover {
+  border-color: var(--primary-glow) !important;
+}
+
+.icon-btn:hover {
+  background: var(--primary-glow) !important;
+}
+
+.card:hover {
+  border-color: var(--primary-glow) !important;
+}
+
+.user-trigger:hover {
+  border-color: var(--primary-glow) !important;
+}
+
+.page-link:hover {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary) !important;
+}
+
+.note-unread {
+  background: var(--primary-glow) !important;
+  border-left-color: var(--primary) !important;
+}
+
+.flash-info {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-hover) !important;
+}
+
+/* ----- round 8 mini buttons / time widget ----- */
+.mini-btn-primary {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+.mini-btn-primary:hover {
+  background: var(--primary-hover) !important;
+  box-shadow: 0 4px 12px var(--primary-glow) !important;
+}
+.mini-btn:hover {
+  border-color: var(--primary-glow) !important;
+}
+.time-widget-trigger:hover {
+  border-color: var(--primary-glow) !important;
+}
+
+/* ----- round 6 cards (settings) ----- */
+.settings-card:hover {
+  border-color: var(--primary-glow) !important;
+  transform: translateY(-1px);
+}
+.settings-card-icon {
+  background: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+.settings-card-status {
+  background: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+.driver-option:hover {
+  border-color: var(--primary-glow) !important;
+}
+.driver-option.selected {
+  border-color: var(--primary) !important;
+  background: var(--primary-glow) !important;
+}
+
+/* ----- round 10/18 email cards ----- */
+.email-card:hover {
+  border-color: var(--primary-glow) !important;
+}
+.email-contact-chip:hover {
+  border-color: var(--primary-glow) !important;
+}
+.email-contact-chip.active {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-hover) !important;
+}
+.email-toolbar-btn:hover {
+  background: var(--primary-glow) !important;
+}
+
+/* ----- round 11 dropdown ----- */
+.dropdown-menu,
+.user-menu .dropdown-menu,
+.time-widget-menu {
+  border-color: var(--glass-border) !important;
+}
+.dropdown-menu .dropdown-item:hover {
+  background: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+
+/* ----- round 17 shelf popover ----- */
+.ts17-popover {
+  border-color: var(--glass-border) !important;
+}
+.ts17-popover-item:hover {
+  background: var(--primary-glow) !important;
+}
+.ts17-popover-item.active {
+  background: var(--primary-glow) !important;
+  color: var(--primary-hover) !important;
+}
+
+/* ----- round 19 subtask add row focus ----- */
+.subtask-add-row:focus-within {
+  border-color: var(--primary) !important;
+}
+.ts17-type-badge:hover {
+  background: var(--primary-glow) !important;
+}
+
+/* ----- round 21 note edit/time chip ----- */
+.note-edit-mode input[type="text"]:focus,
+.note-edit-mode textarea:focus,
+.note-time-row input[type="text"]:focus,
+.note-time-row select:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow) !important;
+  outline: none !important;
+}
+.note-time-chip {
+  background: var(--primary-glow) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-hover) !important;
+}
+
+/* ----- round 23 profile form ----- */
+#profile-form input:focus,
+#profile-form select:focus,
+#password-form input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow) !important;
+  outline: none !important;
+}
+
+/* ============================================================
+   PART B — Task shelf width and time strip fixes
+   ============================================================ */
+
+/* The time strip had flex-shrink: 0 and could overflow narrow shelves.
+   Allow wrapping so the cells stack gracefully. */
+.ts17-time-strip {
+  flex-wrap: wrap !important;
+  flex-shrink: 1 !important;
+  min-width: 0 !important;
+}
+.ts17-time-cell {
+  flex: 0 0 auto !important;
+}
+.ts17-time-cell.ts17-time-bar-cell {
+  flex: 1 1 100% !important;
+  min-width: 0 !important;
+}
+
+/* Make shelf wider on smaller screens so the 2-col body actually fits.
+   Previously 90% — bump to 95% on under-1280px to give content room.
+   And lower the single-col breakpoint to 820px so users with 1280-1400px
+   monitors still see the 2-col layout. */
+@media (max-width: 1280px) {
+  .task-shelf { width: 95% !important; }
+}
+.ts17-body {
+  /* Round 17 was breakpoint 1024px, lowered to 820px now */
+}
+@media (max-width: 820px) {
+  .ts17-body { grid-template-columns: 1fr !important; }
+}
+@media (min-width: 821px) {
+  .ts17-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+}
+
+/* Defensive: ensure right column never overflows */
+.ts17-col-right {
+  min-width: 0 !important;
+  overflow-x: hidden;
+}
+
+/* ============================================================
+   PART C — Shelf assignee row — match list-style avatar circle
+   The PHP fallback now renders an <img> when profile_image exists,
+   but earlier rounds' inline JS may set classes that still expect
+   the .avatar text fallback. Force consistent sizing.
+   ============================================================ */
+.ts17-assignee-current img.avatar,
+.ts17-assignee-current span.avatar {
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  font-size: 9px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+.ts17-assignee-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+
+/* ============================================================
+   ANALYTICS PAGE
+   ============================================================ */
+
+/* Tab strip */
+.an-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 22px;
+  margin: 6px 0 18px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.an-tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all .12s;
+}
+.an-tab:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.an-tab.active {
+  color: var(--primary-hover);
+  border-bottom-color: var(--primary);
+}
+
+.an-body {
+  padding: 0 22px 22px;
+}
+
+/* Report header (range picker) */
+.an-report-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+.an-range-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.an-range-presets {
+  display: inline-flex;
+  background: var(--glass-bg-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 3px;
+}
+.an-range-preset {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.an-range-preset:hover { color: var(--text); }
+.an-range-preset.active {
+  background: var(--primary);
+  color: #fff;
+}
+.an-range-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.an-range-inputs input[type="date"] {
+  background: var(--glass-bg-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+/* Summary cards */
+.an-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+@media (max-width: 900px) { .an-summary { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px) { .an-summary { grid-template-columns: 1fr; } }
+.an-summary-card {
+  padding: 14px 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+.an-summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.an-summary-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.an-summary-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Table */
+.an-table-wrap {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.an-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.an-table th,
+.an-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--glass-border-2);
+  font-size: 13px;
+}
+.an-table tr:last-child td { border-bottom: 0; }
+.an-table th {
+  background: rgba(255,255,255,.02);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+[data-theme="light"] .an-table th { background: rgba(0,0,0,.02); }
+.an-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.an-th-link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.an-th-link:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.an-th-link.active {
+  color: var(--primary-hover);
+}
+
+.an-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.an-user-name {
+  font-weight: 500;
+  color: var(--text);
+}
+.an-user-username {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Utilization cell */
+.an-util-cell {
+  min-width: 180px;
+}
+.an-util-pct {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+.an-util-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  overflow: hidden;
+}
+[data-theme="light"] .an-util-bar {
+  background: rgba(0,0,0,.06);
+}
+.an-util-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .25s ease;
+}
+
+/* Utilization color scale */
+.an-util-good    { color: #34d399; }
+.an-util-good.an-util-bar-fill,
+.an-util-bar-fill.an-util-good { background: #34d399; }
+.an-util-ok      { color: #fbbf24; }
+.an-util-ok.an-util-bar-fill,
+.an-util-bar-fill.an-util-ok { background: #fbbf24; }
+.an-util-low     { color: #f87171; }
+.an-util-low.an-util-bar-fill,
+.an-util-bar-fill.an-util-low { background: #f87171; }
+.an-util-anomaly { color: #60a5fa; }
+.an-util-anomaly.an-util-bar-fill,
+.an-util-bar-fill.an-util-anomaly { background: #60a5fa; }
+.an-util-none    { color: var(--text-soft); }
+
+/* Diff cell */
+.an-diff-pos { color: #34d399; }
+.an-diff-neg { color: #f87171; }
+
+/* Legend */
+.an-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.an-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.an-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.an-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ============================================================
+   ANALYTICS — tabs, summary cards, table, util bars
+   ============================================================ */
+
+.ana-tabstrip {
+  display: flex;
+  gap: 4px;
+  padding: 0;
+  border-bottom: 1px solid var(--glass-border);
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+.ana-tab {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: 0;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color .12s, border-color .12s;
+}
+.ana-tab:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.ana-tab.active {
+  color: var(--primary-hover);
+  border-bottom-color: var(--primary);
+}
+
+.ana-range-bar {
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.ana-tab-content {
+  padding: 0;
+}
+
+/* Summary cards (3-up) */
+.ana-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+@media (max-width: 800px) {
+  .ana-summary { grid-template-columns: 1fr; }
+}
+.ana-summary-card {
+  padding: 16px 18px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+.ana-summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ana-summary-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ana-summary-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.ana-util-value[data-util] { color: var(--primary-hover); }
+
+/* Big content card */
+.ana-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+.ana-card-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.ana-empty {
+  padding: 30px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Table */
+.ana-table-wrap {
+  overflow-x: auto;
+}
+.ana-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.ana-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--glass-border);
+}
+/* Right-aligned numeric headers/cells share the same padding so the
+   right edges line up exactly across th and td rows. */
+.ana-th-num {
+  text-align: right;
+  letter-spacing: .04em;
+  width: 110px;
+}
+.ana-th-bar { width: 30%; min-width: 220px; }
+.ana-table th:first-child { padding-left: 18px; }
+.ana-table th:last-child  { padding-right: 18px; }
+.ana-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--glass-border-2);
+  vertical-align: middle;
+}
+.ana-table td:first-child { padding-left: 18px; }
+.ana-table td:last-child  { padding-right: 18px; }
+.ana-table tr:last-child td { border-bottom: 0; }
+.ana-row-inactive { opacity: .55; }
+
+.ana-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ana-diff-pos { color: var(--success); }
+.ana-diff-neg { color: var(--danger); }
+
+/* User cell — avatar + name */
+.ana-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ana-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.ana-avatar-initials {
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+.ana-user-name {
+  font-weight: 500;
+  color: var(--text);
+}
+.ana-user-handle {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Utilization bar */
+.ana-util-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ana-util-bar {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, .06);
+  border-radius: 999px;
+  overflow: hidden;
+  min-width: 80px;
+}
+[data-theme="light"] .ana-util-bar {
+  background: rgba(0, 0, 0, .06);
+}
+.ana-util-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .25s ease;
+}
+.ana-util-bar-fill.ana-util-low,
+.ana-legend-swatch.ana-util-low {
+  background: var(--danger);
+}
+.ana-util-bar-fill.ana-util-mid,
+.ana-legend-swatch.ana-util-mid {
+  background: var(--warning);
+}
+.ana-util-bar-fill.ana-util-high,
+.ana-legend-swatch.ana-util-high {
+  background: var(--success);
+}
+.ana-util-pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 12px;
+  min-width: 38px;
+  text-align: right;
+  color: var(--text);
+}
+
+/* Legend */
+.ana-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ana-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ana-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* ============================================================
+   ANALYTICS — TIMELINE TAB
+   Gantt-style chart: rows = users, x-axis = days with 4h ticks,
+   pills = clocked-in sessions, fill = logged-task minutes.
+   ============================================================ */
+
+.ana-timeline-card {
+  padding: 18px 0 18px 18px; /* let chart bleed to the right edge of card */
+  padding-right: 18px;
+}
+
+.ana-timeline-mount {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  position: relative;
+
+  /* Firefox scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-glow) transparent;
+}
+[data-theme="light"] .ana-timeline-mount {
+  background: rgba(0, 0, 0, 0.015);
+}
+
+/* WebKit scrollbar styling — matches theme, slim, fades on idle */
+.ana-timeline-mount::-webkit-scrollbar {
+  height: 10px;
+  background: transparent;
+}
+.ana-timeline-mount::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0 0 10px 10px;
+  margin: 0 6px;
+}
+[data-theme="light"] .ana-timeline-mount::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+.ana-timeline-mount::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  opacity: 0.4;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ana-timeline-mount::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-hover);
+  background-clip: padding-box;
+}
+.ana-timeline-mount::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.ana-timeline-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.atl-wrap {
+  min-width: 100%;
+  display: inline-block;
+  vertical-align: top;
+}
+
+/* ---------- header ---------- */
+.atl-header {
+  display: grid;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+[data-theme="light"] .atl-header {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.atl-header-corner {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  left: 0;
+  background: var(--main-bg);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+}
+
+.atl-header-day {
+  padding: 8px 0 0;
+  border-right: 1px solid var(--border-soft);
+  position: relative;
+  text-align: center;
+}
+.atl-header-day:last-child { border-right: none; }
+.atl-header-day.atl-header-today .atl-header-date {
+  color: var(--primary-hover);
+}
+.atl-header-day.atl-header-today::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 2px 2px 0 0;
+}
+
+.atl-header-weekday {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.atl-header-date {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.atl-header-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 4px;
+}
+.atl-header-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- body / rows ---------- */
+.atl-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.atl-row {
+  display: grid;
+  border-bottom: 1px solid var(--border-soft);
+  position: relative;
+}
+.atl-row:last-child { border-bottom: none; }
+.atl-row-inactive { opacity: 0.55; }
+
+.atl-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-right: 1px solid var(--border);
+  position: sticky;
+  left: 0;
+  background: var(--main-bg);
+  backdrop-filter: blur(8px);
+  z-index: 3;
+}
+
+.atl-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.atl-avatar-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.atl-user-meta {
+  min-width: 0;
+  flex: 1;
+}
+.atl-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.atl-user-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- day cell ---------- */
+.atl-day-cell {
+  position: relative;
+  border-right: 1px solid var(--border-soft);
+}
+.atl-day-cell:last-child { border-right: none; }
+
+.atl-day-today {
+  background: rgba(139, 92, 246, 0.06);
+}
+[data-theme="dark"][data-theme-preset="midnight_blue"] .atl-day-today {
+  background: rgba(59, 130, 246, 0.08);
+}
+[data-theme="dark"][data-theme-preset="forest_green"] .atl-day-today {
+  background: rgba(16, 185, 129, 0.08);
+}
+[data-theme="dark"][data-theme-preset="rose_dusk"] .atl-day-today {
+  background: rgba(236, 72, 153, 0.08);
+}
+[data-theme="dark"][data-theme-preset="slate_mono"] .atl-day-today {
+  background: rgba(148, 163, 184, 0.08);
+}
+[data-theme="dark"][data-theme-preset="ocean_teal"] .atl-day-today {
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.atl-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-soft);
+  pointer-events: none;
+}
+.atl-gridline-edge {
+  background: var(--border);
+}
+
+/* ---------- pills (sessions) ---------- */
+.atl-pill {
+  position: absolute;
+  top: 10px;
+  height: 28px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--primary);
+  overflow: hidden;
+  cursor: default;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  z-index: 1;
+}
+.atl-pill:hover {
+  z-index: 2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--primary-glow);
+}
+[data-theme="light"] .atl-pill {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Fill = logged-task % within the session */
+.atl-pill-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary);
+  opacity: 0.7;
+  transition: width 0.3s ease;
+}
+
+/* 100% — solid green */
+.atl-pill-full {
+  border-color: var(--success);
+}
+.atl-pill-full .atl-pill-fill {
+  background: var(--success);
+  opacity: 0.85;
+}
+
+/* Over-logged — whole pill red */
+.atl-pill-over {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+.atl-pill-over .atl-pill-fill {
+  background: var(--danger);
+  opacity: 0.85;
+}
+
+/* Open session — dashed outline */
+.atl-pill-open {
+  border-style: dashed;
+}
+
+/* No task time logged inside session — hollow look */
+.atl-pill-empty-fill .atl-pill-fill {
+  display: none;
+}
+
+.atl-pill-label {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+[data-theme="light"] .atl-pill-label {
+  color: #fff;
+}
+[data-theme="light"] .atl-pill-empty-fill .atl-pill-label {
+  color: var(--text-color, #1a1a2a);
+  text-shadow: none;
+}
+
+/* ---------- unattributed chip ---------- */
+.atl-unattributed-chip {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  right: 4px;
+  padding: 2px 6px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
+  opacity: 0.9;
+}
+
+/* ---------- legend swatches ---------- */
+.atl-legend-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 12px;
+  border-radius: 6px;
+  vertical-align: middle;
+  margin-right: 6px;
+  border: 1px solid var(--border);
+}
+.atl-legend-clocked {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--primary);
+}
+[data-theme="light"] .atl-legend-clocked {
+  background: rgba(0, 0, 0, 0.04);
+}
+.atl-legend-filled {
+  background: linear-gradient(to right, var(--primary) 60%, rgba(255, 255, 255, 0.06) 60%);
+  border-color: var(--primary);
+}
+.atl-legend-full {
+  background: var(--success);
+  border-color: var(--success);
+}
+.atl-legend-over {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.atl-legend-break {
+  background: var(--warning);
+  border-color: var(--warning);
+  width: 12px;
+}

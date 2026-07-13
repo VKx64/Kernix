@@ -1,0 +1,24 @@
+# Optional Vite development override with source mounting and hot reload.
+# Use together with compose.yaml; it only changes the frontend container.
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports: !override
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  frontend_node_modules:

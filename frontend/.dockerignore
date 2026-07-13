@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.vite
+.eslintcache
+*.tsbuildinfo
+*.log
+.git
+.gitignore
+.env*
+npm-debug.log*
+Dockerfile*
+README.md

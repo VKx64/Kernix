@@ -1,0 +1,55 @@
+# Historical project/database identifiers are retained so the fallback stack
+# continues to use its existing volumes instead of creating empty replacements.
+name: ${LEGACY_COMPOSE_PROJECT_NAME:-production-management}
+
+services:
+  app:
+    build:
+      context: ./legacy
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${LEGACY_APP_PORT:-8080}:80"
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${LEGACY_DB_NAME:-production}
+      DB_USER: ${LEGACY_DB_USER:-production}
+      DB_PASSWORD: ${LEGACY_DB_PASSWORD:-production_local_password}
+      APP_NAME: ${LEGACY_APP_NAME:-Kernix}
+      APP_URL: http://localhost:${LEGACY_APP_PORT:-8080}
+      APP_BASE: ""
+      APP_ENV: development
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Manila}
+      SESSION_LIFETIME: 28800
+      LEGACY_ADMIN_PASSWORD: ${LEGACY_ADMIN_PASSWORD:?Set LEGACY_ADMIN_PASSWORD in .env (minimum 12 characters)}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/var/www/html/uploads
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${LEGACY_DB_NAME:-production}
+      MYSQL_USER: ${LEGACY_DB_USER:-production}
+      MYSQL_PASSWORD: ${LEGACY_DB_PASSWORD:-production_local_password}
+      MYSQL_ROOT_PASSWORD: ${LEGACY_DB_ROOT_PASSWORD:-root_local_password}
+      TZ: ${APP_TIMEZONE:-Asia/Manila}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root --password=\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./legacy/docker/mysql/001-schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+
+volumes:
+  db_data:
+  uploads_data:

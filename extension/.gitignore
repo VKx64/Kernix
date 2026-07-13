@@ -1,0 +1,15 @@
+node_modules/
+dist/
+artifacts/
+coverage/
+.vite/
+.eslintcache
+*.tsbuildinfo
+*.log
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db

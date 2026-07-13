@@ -1,0 +1,11 @@
+# Block PHP execution in uploads
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phps|pl|py|jsp|asp|sh|cgi)$">
+    Require all denied
+</FilesMatch>
+
+# Force download of risky types
+<FilesMatch "\.(html|htm|svg)$">
+    Header set Content-Disposition "attachment"
+</FilesMatch>
+
+Options -ExecCGI -Indexes
