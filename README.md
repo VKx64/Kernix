@@ -1,7 +1,5 @@
 # Kernix — Laravel + Vite local stack
 
-[![CI](https://github.com/VKx64/Kernix/actions/workflows/ci.yml/badge.svg)](https://github.com/VKx64/Kernix/actions/workflows/ci.yml)
-
 Kernix is split into three independently containerized services:
 
 - `frontend`: React 19 + TypeScript, built with Vite 8 and served by Nginx
