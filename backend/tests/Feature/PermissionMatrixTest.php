@@ -3,12 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\AiTaskGeneration;
 use App\Models\Contact;
 use App\Models\Field;
 use App\Models\FieldValue;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\Task;
+use App\Models\TaskEstimateRequest;
+use App\Models\TaskNote;
 use App\Models\TimeSession;
 use App\Models\User;
 use App\Support\PermissionCatalog;
@@ -116,6 +119,7 @@ class PermissionMatrixTest extends TestCase
             'time.view_team' => $this->request('GET', '/api/time/clocked-users'),
             'tasks.view' => $this->taskRequest($actor, 'GET', '/api/tasks'),
             'tasks.create' => $this->taskCreateRequest($actor),
+            'tasks.create_with_ai' => $this->aiTaskGenerationReadRequest($actor),
             'tasks.edit' => $this->taskPatchRequest($actor, ['title' => 'Matrix edited task']),
             'tasks.change_status' => $this->taskPatchRequest($actor, [
                 'status_value_id' => $this->fieldValue('task_status', 'complete')->id,
@@ -127,12 +131,15 @@ class PermissionMatrixTest extends TestCase
                 'assignee_user_id' => User::factory()->create()->id,
             ]),
             'tasks.estimate' => $this->taskPatchRequest($actor, ['estimated_minutes' => 30]),
+            'tasks.request_estimate' => $this->taskEstimateRequest($actor),
+            'tasks.review_estimate_requests' => $this->taskEstimateReviewRequest($actor),
             'tasks.email' => $this->taskEmailRequest($actor),
             'tasks.archive' => $this->taskArchiveRequest($actor),
             'projects.view' => $this->request('GET', '/api/projects'),
             'projects.create' => $this->projectCreateRequest($actor),
             'projects.edit' => $this->projectPatchRequest($actor, ['name' => 'Matrix edited project']),
             'projects.archive' => $this->projectArchiveRequest($actor),
+            'projects.manage_ai_memory' => $this->projectMemoryManageRequest($actor),
             'clients.view' => $this->request('GET', '/api/clients'),
             'clients.create' => $this->request('POST', '/api/clients', ['name' => 'Matrix created client'], 201, true),
             'clients.edit' => $this->clientPatchRequest($actor),
@@ -169,6 +176,30 @@ class PermissionMatrixTest extends TestCase
         ], 201, true);
     }
 
+    private function aiTaskGenerationReadRequest(User $actor): array
+    {
+        [, $project] = $this->workspace($actor);
+        $generation = AiTaskGeneration::query()->create([
+            'project_id' => $project->id,
+            'requested_by' => $actor->id,
+            'status' => 'failed',
+            'initial_prompt' => 'Permission matrix test',
+        ]);
+
+        return $this->request('GET', '/api/ai-task-generations/'.$generation->id);
+    }
+
+    private function projectMemoryManageRequest(User $actor): array
+    {
+        [, $project] = $this->workspace($actor);
+        $project->update(['manager_user_id' => $actor->id]);
+
+        return $this->request('PATCH', '/api/projects/'.$project->id.'/ai-memory/brief', [
+            'brief' => 'Permission matrix approved project brief.',
+            'approve' => true,
+        ], 200, true);
+    }
+
     private function taskPatchRequest(User $actor, array $payload): array
     {
         $task = $this->task($actor);
@@ -195,6 +226,64 @@ class PermissionMatrixTest extends TestCase
         $task = $this->task($actor);
 
         return $this->request('POST', '/api/tasks/'.$task->id.'/archive', [], 200, true);
+    }
+
+    private function taskEstimateRequest(User $actor): array
+    {
+        $manager = $this->actorWith($this->permissionClosure('tasks.review_estimate_requests'));
+        [$client, $project] = $this->workspace($actor);
+        $project->update(['manager_user_id' => $manager->id]);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix estimate request '.$actor->id,
+            'assignee_user_id' => $actor->id,
+            'estimated_minutes' => 30,
+            'actual_minutes' => 0,
+            'created_by' => $this->admin->id,
+        ]);
+
+        return $this->request('POST', '/api/tasks/'.$task->id.'/estimate-requests', [
+            'additional_minutes' => 15,
+            'reason' => 'The remaining work needs another pass.',
+        ], 201, true);
+    }
+
+    private function taskEstimateReviewRequest(User $actor): array
+    {
+        $requester = $this->actorWith($this->permissionClosure('tasks.request_estimate'));
+        [, $project] = $this->workspace($actor);
+        $project->update(['manager_user_id' => $actor->id]);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix estimate review '.$actor->id,
+            'assignee_user_id' => $requester->id,
+            'estimated_minutes' => 30,
+            'actual_minutes' => 0,
+            'created_by' => $this->admin->id,
+        ]);
+        $estimateRequest = TaskEstimateRequest::query()->create([
+            'task_id' => $task->id,
+            'requested_by' => $requester->id,
+            'reviewer_user_id' => $actor->id,
+            'base_estimated_minutes' => 30,
+            'requested_additional_minutes' => 15,
+            'status' => 'pending',
+            'request_reason' => 'The remaining work needs another pass.',
+        ]);
+        $root = TaskNote::query()->create([
+            'task_id' => $task->id,
+            'body' => $estimateRequest->request_reason,
+            'created_by' => $requester->id,
+            'assigned_user_id' => $actor->id,
+            'is_message' => true,
+            'estimate_request_id' => $estimateRequest->id,
+        ]);
+        $root->update(['conversation_id' => $root->id]);
+
+        return $this->request('POST', '/api/tasks/'.$task->id.'/estimate-requests/'.$estimateRequest->id.'/approve', [
+            'approved_additional_minutes' => 10,
+            'reason' => 'Approved with a focused counteroffer.',
+        ], 200, true);
     }
 
     private function taskRequest(User $actor, string $method, string $path): array
@@ -406,6 +495,7 @@ class PermissionMatrixTest extends TestCase
         return in_array($key, [
             'tasks.create', 'tasks.edit', 'tasks.change_status', 'tasks.comment', 'tasks.log_time',
             'tasks.subtasks', 'tasks.assign', 'tasks.estimate', 'tasks.archive',
+            'tasks.request_estimate', 'tasks.review_estimate_requests',
         ], true);
     }
 
@@ -423,6 +513,7 @@ class PermissionMatrixTest extends TestCase
         $tables = [
             'roles', 'role_permissions', 'fields', 'field_values', 'users', 'clients', 'contacts',
             'projects', 'tasks', 'task_subtasks', 'task_notes', 'task_emails', 'time_sessions',
+            'task_estimate_requests',
             'time_breaks', 'system_settings', 'audit_logs', 'sessions', 'personal_access_tokens',
         ];
         $snapshot = [];

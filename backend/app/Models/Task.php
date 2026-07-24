@@ -20,6 +20,11 @@ class Task extends DomainModel
         return $this->belongsTo(Project::class);
     }
 
+    public function folder(): BelongsTo
+    {
+        return $this->belongsTo(TaskFolder::class, 'task_folder_id');
+    }
+
     public function status(): BelongsTo
     {
         return $this->belongsTo(FieldValue::class, 'status_value_id');
@@ -55,6 +60,11 @@ class Task extends DomainModel
         return $this->hasMany(TaskNote::class);
     }
 
+    public function estimateRequests(): HasMany
+    {
+        return $this->hasMany(TaskEstimateRequest::class);
+    }
+
     public function emails(): HasMany
     {
         return $this->hasMany(TaskEmail::class);
@@ -63,5 +73,10 @@ class Task extends DomainModel
     public function auditLogs(): HasMany
     {
         return $this->hasMany(AuditLog::class, 'entity_id')->where('entity_type', 'Task');
+    }
+
+    public function aiGeneration(): BelongsTo
+    {
+        return $this->belongsTo(AiTaskGeneration::class, 'ai_task_generation_id');
     }
 }

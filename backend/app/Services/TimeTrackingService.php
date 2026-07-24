@@ -31,8 +31,10 @@ class TimeTrackingService
             'on_break' => (bool) $currentBreak,
             'started_at' => $session?->clock_in_at,
             'today_minutes' => (int) $todayMinutes,
-            'can_mutate_tasks' => (bool) $session,
-            'can_admin_override' => $user->isAdmin(),
+            'can_mutate_tasks' => (bool) $session && ! $currentBreak,
+            // Breaks are intentionally non-bypassable so task activity cannot
+            // be recorded as work while the user is paused.
+            'can_admin_override' => $user->isAdmin() && ! $currentBreak,
         ];
     }
 

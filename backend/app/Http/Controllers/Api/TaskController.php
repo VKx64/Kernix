@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\FieldValue;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskFolder;
 use App\Models\User;
 use App\Services\TaskMutationService;
 use App\Support\SingleClient;
@@ -13,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TaskController extends ApiController
 {
@@ -22,7 +24,7 @@ class TaskController extends ApiController
     {
         $this->permission($request, 'tasks.view');
         $query = $this->archived(Task::query()->with([
-            'project.client', 'status', 'type', 'urgency', 'assignee',
+            'project.client', 'folder', 'status', 'type', 'urgency', 'assignee',
         ])->withCount([
             'subtasks',
             'subtasks as completed_subtasks_count' => fn ($subtasks) => $subtasks->whereNotNull('completed_at'),
@@ -40,7 +42,7 @@ class TaskController extends ApiController
         if ($request->boolean('urgent')) {
             $query->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', ['urgent', 'high']));
         }
-        foreach (['project_id', 'assignee_user_id', 'status_value_id', 'type_value_id', 'urgency_value_id'] as $filter) {
+        foreach (['project_id', 'task_folder_id', 'assignee_user_id', 'status_value_id', 'type_value_id', 'urgency_value_id'] as $filter) {
             if ($request->filled($filter)) {
                 $query->where($filter, $request->integer($filter));
             }
@@ -65,7 +67,10 @@ class TaskController extends ApiController
         $this->authorizeRequestedFields($request, true);
         TaskMutationGuard::enforce($request);
         $data = $this->validated($request);
+        $subtaskDrafts = $data['subtasks'] ?? [];
+        unset($data['subtasks']);
         $this->assertProjectVisible((int) $data['project_id']);
+        $this->assertFolderBelongsToProject($data['task_folder_id'] ?? null, (int) $data['project_id']);
         $project = Project::findOrFail($data['project_id']);
         $activeManager = User::query()
             ->whereKey($project->manager_user_id)
@@ -73,26 +78,45 @@ class TaskController extends ApiController
             ->whereNull('archived_at')
             ->value('id');
         $data['assignee_user_id'] ??= $activeManager ?: $request->user()->id;
+        $pendingStatusValueId = $this->defaultValue('task_status', 'pending');
         $data += [
-            'status_value_id' => $this->defaultValue('task_status', 'pending'),
+            'status_value_id' => $pendingStatusValueId,
             'type_value_id' => $this->defaultValue('task_type', 'task'),
             'urgency_value_id' => $this->defaultValue('task_urgency', 'normal'),
         ];
-        $task = DB::transaction(function () use ($request, $data) {
+        $task = DB::transaction(function () use ($request, $data, $subtaskDrafts, $pendingStatusValueId) {
             $task = Task::create($data + ['actual_minutes' => 0, 'created_by' => $request->user()->id]);
+            foreach ($subtaskDrafts as $index => $subtaskDraft) {
+                $task->subtasks()->create([
+                    'title' => $subtaskDraft['title'],
+                    'status_value_id' => $pendingStatusValueId,
+                    'sort_order' => ($index + 1) * 10,
+                    'actual_minutes' => 0,
+                    'created_by' => $request->user()->id,
+                ]);
+            }
             if ($task->assignee_user_id && (int) $task->assignee_user_id !== (int) $request->user()->id) {
                 $actor = trim($request->user()->first_name.' '.$request->user()->last_name) ?: $request->user()->username;
-                $task->notes()->create([
+                $message = $task->notes()->create([
                     'body' => "{$actor} assigned this task to you.",
                     'assigned_user_id' => $task->assignee_user_id,
                     'created_by' => $request->user()->id,
                     'is_message' => true,
                 ]);
+                $message->update(['conversation_id' => $message->id]);
             }
 
             return $task;
         });
         $this->audit($request, 'task.create', $task, $task->toArray());
+        if ($subtaskDrafts !== []) {
+            foreach ($task->subtasks()->orderBy('sort_order')->orderBy('id')->get() as $subtask) {
+                $this->audit($request, 'task.subtask.create', $task, [
+                    'subtask_id' => $subtask->id,
+                    'title' => $subtask->title,
+                ]);
+            }
+        }
 
         return $this->data($this->present($task, $request), 201);
     }
@@ -108,12 +132,22 @@ class TaskController extends ApiController
     public function update(Request $request, Task $task): JsonResponse
     {
         $this->authorizeRequestedFields($request);
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $data = $this->validated($request, true);
         if (isset($data['project_id'])) {
             $this->assertProjectVisible((int) $data['project_id']);
         }
+        $targetProjectId = (int) ($data['project_id'] ?? $task->project_id);
+        if (array_key_exists('project_id', $data)
+            && $targetProjectId !== (int) $task->project_id
+            && ! array_key_exists('task_folder_id', $data)) {
+            $data['task_folder_id'] = null;
+        }
+        $this->assertFolderBelongsToProject(
+            array_key_exists('task_folder_id', $data) ? $data['task_folder_id'] : $task->task_folder_id,
+            $targetProjectId,
+        );
         $before = $this->taskMutations->updateTask($task, $data, $request->user());
         $this->audit($request, 'task.update', $task, ['before' => $before, 'after' => $task->getAttributes()]);
 
@@ -123,7 +157,7 @@ class TaskController extends ApiController
     public function archive(Request $request, Task $task): JsonResponse
     {
         $this->permission($request, 'tasks.archive');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $task->update(['archived_at' => now()]);
         $this->audit($request, 'task.archive', $task);
@@ -149,6 +183,19 @@ class TaskController extends ApiController
         return $this->data($this->present($model, $request));
     }
 
+    public function destroy(Request $request, Task $task): JsonResponse
+    {
+        // Deletion is intentionally tied to the existing archive privilege:
+        // both actions remove work from active queues and remain clock-gated.
+        $this->permission($request, 'tasks.archive');
+        TaskMutationGuard::enforce($request);
+        $this->withinClient($task);
+        $task->delete();
+        $this->audit($request, 'task.delete', $task);
+
+        return response()->json(null, 204);
+    }
+
     public function activity(Request $request, Task $task): JsonResponse
     {
         $this->permission($request, 'tasks.view');
@@ -161,6 +208,7 @@ class TaskController extends ApiController
     {
         return $request->validate([
             'project_id' => [$partial ? 'sometimes' : 'required', 'integer', Rule::exists('projects', 'id')->whereNull('archived_at')->whereNull('deleted_at')],
+            'task_folder_id' => ['sometimes', 'nullable', 'integer', Rule::exists('task_folders', 'id')],
             'title' => [$partial ? 'sometimes' : 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string'],
             'status_value_id' => ['sometimes', 'nullable', $this->fieldValueRule('task_status')],
@@ -170,6 +218,9 @@ class TaskController extends ApiController
             'assignee_user_id' => ['sometimes', 'nullable', Rule::exists('users', 'id')->where('status', 'active')->whereNull('archived_at')->whereNull('deleted_at')],
             'estimated_minutes' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:1000000'],
             'actual_minutes' => ['prohibited'],
+            'subtasks' => [$partial ? 'prohibited' : 'sometimes', 'array', 'list', 'max:50'],
+            'subtasks.*' => ['required', 'array:title'],
+            'subtasks.*.title' => ['required', 'string', 'max:255'],
         ]);
     }
 
@@ -179,7 +230,7 @@ class TaskController extends ApiController
         $authorized = $creating;
 
         if (! $creating && $this->containsAny($requested, [
-            'project_id', 'title', 'description', 'type_value_id', 'urgency_value_id', 'due_date',
+            'project_id', 'task_folder_id', 'title', 'description', 'type_value_id', 'urgency_value_id', 'due_date',
         ])) {
             $this->permission($request, 'tasks.edit');
             $authorized = true;
@@ -194,6 +245,10 @@ class TaskController extends ApiController
         }
         if (array_key_exists('estimated_minutes', $requested)) {
             $this->permission($request, 'tasks.estimate');
+            $authorized = true;
+        }
+        if (array_key_exists('subtasks', $requested)) {
+            $this->permission($request, 'tasks.subtasks');
             $authorized = true;
         }
 
@@ -222,6 +277,19 @@ class TaskController extends ApiController
             $query->where('client_id', SingleClient::id() ?? 0);
         }
         abort_unless($query->exists(), 422, 'Select an active project in the configured client.');
+    }
+
+    private function assertFolderBelongsToProject(?int $taskFolderId, int $projectId): void
+    {
+        if ($taskFolderId === null) {
+            return;
+        }
+
+        if (! TaskFolder::query()->whereKey($taskFolderId)->where('project_id', $projectId)->exists()) {
+            throw ValidationException::withMessages([
+                'task_folder_id' => ['Select a task folder from the task project.'],
+            ]);
+        }
     }
 
     private function withinClient(Task $task): void
@@ -259,7 +327,7 @@ class TaskController extends ApiController
     private function present(Task $task, Request $request): Task
     {
         $relations = [
-            'project.client', 'project.status', 'project.manager', 'status', 'type', 'urgency', 'assignee', 'creator',
+            'project.client', 'project.status', 'project.manager', 'folder', 'status', 'type', 'urgency', 'assignee', 'creator',
             'notes' => fn ($query) => $query->with(['author', 'assignedUser', 'attachments'])->latest(),
             'subtasks' => fn ($query) => $query->with(['status', 'assignee'])->orderBy('sort_order')->orderBy('id'),
         ];

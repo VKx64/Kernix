@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Client;
 use App\Models\SystemSetting;
+use App\Models\AiUsageEvent;
+use App\Services\AiUsageService;
+use App\Services\OpenRouterClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -53,6 +56,12 @@ class SettingsController extends ApiController
             's3_endpoint' => ['sometimes', 'nullable', 'url', 'max:500'], 's3_public_url_base' => ['sometimes', 'nullable', 'url', 'max:500'],
             's3_use_path_style' => ['sometimes', 'boolean'], 'single_client_mode' => ['sometimes', 'boolean'],
             'single_client_id' => ['sometimes', 'nullable', Rule::exists('clients', 'id')->whereNull('archived_at')->whereNull('deleted_at')],
+            'openrouter_api_key' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'openrouter_model' => ['sometimes', 'nullable', 'string', 'max:191'],
+            'ai_monthly_budget_usd' => ['sometimes', 'numeric', 'min:0.01', 'max:100000'],
+            'ai_max_output_tokens' => ['sometimes', 'integer', 'between:100,10000'],
+            'ai_request_timeout_seconds' => ['sometimes', 'integer', 'between:10,180'],
+            'ai_inactivity_hours' => ['sometimes', 'integer', 'between:1,720'],
         ];
         $data = $request->validate($rules);
         if ($section) {
@@ -60,11 +69,12 @@ class SettingsController extends ApiController
                 'system' => ['default_timezone', 'system_logo', 'sidebar_logo', 'email_logo', 'favicon', 'single_client_mode', 'single_client_id'],
                 'smtp' => ['smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
                 'storage' => ['storage_driver', 'local_upload_path', 'local_public_url', 's3_bucket', 's3_region', 's3_access_key', 's3_secret_key', 's3_endpoint', 's3_public_url_base', 's3_use_path_style'],
+                'ai' => ['openrouter_api_key', 'openrouter_model', 'ai_monthly_budget_usd', 'ai_max_output_tokens', 'ai_request_timeout_seconds', 'ai_inactivity_hours'],
                 default => [],
             };
             $data = array_intersect_key($data, array_flip($allowed));
         }
-        foreach (['smtp_password', 's3_access_key', 's3_secret_key'] as $secret) {
+        foreach (['smtp_password', 's3_access_key', 's3_secret_key', 'openrouter_api_key'] as $secret) {
             if (array_key_exists($secret, $data) && blank($data[$secret])) {
                 unset($data[$secret]);
             }
@@ -75,7 +85,7 @@ class SettingsController extends ApiController
         if ($effectiveMode && empty($effectiveClient)) {
             abort(422, 'Select a client before enabling single-client mode.');
         }
-        $secretKeys = array_flip(['smtp_password', 's3_access_key', 's3_secret_key']);
+        $secretKeys = array_flip(['smtp_password', 's3_access_key', 's3_secret_key', 'openrouter_api_key']);
         $before = array_diff_key($settings->getAttributes(), $secretKeys);
         $settings->update($data);
         $this->audit($request, 'settings.update', $settings, [
@@ -86,11 +96,41 @@ class SettingsController extends ApiController
         return $this->data($this->present($settings->fresh(), $request));
     }
 
+    public function testAi(Request $request, OpenRouterClient $client, AiUsageService $usage): JsonResponse
+    {
+        $this->permission($request, 'settings.edit');
+        $settings = SystemSetting::firstOrFail();
+        abort_unless(filled($settings->openrouter_api_key) && filled($settings->openrouter_model), 409, 'Save an OpenRouter API key and model first.');
+        $usage->assertAvailable($settings);
+        $result = $client->review(
+            $settings,
+            'This is a connectivity test. Return action reject, a short message confirming the connection, an empty evidence_summary, and null approved_additional_minutes.',
+            'Connectivity test only. Do not evaluate a real employee or task.',
+        );
+        $usage->record('connection_test', 'connection_test', null, $result, null, $request->user()->id);
+
+        return $this->data([
+            'connected' => true,
+            'requested_model' => $settings->openrouter_model,
+            'actual_model' => $result['actual_model'],
+            'message' => $result['message'],
+        ]);
+    }
+
     private function present(SystemSetting $settings, ?Request $request = null): array
     {
         $data = array_merge($settings->toArray(), [
             'has_smtp_password' => filled($settings->smtp_password),
             'has_s3_credentials' => filled($settings->s3_access_key) && filled($settings->s3_secret_key),
+            'has_openrouter_api_key' => filled($settings->openrouter_api_key),
+            'ai_configured' => filled($settings->openrouter_api_key) && filled($settings->openrouter_model),
+            'ai_current_month_cost_usd' => (float) AiUsageEvent::query()
+                ->where('created_at', '>=', now()->startOfMonth())
+                ->sum('cost_usd'),
+            'ai_current_month_usage_by_feature' => AiUsageEvent::query()
+                ->where('created_at', '>=', now()->startOfMonth())
+                ->selectRaw('feature, SUM(cost_usd) as cost_usd, COUNT(*) as calls')
+                ->groupBy('feature')->get(),
         ]);
 
         if ($request?->user()?->canDo('settings.edit')) {

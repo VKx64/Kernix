@@ -28,7 +28,7 @@ class TaskEmailController extends ApiController
     public function store(Request $request, Task $task): JsonResponse
     {
         $this->permission($request, 'tasks.email');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $data = $request->validate([
             'to_addresses' => ['required', fn ($attribute, $value, $fail) => (! is_string($value) && ! is_array($value)) ? $fail('Recipients must be an email list.') : null],
@@ -83,7 +83,7 @@ class TaskEmailController extends ApiController
     public function destroy(Request $request, Task $task, TaskEmail $email): JsonResponse
     {
         $this->permission($request, 'tasks.email');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->assertNested($task, $email);
         $this->withinClient($task);
         $email->delete();

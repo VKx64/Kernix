@@ -21,6 +21,8 @@ import { api, displayName, normalizePage, unwrap } from '../lib/api'
 import { isAdministrator, useCan } from '../lib/permissions'
 import { lockedPermissions, normalizePermissionCatalog, withRequiredPermissions, type PermissionGroup } from '../lib/rolePermissions'
 import { useCollection } from '../lib/useCollection'
+import { InviteUserModal } from './InviteUserModal'
+import { ProjectOnboarding } from './ProjectOnboarding'
 import type {
   ApiEnvelope,
   Client,
@@ -69,10 +71,15 @@ function useLookups(enabled = true) {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [fields, setFields] = useState<CustomField[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [requestKey, setRequestKey] = useState(0)
 
   useEffect(() => {
     if (!enabled) return
     let active = true
+    setLoading(true)
+    setError('')
     void Promise.allSettled([
       api.get<ApiEnvelope<EntityBootstrapLookups> | EntityBootstrapLookups>('/api/bootstrap'),
       can('clients.view') ? api.get<Paginated<Client> | ApiEnvelope<Paginated<Client>> | Client[]>('/api/clients', { per_page: 100 }) : Promise.resolve(null),
@@ -86,11 +93,12 @@ function useLookups(enabled = true) {
       setUsers(bootstrap.coworkers ?? (userResult.status === 'fulfilled' && userResult.value ? normalizePage(userResult.value).data : []))
       setRoles(bootstrap.roles ?? (roleResult.status === 'fulfilled' && roleResult.value ? normalizePage(roleResult.value).data : []))
       setFields(bootstrap.fields ?? (fieldResult.status === 'fulfilled' && fieldResult.value ? normalizePage(fieldResult.value).data : []))
-    })
+      if (bootstrapResult.status === 'rejected') setError('Some project setup options could not be loaded.')
+    }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [can, enabled])
+  }, [can, enabled, requestKey])
 
-  return { clients, users, roles, fields }
+  return { clients, users, roles, fields, loading, error, retry: () => setRequestKey((current) => current + 1) }
 }
 
 function statusValues(fields: CustomField[], key: string) {
@@ -117,7 +125,7 @@ function EntityModal({
   onSave: (values: FormPayload) => Promise<void>
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={title} size="lg">
+    <Modal open={open} onClose={onClose} title={title} size="lg" closeDisabled={busy}>
       <EntityForm fields={fields} initialValues={initialValues} busy={busy} error={error} onCancel={onClose} onSubmit={onSave} />
     </Modal>
   )
@@ -132,6 +140,25 @@ function useEntityMutation<T extends { id: EntityId }>(path: string, reload: () 
   const create = () => { setSelected(null); setError(''); setOpen(true) }
   const edit = (record: T) => { setSelected(record); setError(''); setOpen(true) }
   const close = () => { if (!busy) setOpen(false) }
+  const createRecord = async (payload: FormPayload, label = 'record'): Promise<T | null> => {
+    setBusy(true)
+    setError('')
+    try {
+      const response = await api.post<ApiEnvelope<T> | T>(path, payload as Record<string, unknown>)
+      const record = unwrap(response)
+      try {
+        await reload()
+      } catch {
+        setError(`The ${label} was created, but the list could not be refreshed.`)
+      }
+      return record
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to save this record.')
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async (payload: FormPayload) => {
     setBusy(true)
     setError('')
@@ -169,7 +196,7 @@ function useEntityMutation<T extends { id: EntityId }>(path: string, reload: () 
     }
   }
 
-  return { selected, open, busy, error, setError, create, edit, close, save, archive, restore }
+  return { selected, open, busy, error, setError, create, edit, close, createRecord, save, archive, restore }
 }
 
 export function ProjectsPage() {
@@ -184,15 +211,20 @@ export function ProjectsPage() {
   const lookups = useLookups(mutation.open)
   const statuses = statusValues(lookups.fields, 'project_status')
   const singleClientId = value(settings as Record<string, unknown>, 'singleClientId', 'single_client_id')
+  const singleClient = value(settings as Record<string, unknown>, 'singleClient', 'single_client') as Client | null | undefined
 
   const fields: FormFieldSpec[] = [
     { name: 'name', label: 'Project name', required: true, wide: true },
     ...(!singleClientMode ? [{ name: 'client_id', label: 'Client', type: 'select' as const, required: true, options: lookups.clients.map((client) => ({ label: client.name, value: client.id })) }] : []),
     { name: 'manager_user_id', label: 'Project manager', type: 'select', options: lookups.users.map((user) => ({ label: displayName(user), value: user.id })) },
-    ...(statuses.length ? [{ name: 'status_value_id', label: 'Status', type: 'select' as const, options: statuses.map((status) => ({ label: status.label, value: status.id })) }] : []),
+    { name: 'status_value_id', label: 'Status', type: 'select', options: statuses.map((status) => ({ label: status.label, value: status.id })), disabled: lookups.loading && statuses.length === 0, help: lookups.loading && statuses.length === 0 ? 'Loading project statuses…' : undefined },
     { name: 'start_date', label: 'Start date', type: 'date' },
     { name: 'due_date', label: 'Due date', type: 'date' },
     { name: 'description', label: 'Description', type: 'textarea', wide: true },
+    { name: 'ai_task_creation_enabled', label: 'Allow AI task creation', type: 'checkbox', wide: true, help: 'People with the AI task-creation permission can turn a plain-language request into one or more tasks.' },
+    ...(can('projects.manage_ai_memory') ? [{ name: 'ai_memory_enabled', label: 'Learn project lessons when tasks are completed', type: 'checkbox' as const, wide: true, help: 'Lessons remain pending until the current project manager approves them.' }] : []),
+    { name: 'ai_estimate_review_enabled', label: 'Let the AI project manager decide time-extension requests', type: 'checkbox', wide: true, help: 'Requires configured OpenRouter settings and an eligible human project manager for oversight.' },
+    { name: 'ai_estimate_review_rules', label: 'Additional AI review rules', type: 'textarea', wide: true, help: 'Optional project rules can make review stricter but cannot weaken the baseline rubric.' },
   ]
 
   const initial: FormPayload | undefined = mutation.selected ? {
@@ -203,26 +235,51 @@ export function ProjectsPage() {
     start_date: mutation.selected.startDate ?? mutation.selected.start_date ?? '',
     due_date: mutation.selected.dueDate ?? mutation.selected.due_date ?? '',
     description: mutation.selected.description ?? '',
+    ai_estimate_review_enabled: mutation.selected.aiEstimateReviewEnabled ?? mutation.selected.ai_estimate_review_enabled ?? false,
+    ai_estimate_review_rules: mutation.selected.aiEstimateReviewRules ?? mutation.selected.ai_estimate_review_rules ?? '',
+    ai_task_creation_enabled: mutation.selected.aiTaskCreationEnabled ?? mutation.selected.ai_task_creation_enabled ?? false,
+    ai_memory_enabled: mutation.selected.aiMemoryEnabled ?? mutation.selected.ai_memory_enabled ?? false,
   } : singleClientMode && singleClientId ? { client_id: singleClientId as string | number } : undefined
 
   const columns: Column<Project>[] = [
     { key: 'name', header: 'Project', render: (project) => <div className="primary-cell"><strong>{project.name}</strong><span>{project.client?.name ?? 'No client shown'}</span></div> },
     { key: 'status', header: 'Status', render: (project) => <StatusBadge value={project.statusValue ?? project.status_value ?? project.status} /> },
     { key: 'manager', header: 'Manager', render: (project) => displayName(project.manager) },
+    { key: 'ai', header: 'AI features', render: (project) => <div className="project-ai-summary">{(project.aiTaskCreationEnabled ?? project.ai_task_creation_enabled) && <span>Task creation</span>}{(project.aiMemoryEnabled ?? project.ai_memory_enabled) && <span>Memory</span>}{(project.aiEstimateReviewEnabled ?? project.ai_estimate_review_enabled) && <span>Time review</span>}{!(project.aiTaskCreationEnabled ?? project.ai_task_creation_enabled) && !(project.aiMemoryEnabled ?? project.ai_memory_enabled) && !(project.aiEstimateReviewEnabled ?? project.ai_estimate_review_enabled) && 'Off'}</div> },
     { key: 'dates', header: 'Timeline', render: (project) => <span>{localDate(project.startDate ?? project.start_date)} → {localDate(project.dueDate ?? project.due_date)}</span> },
-    { key: 'actions', header: '', className: 'action-column', render: (project) => <RowActions onEdit={!archived && can('projects.edit') ? () => mutation.edit(project) : undefined} onDelete={!archived && can('projects.archive') ? () => void mutation.archive(project) : undefined} onRestore={archived && can('projects.archive') ? () => void mutation.restore(project) : undefined} /> },
+    { key: 'actions', header: '', className: 'action-column', render: (project) => <div className="row-actions" onClick={(event) => event.stopPropagation()}>{!archived && <Link className="icon-button memory-action" title="Project memory" aria-label={`Open ${project.name} memory`} to={`/projects/${project.id}/memory`}><Icon name="sparkles" size={16} />{Number(project.pendingMemoryCount ?? project.pending_memory_count ?? 0) > 0 && <b>{project.pendingMemoryCount ?? project.pending_memory_count}</b>}</Link>}<RowActions onEdit={!archived && can('projects.edit') ? () => mutation.edit(project) : undefined} onDelete={!archived && can('projects.archive') ? () => void mutation.archive(project) : undefined} onRestore={archived && can('projects.archive') ? () => void mutation.restore(project) : undefined} /></div> },
   ]
 
   return (
     <div>
       <PageHeader eyebrow="Delivery" title="Projects" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} projects in your workspace.`} actions={!archived && can('projects.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New project</button> : undefined} />
-      {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
+      {(collection.error || (!mutation.open && mutation.error)) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
       <Panel className="list-panel">
         <SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search projects…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar>
         <DataTable columns={columns} data={collection.data} rowKey={(project) => project.id} loading={collection.loading} emptyTitle={archived ? 'No archived projects' : 'No projects found'} emptyDescription={archived ? 'Archived projects will appear here.' : 'Create a project to organize the first stream of work.'} onRowClick={archived || !can('tasks.view') ? undefined : (project) => navigate(`/tasks?project_id=${project.id}`)} />
         <Pagination meta={collection.meta} onPage={setPage} />
       </Panel>
-      <EntityModal open={mutation.open} title={mutation.selected ? 'Edit project' : 'Create project'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => mutation.save(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload)} />
+      {mutation.open && !mutation.selected && <ProjectOnboarding
+        clients={lookups.clients}
+        managers={lookups.users}
+        statuses={statuses}
+        lookupsLoading={lookups.loading}
+        lookupError={lookups.error}
+        singleClientMode={singleClientMode}
+        singleClientId={singleClientId as EntityId | null | undefined}
+        singleClient={singleClient}
+        busy={mutation.busy}
+        error={mutation.error}
+        canOpenTasks={can('tasks.view')}
+        canCreateClients={can('clients.create')}
+        onClose={mutation.close}
+        onClearError={() => mutation.setError('')}
+        onRetryLookups={lookups.retry}
+        onCreate={async (payload) => mutation.createRecord(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload, 'project')}
+        onOpenTasks={(project) => { mutation.close(); navigate(`/tasks?project_id=${project.id}`) }}
+        onOpenClients={() => { mutation.close(); navigate('/clients') }}
+      />}
+      {mutation.open && mutation.selected && <EntityModal open title="Edit project" fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => mutation.save(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload)} />}
     </div>
   )
 }
@@ -329,6 +386,7 @@ export function UsersPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [archived, setArchived] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const can = useCan()
   const { user: currentUser } = useAuth()
   const isAdmin = isAdministrator(currentUser)
@@ -371,7 +429,7 @@ export function UsersPage() {
     { key: 'status', header: 'Status', render: (user) => <StatusBadge value={user.status} /> },
     { key: 'actions', header: '', className: 'action-column', render: (user) => { const protectedTarget = !isAdmin && isAdministratorAccount(user); const self = String(user.id) === String(currentUser?.id); return <RowActions onEdit={!archived && can('users.edit') && !protectedTarget ? () => mutation.edit(user) : undefined} onDelete={!archived && can('users.archive') && !protectedTarget && !self ? () => void mutation.archive(user) : undefined} onRestore={archived && can('users.archive') && !protectedTarget ? () => void mutation.restore(user) : undefined} /> } },
   ]
-  return <div><PageHeader eyebrow="Administration" title="Users" description={archived ? 'Archived accounts that can be restored.' : 'People who can sign in to this workspace.'} actions={!archived && can('users.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New user</button> : undefined} /><SettingsNav />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search users…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar><DataTable columns={columns} data={collection.data} rowKey={(user) => user.id} loading={collection.loading} emptyTitle={archived ? 'No archived users' : 'No users found'} /><Pagination meta={collection.meta} onPage={setPage} /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit user' : 'Create user'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => { const clean = { ...payload }; if (!isAdmin) { delete clean.personal_email; if (mutation.selected) delete clean.role_id; if (selectedIsSelf) delete clean.status } if (mutation.selected && !isAdmin) { delete clean.password; delete clean.password_confirmation } else if (!clean.password) { delete clean.password; delete clean.password_confirmation } await mutation.save(clean) }} /></div>
+  return <div><PageHeader eyebrow="Administration" title="Users" description={archived ? 'Archived accounts that can be restored.' : 'People who can sign in to this workspace.'} actions={!archived && (isAdmin || can('users.create')) ? <>{isAdmin && <button className="btn btn-primary" onClick={() => setInviteOpen(true)}><Icon name="send" size={16} /> Invite user</button>}{can('users.create') && <button className={`btn ${isAdmin ? 'btn-quiet' : 'btn-primary'}`} onClick={mutation.create}><Icon name="plus" size={16} /> New user</button>}</> : undefined} /><SettingsNav />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search users…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar><DataTable columns={columns} data={collection.data} rowKey={(user) => user.id} loading={collection.loading} emptyTitle={archived ? 'No archived users' : 'No users found'} /><Pagination meta={collection.meta} onPage={setPage} /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit user' : 'Create user'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => { const clean = { ...payload }; if (!isAdmin) { delete clean.personal_email; if (mutation.selected) delete clean.role_id; if (selectedIsSelf) delete clean.status } if (mutation.selected && !isAdmin) { delete clean.password; delete clean.password_confirmation } else if (!clean.password) { delete clean.password; delete clean.password_confirmation } await mutation.save(clean) }} /><InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} /></div>
 }
 
 function roleIsSystem(role: Role | null): boolean {

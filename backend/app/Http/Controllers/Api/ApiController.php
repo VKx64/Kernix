@@ -99,6 +99,10 @@ abstract class ApiController extends Controller
             'client_id' => $project->client_id,
             'name' => $project->name,
             'client' => $this->clientSummary($project->client),
+            'due_date' => optional($project->due_date)->toDateString(),
+            'manager_user_id' => $project->manager_user_id,
+            'ai_task_creation_enabled' => (bool) $project->ai_task_creation_enabled,
+            'ai_memory_enabled' => (bool) $project->ai_memory_enabled,
         ];
     }
 

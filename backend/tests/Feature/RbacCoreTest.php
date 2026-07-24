@@ -32,8 +32,8 @@ class RbacCoreTest extends TestCase
     public function test_catalog_is_the_exact_grouped_assignable_contract_and_seeder_removes_obsolete_admin_grants(): void
     {
         $keys = PermissionCatalog::keys();
-        $this->assertCount(39, $keys);
-        $this->assertCount(39, array_unique($keys));
+        $this->assertCount(43, $keys);
+        $this->assertCount(43, array_unique($keys));
         $this->assertCount(12, PermissionCatalog::groups());
         $this->assertNotContains('tasks.delete', $keys);
         $this->assertNotContains('roles.edit', $keys);
@@ -42,7 +42,7 @@ class RbacCoreTest extends TestCase
 
         $response = $this->getJson('/api/roles/permissions')->assertOk();
         $this->assertCount(12, $response->json('data'));
-        $this->assertCount(39, collect($response->json('data'))->flatMap(fn (array $group) => $group['permissions']));
+        $this->assertCount(43, collect($response->json('data'))->flatMap(fn (array $group) => $group['permissions']));
         $response->assertJsonFragment([
             'key' => 'tasks.assign',
             'requires' => ['tasks.view', 'time.track'],
@@ -300,9 +300,10 @@ class RbacCoreTest extends TestCase
 
     public function test_business_entity_delete_routes_are_unavailable(): void
     {
-        foreach (['clients', 'contacts', 'projects', 'tasks', 'users'] as $resource) {
+        foreach (['clients', 'contacts', 'projects', 'users'] as $resource) {
             $this->deleteJson('/api/'.$resource.'/999999')->assertStatus(405);
         }
+        $this->deleteJson('/api/tasks/999999')->assertNotFound();
     }
 
     /** @param array<int, string> $permissions */

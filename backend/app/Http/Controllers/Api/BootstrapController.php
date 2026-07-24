@@ -50,6 +50,10 @@ class BootstrapController extends ApiController
         if ($canSeeRoles && $user->isAdmin()) {
             $roles = Role::query()->select(['id', 'name', 'key_name']);
         }
+        $assignees = $canSeeCoworkers
+            ? User::query()->where('status', 'active')->whereNull('archived_at')->orderBy('first_name')->get()
+                ->map(fn (User $coworker) => $this->userSummary($coworker))
+            : collect();
 
         return $this->data([
             'user' => array_merge($user->toArray(), ['permissions' => $permissions, 'is_admin' => $user->isAdmin()]),
@@ -66,12 +70,12 @@ class BootstrapController extends ApiController
             'time' => $canTrackTime ? [
                 'session' => $session,
                 'current_break' => $session?->breaks->firstWhere('end_at', null),
-                'can_mutate_tasks' => (bool) $session,
+                'can_mutate_tasks' => (bool) $session && ! $session?->breaks->firstWhere('end_at', null),
             ] : null,
-            'coworkers' => $canSeeCoworkers
-                ? User::query()->where('status', 'active')->whereNull('archived_at')->orderBy('first_name')->get()
-                    ->map(fn (User $coworker) => $this->userSummary($coworker))
-                : [],
+            // `assignees` is the explicit task lookup. Keep `coworkers` as a
+            // compatibility alias for existing clients; neither contains roles.
+            'assignees' => $assignees,
+            'coworkers' => $assignees,
             'clients' => $canSeeClients
                 ? $clients->orderBy('name')->get()->map(fn (Client $client) => $this->clientSummary($client))
                 : [],

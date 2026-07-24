@@ -6,6 +6,7 @@ use App\Support\PermissionCatalog;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -59,6 +60,11 @@ class User extends Authenticatable
     public function timeSessions(): HasMany
     {
         return $this->hasMany(TimeSession::class);
+    }
+
+    public function projects(): BelongsToMany
+    {
+        return $this->belongsToMany(Project::class)->withPivot('assigned_by')->withTimestamps();
     }
 
     public function isAdmin(): bool

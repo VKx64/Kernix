@@ -257,6 +257,25 @@ Messages is the reference:
 
 `EntityForm` initializes controlled state from its field list. For lookup-driven forms, keep the field list stable before mounting, even if `options` are initially empty. Do not conditionally add a field after async lookups arrive unless the form safely merges the new default without overwriting user edits.
 
+### Guided creation
+
+Use a guided creation flow when an entity is created infrequently and needs enough context that a single dense form would make setup feel administrative. Keep routine editing in the compact `EntityForm`; onboarding is for first-time setup, not every update.
+
+- Use the canonical `Basics → Plan → Review` sequence and show both the current step and overall progress.
+- Pair each step with a short, outcome-led guide, a plain-language expectation (`2 required`, `All optional`, or `Ready to create`), and a destination-aware primary action such as `Continue to plan` or `Review project`.
+- Keep one controlled draft alive across every step so Back and Edit actions never discard input.
+- Validate the current step before advancing, focus the first invalid field, and preserve the draft after API errors.
+- Keep async lookup fields stable and visibly disabled while their options load; distinguish lookup failure from a valid empty list and offer retry.
+- Treat a missing prerequisite as a guided next step, not a broken control. For example, an empty client workspace explains why a client is needed and links authorized users to add the first one.
+- Review screens summarize every submitted value and link back to the relevant step.
+- Confirm before closing a dirty draft, lock all exits while creating, and finish with a concise success handoff.
+- Use restrained personality: confident microcopy, one contextual icon, token-based soft surfaces, and a short `opacity + translateY` step transition. Do not use confetti, bounce, illustration, or extra gradients.
+- On mobile, retain the sequence inside the standard bottom-sheet modal. Keep the header, progress, and action footer visible; make only the stage content scroll; compact the guide; respect safe areas; and use an intentional two-row footer below `360px`.
+- Focus the step heading when the flow opens or advances so mobile keyboards do not appear before the user chooses a field. Disable current and future step controls; only completed steps are navigable.
+- Respect `prefers-reduced-motion` for the modal and step transition.
+
+Project creation is the reference implementation: Basics captures project/client context, Plan captures ownership/status/timeline, and Review submits the existing project payload. Project editing remains the compact form.
+
 ## Search, filters, tabs, and URL state
 
 - Debounce collection search by roughly 250ms and abort obsolete requests.

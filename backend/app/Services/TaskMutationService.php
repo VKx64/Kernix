@@ -11,22 +11,26 @@ use Illuminate\Validation\ValidationException;
 
 class TaskMutationService
 {
+    public function __construct(private readonly ProjectMemoryService $projectMemory) {}
+
     public function updateTask(Task $task, array $data, User $actor): array
     {
         $before = $task->getAttributes();
         $task->update($data);
+        $this->projectMemory->afterTaskUpdate($task, isset($before['status_value_id']) ? (int) $before['status_value_id'] : null);
 
         if (array_key_exists('assignee_user_id', $data)
             && (int) $data['assignee_user_id'] !== (int) ($before['assignee_user_id'] ?? 0)
             && $data['assignee_user_id']
             && (int) $data['assignee_user_id'] !== (int) $actor->id) {
             $actorName = trim($actor->first_name.' '.$actor->last_name) ?: $actor->username;
-            $task->notes()->create([
+            $message = $task->notes()->create([
                 'body' => "{$actorName} assigned this task to you.",
                 'assigned_user_id' => $data['assignee_user_id'],
                 'created_by' => $actor->id,
                 'is_message' => true,
             ]);
+            $message->update(['conversation_id' => $message->id]);
         }
 
         return $before;
@@ -48,6 +52,9 @@ class TaskMutationService
                 'created_by' => $actor->id,
                 'time_logged_by' => $minutes > 0 ? $actor->id : null,
             ]);
+            if ($note->is_message && ! $note->conversation_id) {
+                $note->update(['conversation_id' => $note->id]);
+            }
             if ($minutes > 0) {
                 $lockedTask->increment('actual_minutes', $minutes);
                 if ($note->subtask_id) {

@@ -114,6 +114,25 @@ export interface Project {
   due_date?: string | null
   archivedAt?: string | null
   archived_at?: string | null
+  aiEstimateReviewEnabled?: boolean
+  ai_estimate_review_enabled?: boolean
+  aiEstimateReviewRules?: string | null
+  ai_estimate_review_rules?: string | null
+  aiTaskCreationEnabled?: boolean
+  ai_task_creation_enabled?: boolean
+  aiMemoryEnabled?: boolean
+  ai_memory_enabled?: boolean
+  pendingMemoryCount?: number
+  pending_memory_count?: number
+}
+
+export interface TaskFolder {
+  id: EntityId
+  projectId?: EntityId
+  project_id?: EntityId
+  name: string
+  sortOrder?: number
+  sort_order?: number
 }
 
 export interface Contact {
@@ -160,6 +179,12 @@ export interface Note {
   time_minutes?: number
   assignedUser?: UserSummary | null
   assigned_user?: UserSummary | null
+  assignedUserId?: EntityId | null
+  assigned_user_id?: EntityId | null
+  conversationId?: EntityId | null
+  conversation_id?: EntityId | null
+  estimateRequestId?: EntityId | null
+  estimate_request_id?: EntityId | null
   isMessage?: boolean
   is_message?: boolean
   readAt?: string | null
@@ -170,6 +195,42 @@ export interface Note {
   createdAt?: string
   created_at?: string
   attachments?: Attachment[]
+  actorType?: 'user' | 'ai' | 'system' | string
+  actor_type?: 'user' | 'ai' | 'system' | string
+  actorName?: string
+  actor_name?: string
+  aiReviewRunId?: EntityId | null
+  ai_review_run_id?: EntityId | null
+}
+
+export interface AiReviewRun {
+  id: EntityId
+  status: string
+  action?: 'challenge' | 'approve' | 'reject' | null
+  responseMessage?: string | null
+  response_message?: string | null
+  approvedAdditionalMinutes?: number | null
+  approved_additional_minutes?: number | null
+  actualModel?: string | null
+  actual_model?: string | null
+  costUsd?: string | number
+  cost_usd?: string | number
+  errorCode?: string | null
+  error_code?: string | null
+  errorMessage?: string | null
+  error_message?: string | null
+}
+
+export interface EstimateDecision {
+  id: EntityId
+  source: 'human' | 'ai' | 'human_override' | 'system' | string
+  action: 'approve' | 'reject' | string
+  approvedAdditionalMinutes?: number | null
+  approved_additional_minutes?: number | null
+  reason: string
+  decider?: UserSummary | null
+  createdAt?: string
+  created_at?: string
 }
 
 export interface Subtask {
@@ -198,6 +259,9 @@ export interface Task {
   projectId?: EntityId
   project_id?: EntityId
   project?: Project
+  taskFolderId?: EntityId | null
+  task_folder_id?: EntityId | null
+  folder?: TaskFolder | null
   title: string
   description?: string | null
   status?: string | FieldValue
@@ -219,6 +283,8 @@ export interface Task {
   actual_minutes?: number
   archivedAt?: string | null
   archived_at?: string | null
+  aiTaskGenerationId?: EntityId | null
+  ai_task_generation_id?: EntityId | null
   notes?: Note[]
   subtasks?: Subtask[]
   emails?: Note[]
@@ -233,10 +299,100 @@ export interface Task {
   time_totals?: Record<string, number>
 }
 
+export interface AiTaskGeneration {
+  id: EntityId
+  project_id: EntityId
+  task_folder_id?: EntityId | null
+  status: 'queued' | 'needs_input' | 'creating' | 'created' | 'clock_blocked' | 'budget_blocked' | 'failed' | 'undone' | string
+  result_summary?: string | null
+  error_message?: string | null
+  undo_expires_at?: string | null
+  messages?: Array<{ id: EntityId; role: 'user' | 'assistant'; body: string; created_at?: string }>
+  generated_tasks?: Array<{ task_id: EntityId; task?: Pick<Task, 'id' | 'title'> | null }>
+}
+
+export interface ProjectAiProfile {
+  id: EntityId
+  draft_brief?: string | null
+  approved_brief?: string | null
+  brief_status: 'empty' | 'draft' | 'approved' | string
+  version: number
+}
+
+export interface ProjectMemoryEntry {
+  id: EntityId
+  category: 'rule' | 'workflow' | 'estimating' | 'client_preference' | 'lesson' | string
+  content: string
+  evidence?: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'superseded' | 'archived' | string
+  importance: number
+  source_task?: Pick<Task, 'id' | 'title'> | null
+  rejection_reason?: string | null
+}
+
+export interface ProjectMemoryData {
+  project: Pick<Project, 'id' | 'name' | 'description' | 'ai_memory_enabled'>
+  profile: ProjectAiProfile
+  entries: ProjectMemoryEntry[]
+  can_manage: boolean
+}
+
+export interface EstimateRequest {
+  id: EntityId
+  taskId?: EntityId
+  task_id?: EntityId
+  requestedBy?: EntityId
+  requested_by?: EntityId
+  reviewerUserId?: EntityId | null
+  reviewer_user_id?: EntityId | null
+  baseEstimatedMinutes?: number
+  base_estimated_minutes?: number
+  requestedAdditionalMinutes?: number
+  requested_additional_minutes?: number
+  approvedAdditionalMinutes?: number | null
+  approved_additional_minutes?: number | null
+  status: 'pending' | 'approved' | 'rejected' | 'replaced' | string
+  requestReason?: string
+  request_reason?: string
+  decisionReason?: string | null
+  decision_reason?: string | null
+  requester?: UserSummary | null
+  reviewer?: UserSummary | null
+  decider?: UserSummary | null
+  conversationId?: EntityId | null
+  conversation_id?: EntityId | null
+  createdAt?: string
+  created_at?: string
+  decidedAt?: string | null
+  decided_at?: string | null
+  reviewMode?: 'human' | 'ai' | string
+  review_mode?: 'human' | 'ai' | string
+  aiState?: string | null
+  ai_state?: string | null
+  effectiveAdditionalMinutes?: number
+  effective_additional_minutes?: number
+  decisionSource?: string | null
+  decision_source?: string | null
+  latestAiReviewRun?: AiReviewRun | null
+  latest_ai_review_run?: AiReviewRun | null
+  decisions?: EstimateDecision[]
+}
+
 export interface Message extends Note {
   task?: Pick<Task, 'id' | 'title'>
   sender?: UserSummary
   subject?: string
+  messages?: Note[]
+  latestMessage?: Note | null
+  latest_message?: Note | null
+  unreadCount?: number
+  unread_count?: number
+  estimateRequest?: EstimateRequest | null
+  estimate_request?: EstimateRequest | null
+  canReview?: boolean
+  can_review?: boolean
+  canOverride?: boolean
+  can_override?: boolean
 }
 
 export interface DashboardData {
@@ -327,6 +483,19 @@ export interface AppSettings {
   timezone?: string
   dateFormat?: string
   date_format?: string
+  has_openrouter_api_key?: boolean
+  ai_configured?: boolean
+  openrouter_model?: string | null
+  ai_monthly_budget_usd?: string | number
+  ai_max_output_tokens?: number
+  ai_request_timeout_seconds?: number
+  ai_inactivity_hours?: number
+  ai_current_month_cost_usd?: number
+  ai_current_month_usage_by_feature?: Array<{
+    feature: string
+    cost_usd: string | number
+    calls: number
+  }>
   [key: string]: unknown
 }
 
@@ -385,6 +554,40 @@ export interface Role {
   affected_users_count?: number
   isSystem?: boolean
   is_system?: boolean
+}
+
+export interface InvitationProject {
+  id: EntityId
+  name: string
+}
+
+export interface InvitationPreview {
+  email: string
+  role?: Pick<Role, 'id' | 'name'> | null
+  roleId?: EntityId
+  role_id?: EntityId
+  roleName?: string
+  role_name?: string
+  projects?: InvitationProject[]
+  expiresAt?: string
+  expires_at?: string
+  status?: string
+}
+
+export interface Invitation extends InvitationPreview {
+  id?: EntityId
+  token?: string
+  url?: string
+  inviteUrl?: string
+  invite_url?: string
+  invitationUrl?: string
+  invitation_url?: string
+  createdAt?: string
+  created_at?: string
+}
+
+export interface InvitationCreateResponse extends Invitation {
+  invitation?: Invitation
 }
 
 export interface CustomField {

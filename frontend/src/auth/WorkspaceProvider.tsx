@@ -14,6 +14,7 @@ interface WorkspaceContextValue {
   singleClientMode: boolean
   canAdminOverride: boolean
   canMutateTasks: boolean
+  isOnBreak: boolean
   refresh: () => Promise<void>
   timeAction: (action: TimeAction) => Promise<void>
 }
@@ -52,7 +53,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [canTrackTime, refresh])
 
   const singleClientMode = Boolean(settings.singleClientMode ?? settings.single_client_mode)
-  const canAdminOverride = Boolean(time?.canAdminOverride ?? time?.can_admin_override ?? settings.canAdminOverride ?? settings.can_admin_override)
+  const isOnBreak = Boolean(
+    time?.onBreak
+    ?? time?.on_break
+    ?? time?.isOnBreak
+    ?? time?.is_on_break
+    ?? time?.currentBreak
+    ?? time?.current_break
+    ?? (time?.state ?? time?.status) === 'break',
+  )
+  const canAdminOverride = !isOnBreak && Boolean(time?.canAdminOverride ?? time?.can_admin_override ?? settings.canAdminOverride ?? settings.can_admin_override)
   const explicitCanMutate = time?.canMutateTasks ?? time?.can_mutate_tasks
   const clockedIn = Boolean(
     time?.clockedIn
@@ -63,7 +73,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     ?? ['working', 'clocked_in'].includes(time?.state ?? time?.status ?? 'clocked_out'),
   )
   const requiresClock = Boolean(settings.taskMutationsRequireClockIn ?? settings.task_mutations_require_clock_in ?? true)
-  const canMutateTasks = explicitCanMutate ?? (!requiresClock || clockedIn)
+  const canMutateTasks = !isOnBreak && (explicitCanMutate ?? (!requiresClock || clockedIn))
 
   const value = useMemo(() => ({
     settings,
@@ -73,9 +83,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     singleClientMode,
     canAdminOverride,
     canMutateTasks,
+    isOnBreak,
     refresh,
     timeAction,
-  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, refresh, timeAction])
+  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, isOnBreak, refresh, timeAction])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

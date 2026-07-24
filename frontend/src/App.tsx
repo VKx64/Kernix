@@ -7,10 +7,12 @@ import { useCan } from './lib/permissions'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
 import { DashboardPage } from './pages/DashboardPage'
+import { InviteAcceptPage } from './pages/InviteAcceptPage'
 import { LoginPage } from './pages/LoginPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TaskDetailPage, TasksPage } from './pages/TasksPage'
 
@@ -52,6 +54,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/invite/:token" element={<InviteAcceptPage />} />
       <Route element={<ProtectedApp />}>
         <Route index element={<PermissionRoute permission="dashboard.view"><DashboardPage /></PermissionRoute>} />
         <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
@@ -59,6 +62,7 @@ export default function App() {
         <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksPage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />
         <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
         <Route path="contacts" element={<PermissionRoute permission="contacts.view"><ContactsPage /></PermissionRoute>} />
         <Route path="analytics" element={<PermissionRoute permission="analytics.view"><AnalyticsPage /></PermissionRoute>} />

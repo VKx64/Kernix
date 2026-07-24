@@ -6,10 +6,14 @@ import { useCan } from '../lib/permissions'
 import type { ApiEnvelope, AppSettings, Client, FormPayload, Paginated } from '../types/api'
 import { SettingsNav } from './EntityPages'
 
-type SettingsSection = 'system' | 'smtp' | 'storage'
+type SettingsSection = 'system' | 'smtp' | 'storage' | 'ai'
 
 function cleanPayload(payload: FormPayload) {
-  return Object.fromEntries(Object.entries(payload).filter(([key, item]) => !(key.includes('password') || key.includes('secret') || key.includes('access_key')) || item !== ''))
+  return Object.fromEntries(Object.entries(payload).filter(([key, item]) => !(key.includes('password') || key.includes('secret') || key.includes('access_key') || key.includes('api_key')) || item !== ''))
+}
+
+function aiFeatureLabel(feature: string) {
+  return feature.split('_').map((word) => word[0]?.toUpperCase() + word.slice(1)).join(' ')
 }
 
 export function SettingsPage() {
@@ -22,6 +26,7 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
+  const [testingAi, setTestingAi] = useState(false)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError('')
@@ -66,7 +71,15 @@ export function SettingsPage() {
       { name: 'local_upload_path', label: 'Local upload path' },
       { name: 'local_public_url', label: 'Local public URL', type: 'url', wide: true },
     ],
-  }), [clients])
+    ai: [
+      { name: 'openrouter_api_key', label: 'OpenRouter API key', type: 'password', wide: true, help: settings?.has_openrouter_api_key ? 'A key is saved. Leave blank to keep it.' : 'Stored encrypted and never returned to the browser.' },
+      { name: 'openrouter_model', label: 'OpenRouter model ID', required: true, wide: true, placeholder: 'provider/model-name', help: 'Enter the exact model ID from OpenRouter. No model is selected automatically.' },
+      { name: 'ai_monthly_budget_usd', label: 'Monthly budget (USD)', type: 'number', min: 0.01, step: 0.01 },
+      { name: 'ai_max_output_tokens', label: 'Maximum response tokens', type: 'number', min: 100 },
+      { name: 'ai_request_timeout_seconds', label: 'Request timeout (seconds)', type: 'number', min: 10 },
+      { name: 'ai_inactivity_hours', label: 'Challenge response window (hours)', type: 'number', min: 1, help: 'Unanswered AI challenges are rejected after this period.' },
+    ],
+  }), [clients, settings?.has_openrouter_api_key])
 
   const keys = specs[section].map((field) => field.name)
   const initial = Object.fromEntries(keys.map((key) => [key, settings?.[key] as string | number | boolean | null | undefined])) as FormPayload
@@ -88,5 +101,22 @@ export function SettingsPage() {
   }
 
   const canEdit = can('settings.edit')
-  return <div><PageHeader eyebrow="Administration" title="Settings" description="System behavior, outgoing email, and file storage." /><SettingsNav />{error && <ErrorBanner message={error} onRetry={() => void load()} />}{saved && <div className="success-banner">{saved}</div>}<div className="settings-layout"><aside className="settings-sections">{(['system', 'smtp', 'storage'] as SettingsSection[]).map((item) => <button className={section === item ? 'active' : ''} onClick={() => { setSection(item); setError(''); setSaved('') }} key={item}>{item === 'smtp' ? 'Outgoing email' : item[0].toUpperCase() + item.slice(1)}</button>)}</aside><Panel className="settings-form-panel" title={section === 'system' ? 'System preferences' : section === 'smtp' ? 'Outgoing email' : 'File storage'}>{loading ? <div className="panel-loading"><span className="spinner" /> Loading settings…</div> : settings ? <EntityForm key={section} fields={specs[section].map((field) => ({ ...field, disabled: !canEdit }))} initialValues={initial} busy={busy} submitDisabled={!canEdit} submitLabel="Save changes" onSubmit={save} extra={!canEdit ? <p className="read-only-note">Your role can view these settings but cannot change them.</p> : undefined} /> : null}</Panel></div></div>
+  const testAi = async () => {
+    setTestingAi(true); setError(''); setSaved('')
+    try {
+      await api.post('/api/settings/ai/test')
+      setSaved('OpenRouter connection succeeded.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'OpenRouter connection failed.') }
+    finally { setTestingAi(false) }
+  }
+  const aiExtra = section === 'ai' && settings ? <div className="ai-settings-summary">
+    <p><strong>This month:</strong> ${Number(settings.ai_current_month_cost_usd ?? 0).toFixed(4)} of ${Number(settings.ai_monthly_budget_usd ?? 0).toFixed(2)}</p>
+    {(settings.ai_current_month_usage_by_feature?.length ?? 0) > 0 && <div className="ai-usage-breakdown" aria-label="AI usage by feature">
+      {settings.ai_current_month_usage_by_feature?.map((usage) => <p key={usage.feature}><span>{aiFeatureLabel(usage.feature)}</span><strong>${Number(usage.cost_usd).toFixed(4)} · {usage.calls} call{usage.calls === 1 ? '' : 's'}</strong></p>)}
+    </div>}
+    <p>Task data is sent with zero-data-retention routing. Each AI feature must be enabled per project.</p>
+    {canEdit && <button type="button" className="btn btn-quiet" disabled={testingAi || !settings.ai_configured} onClick={() => void testAi()}>{testingAi ? 'Testing…' : 'Test saved connection'}</button>}
+  </div> : undefined
+  const title = section === 'system' ? 'System preferences' : section === 'smtp' ? 'Outgoing email' : section === 'storage' ? 'File storage' : 'AI project manager'
+  return <div><PageHeader eyebrow="Administration" title="Settings" description="System behavior, integrations, outgoing email, and file storage." /><SettingsNav />{error && <ErrorBanner message={error} onRetry={() => void load()} />}{saved && <div className="success-banner">{saved}</div>}<div className="settings-layout"><aside className="settings-sections">{(['system', 'smtp', 'storage', 'ai'] as SettingsSection[]).map((item) => <button className={section === item ? 'active' : ''} onClick={() => { setSection(item); setError(''); setSaved('') }} key={item}>{item === 'smtp' ? 'Outgoing email' : item === 'ai' ? 'AI project manager' : item[0].toUpperCase() + item.slice(1)}</button>)}</aside><Panel className="settings-form-panel" title={title}>{loading ? <div className="panel-loading"><span className="spinner" /> Loading settings…</div> : settings ? <EntityForm key={section} fields={specs[section].map((field) => ({ ...field, disabled: !canEdit }))} initialValues={initial} busy={busy} submitDisabled={!canEdit} submitLabel="Save changes" onSubmit={save} extra={!canEdit ? <p className="read-only-note">Your role can view these settings but cannot change them.</p> : aiExtra} /> : null}</Panel></div></div>
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -12,7 +13,14 @@ class Project extends DomainModel
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'due_date' => 'date', 'archived_at' => 'datetime'];
+        return [
+            'start_date' => 'date',
+            'due_date' => 'date',
+            'archived_at' => 'datetime',
+            'ai_estimate_review_enabled' => 'boolean',
+            'ai_task_creation_enabled' => 'boolean',
+            'ai_memory_enabled' => 'boolean',
+        ];
     }
 
     public function client(): BelongsTo
@@ -33,5 +41,25 @@ class Project extends DomainModel
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    public function taskFolders(): HasMany
+    {
+        return $this->hasMany(TaskFolder::class);
+    }
+
+    public function members(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class)->withPivot('assigned_by')->withTimestamps();
+    }
+
+    public function aiProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ProjectAiProfile::class);
+    }
+
+    public function memoryEntries(): HasMany
+    {
+        return $this->hasMany(ProjectMemoryEntry::class);
     }
 }

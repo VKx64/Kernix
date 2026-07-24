@@ -55,6 +55,24 @@ class DatabaseSeeder extends Seeder
                 DB::table('field_values')->insertOrIgnore(['id' => $id++, 'field_id' => $fieldId, 'label' => $label, 'key_name' => $key, 'color' => $color, 'status' => 'active', 'sort_order' => ($i + 1) * 10, 'created_at' => $now, 'updated_at' => $now]);
             }
         }
+        $taskStatuses = [
+            ['planning', 'Planning', '#8b5cf6', 10],
+            ['pending', 'Pending', '#64748b', 20],
+            ['in_progress', 'In Progress', '#3b82f6', 30],
+            ['quality_check', 'Quality Check', '#06b6d4', 40],
+            ['needs_correction', 'Needs Correction', '#f97316', 50],
+            ['blocked', 'Blocked', '#ef4444', 60],
+            ['complete', 'Complete', '#22c55e', 70],
+        ];
+        foreach ($taskStatuses as [$key, $label, $color, $sortOrder]) {
+            $statusQuery = DB::table('field_values')->where('field_id', 3)->where('key_name', $key);
+            $values = ['label' => $label, 'color' => $color, 'status' => 'active', 'sort_order' => $sortOrder, 'deleted_at' => null, 'updated_at' => $now];
+            if ($statusQuery->exists()) {
+                $statusQuery->update($values);
+            } else {
+                DB::table('field_values')->insert($values + ['field_id' => 3, 'key_name' => $key, 'created_at' => $now]);
+            }
+        }
 
         if ($adminPassword !== null) {
             DB::table('users')->insertOrIgnore([

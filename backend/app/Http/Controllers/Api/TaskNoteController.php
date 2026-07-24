@@ -24,7 +24,7 @@ class TaskNoteController extends ApiController
         if ($request->integer('time_minutes') > 0) {
             $this->permission($request, 'tasks.log_time');
         }
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $data = $this->validated($request);
         $this->validateSubtask($task, $data['subtask_id'] ?? null);
@@ -47,7 +47,7 @@ class TaskNoteController extends ApiController
         $this->assertNested($task, $note);
         $this->assertNoteMutable($request, $note);
         $this->withinClient($task);
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $data = $this->validated($request, true);
         if (array_key_exists('subtask_id', $data)) {
             $this->validateSubtask($task, $data['subtask_id']);
@@ -97,7 +97,7 @@ class TaskNoteController extends ApiController
         $this->assertNested($task, $note);
         $this->assertNoteMutable($request, $note);
         $this->withinClient($task);
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         DB::transaction(function () use ($task, $note) {
             $lockedTask = Task::query()->lockForUpdate()->findOrFail($task->id);
             $lockedNote = TaskNote::query()->lockForUpdate()->findOrFail($note->id);

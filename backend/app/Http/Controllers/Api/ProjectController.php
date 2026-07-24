@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Client;
 use App\Models\Project;
+use App\Models\SystemSetting;
+use App\Models\User;
 use App\Support\SingleClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +16,7 @@ class ProjectController extends ApiController
     public function index(Request $request): JsonResponse
     {
         $this->permission($request, 'projects.view');
-        $query = $this->archived(Project::with(['client', 'status', 'manager'])->withCount(['tasks', 'tasks as done_count' => fn ($q) => $q->whereHas('status', fn ($s) => $s->where('key_name', 'complete'))]), $request);
+        $query = $this->archived(Project::with(['client', 'status', 'manager'])->withCount(['tasks', 'tasks as done_count' => fn ($q) => $q->whereHas('status', fn ($s) => $s->where('key_name', 'complete')), 'memoryEntries as pending_memory_count' => fn ($q) => $q->where('status', 'pending')]), $request);
         if (SingleClient::enabled()) {
             $query->where('client_id', SingleClient::id() ?? 0);
         } elseif ($request->filled('client_id')) {
@@ -36,7 +38,9 @@ class ProjectController extends ApiController
     public function store(Request $request): JsonResponse
     {
         $this->permission($request, 'projects.create');
-        $project = Project::create($this->withForcedClient($this->validated($request)) + ['created_by' => $request->user()->id]);
+        $data = $this->withForcedClient($this->validated($request));
+        $this->ensureAiReviewReady($data);
+        $project = Project::create($data + ['created_by' => $request->user()->id]);
         $this->audit($request, 'project.create', $project, $project->toArray());
 
         return $this->data($this->present($project), 201);
@@ -55,7 +59,13 @@ class ProjectController extends ApiController
         $this->permission($request, 'projects.edit');
         $this->withinClient($project->client_id);
         $before = $project->getAttributes();
-        $project->update($this->withForcedClient($this->validated($request, true)));
+        $data = $this->withForcedClient($this->validated($request, true));
+        if (array_key_exists('ai_memory_enabled', $data)) {
+            $this->permission($request, 'projects.manage_ai_memory');
+            abort_unless($request->user()->isAdmin() || (int) $project->manager_user_id === (int) $request->user()->id, 403, 'Only this project manager can change AI memory settings.');
+        }
+        $this->ensureAiReviewReady($data, $project);
+        $project->update($data);
         $this->audit($request, 'project.update', $project, ['before' => $before, 'after' => $project->getAttributes()]);
 
         return $this->data($this->present($project));
@@ -90,7 +100,7 @@ class ProjectController extends ApiController
 
     private function present(Project $project): Project
     {
-        $project->load(['client', 'status', 'manager'])->loadCount(['tasks', 'tasks as done_count' => fn ($q) => $q->whereHas('status', fn ($s) => $s->where('key_name', 'complete'))]);
+        $project->load(['client', 'status', 'manager'])->loadCount(['tasks', 'tasks as done_count' => fn ($q) => $q->whereHas('status', fn ($s) => $s->where('key_name', 'complete')), 'memoryEntries as pending_memory_count' => fn ($q) => $q->where('status', 'pending')]);
         $project->setRelation('client', $this->summaryRelation($this->clientSummary($project->client)));
         $project->setRelation('manager', $this->summaryRelation($this->userSummary($project->manager)));
         $project->setRelation('status_value', $project->status);
@@ -105,7 +115,38 @@ class ProjectController extends ApiController
             'name' => [$partial ? 'sometimes' : 'required', 'string', 'max:191'], 'description' => ['sometimes', 'nullable', 'string'],
             'status_value_id' => ['sometimes', 'nullable', $this->fieldValueRule('project_status')], 'manager_user_id' => ['sometimes', 'nullable', Rule::exists('users', 'id')->where('status', 'active')->whereNull('archived_at')->whereNull('deleted_at')],
             'start_date' => ['sometimes', 'nullable', 'date'], 'due_date' => ['sometimes', 'nullable', 'date', 'after_or_equal:start_date'],
+            'ai_estimate_review_enabled' => ['sometimes', 'boolean'],
+            'ai_estimate_review_rules' => ['sometimes', 'nullable', 'string', 'max:10000'],
+            'ai_task_creation_enabled' => ['sometimes', 'boolean'],
+            'ai_memory_enabled' => ['sometimes', 'boolean'],
         ]);
+    }
+
+    private function ensureAiReviewReady(array $data, ?Project $project = null): void
+    {
+        $reviewEnabled = array_key_exists('ai_estimate_review_enabled', $data) ? (bool) $data['ai_estimate_review_enabled'] : (bool) $project?->ai_estimate_review_enabled;
+        $enabled = $reviewEnabled
+            || (bool) ($data['ai_task_creation_enabled'] ?? $project?->ai_task_creation_enabled)
+            || (bool) ($data['ai_memory_enabled'] ?? $project?->ai_memory_enabled);
+        if (! $enabled) {
+            return;
+        }
+        $settings = SystemSetting::firstOrFail();
+        abort_unless(
+            filled($settings->openrouter_api_key) && filled($settings->openrouter_model),
+            409,
+            'Configure the OpenRouter API key and model before enabling project AI features.',
+        );
+        if (! $reviewEnabled) {
+            return;
+        }
+        $managerId = array_key_exists('manager_user_id', $data) ? $data['manager_user_id'] : $project?->manager_user_id;
+        $manager = User::query()->with('role.permissions')->whereKey($managerId)->where('status', 'active')->whereNull('archived_at')->first();
+        abort_unless(
+            $manager?->canDo('tasks.review_estimate_requests'),
+            409,
+            'Assign an active project manager with estimate-review permission before enabling AI estimate review.',
+        );
     }
 
     private function withForcedClient(array $data): array

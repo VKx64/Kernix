@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { SettingsNav, UsersPage } from './EntityPages'
@@ -13,9 +13,13 @@ const collectionState = vi.hoisted(() => ({
   error: '',
   reload,
 }))
+const bootstrapState = vi.hoisted(() => ({
+  data: { clients: [], coworkers: [], roles: [], fields: [], projects: [] } as Record<string, unknown[]>,
+}))
 const apiGet = vi.hoisted(() => vi.fn(async (path: string) => path === '/api/bootstrap'
-  ? { data: { clients: [], coworkers: [], roles: [], fields: [] } }
+  ? { data: bootstrapState.data }
   : { data: [], current_page: 1, last_page: 1, per_page: 100, total: 0 }))
+const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 
 vi.mock('../auth/AuthProvider', () => ({
   useAuth: () => ({ user: authState.user, status: 'authenticated', login: vi.fn(), logout: vi.fn(), refresh: vi.fn() }),
@@ -27,7 +31,7 @@ vi.mock('../lib/useCollection', () => ({
 
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
-  return { ...actual, api: { ...actual.api, get: apiGet } }
+  return { ...actual, api: { ...actual.api, get: apiGet, post: apiPost } }
 })
 
 describe('administration permission controls', () => {
@@ -45,6 +49,8 @@ describe('administration permission controls', () => {
     collectionState.meta = { page: 1, perPage: 20, total: 0, lastPage: 1 }
     reload.mockClear()
     apiGet.mockClear()
+    apiPost.mockClear()
+    bootstrapState.data = { clients: [], coworkers: [], roles: [], fields: [], projects: [] }
   })
 
   it('renders only Administration tabs granted to the current role', () => {
@@ -67,6 +73,8 @@ describe('administration permission controls', () => {
 
     render(<MemoryRouter initialEntries={['/settings/users']}><UsersPage /></MemoryRouter>)
 
+    expect(screen.queryByRole('button', { name: 'Invite user' })).not.toBeInTheDocument()
+
     const adminRow = screen.getByText('@admin').closest('tr')
     const selfRow = screen.getByText('@manager').closest('tr')
     const workerRow = screen.getByText('@worker').closest('tr')
@@ -86,5 +94,56 @@ describe('administration permission controls', () => {
     expect(screen.queryByLabelText('Personal email')).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/New password/i)).not.toBeInTheDocument()
     expect(screen.getByLabelText('Status')).toBeInTheDocument()
+  })
+
+  it('lets an administrator create a role and project-bound invitation', async () => {
+    const actor = userEvent.setup()
+    authState.user = {
+      id: 1,
+      username: 'admin',
+      first_name: 'Ada',
+      last_name: 'Admin',
+      is_admin: true,
+      permissions: [],
+    }
+    bootstrapState.data = {
+      clients: [],
+      coworkers: [],
+      fields: [],
+      roles: [{ id: 4, name: 'Producer' }],
+      projects: [{ id: 12, name: 'Launch campaign', client: { id: 2, name: 'Northwind' } }],
+    }
+    apiPost.mockResolvedValueOnce({
+      data: {
+        id: 9,
+        email: 'new.person@example.com',
+        status: 'pending',
+        expires_at: '2026-07-23T12:00:00Z',
+        role: { id: 4, name: 'Producer' },
+        projects: [{ id: 12, name: 'Launch campaign' }],
+        invite_url: 'https://example.test/invite/secret-token',
+      },
+    })
+
+    render(<MemoryRouter initialEntries={['/settings/users']}><UsersPage /></MemoryRouter>)
+
+    await actor.click(screen.getByRole('button', { name: 'Invite user' }))
+    expect(await screen.findByRole('heading', { name: 'Invite a user' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('Role')).not.toBeDisabled())
+    await actor.type(screen.getByLabelText(/Email/), 'new.person@example.com')
+    await actor.selectOptions(screen.getByLabelText('Role'), '4')
+    await actor.click(screen.getByRole('checkbox', { name: /Launch campaign/i }))
+    await actor.click(screen.getByRole('button', { name: 'Create invitation' }))
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/invitations', {
+      email: 'new.person@example.com',
+      role_id: 4,
+      project_ids: [12],
+      expires_in_days: 7,
+    }))
+    expect(await screen.findByRole('heading', { name: 'Invitation ready' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Invitation link')).toHaveValue('https://example.test/invite/secret-token')
+    expect(screen.getByText('Producer')).toBeInTheDocument()
+    expect(screen.getByText('Launch campaign')).toBeInTheDocument()
   })
 })

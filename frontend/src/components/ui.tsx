@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
 import type { EntityId, FormPayload, FormValue, PaginationMeta, UserSummary } from '../types/api'
 import { displayName, fieldLabel } from '../lib/api'
@@ -107,6 +107,8 @@ export interface Column<T> {
   header: string
   render: (row: T) => ReactNode
   className?: string
+  width?: number
+  minWidth?: number
 }
 
 export function DataTable<T>({
@@ -131,7 +133,17 @@ export function DataTable<T>({
 
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table
+        className="data-table"
+        style={columns.some((column) => column.width)
+          ? { minWidth: Math.max(520, columns.reduce((total, column) => total + (column.width ?? column.minWidth ?? 120), 0)), tableLayout: 'fixed' }
+          : undefined}
+      >
+        {columns.some((column) => column.width) && (
+          <colgroup>
+            {columns.map((column) => <col key={column.key} style={{ width: column.width, minWidth: column.minWidth }} />)}
+          </colgroup>
+        )}
         <thead>
           <tr>{columns.map((column) => <th className={column.className} key={column.key}>{column.header}</th>)}</tr>
         </thead>
@@ -202,29 +214,88 @@ export function Modal({
   open,
   onClose,
   title,
+  description,
   children,
   size = 'md',
+  closeDisabled = false,
+  className = '',
 }: {
   open: boolean
   onClose: () => void
   title: string
+  description?: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg'
+  closeDisabled?: boolean
+  className?: string
 }) {
+  const titleId = useId()
+  const descriptionId = useId()
+  const modalRef = useRef<HTMLElement>(null)
+
   useEffect(() => {
     if (!open) return
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const bodyOverflow = document.body.style.overflow
+    const rootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = bodyOverflow
+      document.documentElement.style.overflow = rootOverflow
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const preferred = modalRef.current?.querySelector<HTMLElement>('[data-autofocus]')
+    const firstControl = modalRef.current?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')
+    ;(preferred ?? firstControl ?? modalRef.current)?.focus()
+
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (!closeDisabled) onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !modalRef.current) return
+
+      const controls = Array.from(modalRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
+      if (!controls.length) {
+        event.preventDefault()
+        modalRef.current.focus()
+        return
+      }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !modalRef.current.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !modalRef.current.contains(document.activeElement))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [closeDisabled, onClose, open])
 
   if (!open) return null
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}>
-      <section className={`modal modal-${size}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div className="modal-backdrop" onMouseDown={(event) => { if (!closeDisabled && event.currentTarget === event.target) onClose() }}>
+      <section className={`modal modal-${size} ${className}`.trim()} ref={modalRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} tabIndex={-1}>
         <header className="modal-header">
-          <h2>{title}</h2>
-          <button className="icon-button" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
+          <div className="modal-header-copy">
+            <h2 id={titleId}>{title}</h2>
+            {description && <p id={descriptionId}>{description}</p>}
+          </div>
+          <button className="icon-button" disabled={closeDisabled} onClick={onClose} aria-label="Close"><Icon name="close" /></button>
         </header>
         {children}
       </section>
@@ -245,6 +316,7 @@ export interface FormFieldSpec {
   step?: number
   wide?: boolean
   disabled?: boolean
+  clearOnChange?: string[]
 }
 
 export function EntityForm({
@@ -255,6 +327,7 @@ export function EntityForm({
   submitDisabled,
   error,
   onSubmit,
+  onValuesChange,
   onCancel,
   extra,
 }: {
@@ -265,6 +338,7 @@ export function EntityForm({
   submitDisabled?: boolean
   error?: string
   onSubmit: (values: FormPayload) => void | Promise<void>
+  onValuesChange?: (values: FormPayload) => void
   onCancel?: () => void
   extra?: ReactNode
 }) {
@@ -283,7 +357,12 @@ export function EntityForm({
         {fields.map((field) => {
           const id = `${formId}-${field.name}`
           const current = values[field.name]
-          const set = (value: FormValue) => setValues((old) => ({ ...old, [field.name]: value }))
+          const set = (value: FormValue) => {
+            const next = { ...values, [field.name]: value }
+            field.clearOnChange?.forEach((name) => { next[name] = '' })
+            setValues(next)
+            onValuesChange?.(next)
+          }
           return (
             <label className={`form-field ${field.wide || field.type === 'textarea' ? 'wide' : ''} ${field.type === 'checkbox' ? 'checkbox-field' : ''}`} key={field.name} htmlFor={id}>
               {field.type === 'checkbox' ? (

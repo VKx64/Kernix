@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\FieldValue;
 use App\Models\Project;
@@ -130,6 +131,63 @@ class TaskPermissionBoundariesTest extends TestCase
             'estimated_minutes' => 90,
         ]);
         $this->assertNotSame($creator->id, $assigner->id);
+    }
+
+    public function test_task_creation_can_atomically_include_title_only_subtask_drafts(): void
+    {
+        $creator = $this->actAs(['tasks.create', 'tasks.subtasks']);
+        $pendingStatus = $this->taskStatus('pending');
+
+        $response = $this->postJson('/api/tasks', [
+            'project_id' => $this->project->id,
+            'title' => 'Task with nested drafts',
+            'subtasks' => [
+                ['title' => 'First nested draft'],
+                ['title' => 'Second nested draft'],
+            ],
+        ])->assertCreated()
+            ->assertJsonCount(2, 'data.subtasks')
+            ->assertJsonPath('data.subtasks.0.title', 'First nested draft')
+            ->assertJsonPath('data.subtasks.1.title', 'Second nested draft');
+
+        $taskId = $response->json('data.id');
+        $this->assertDatabaseHas('task_subtasks', [
+            'task_id' => $taskId,
+            'title' => 'First nested draft',
+            'status_value_id' => $pendingStatus->id,
+            'sort_order' => 10,
+            'actual_minutes' => 0,
+            'created_by' => $creator->id,
+        ]);
+        $this->assertDatabaseHas('task_subtasks', [
+            'task_id' => $taskId,
+            'title' => 'Second nested draft',
+            'status_value_id' => $pendingStatus->id,
+            'sort_order' => 20,
+            'actual_minutes' => 0,
+            'created_by' => $creator->id,
+        ]);
+        $this->assertSame(2, AuditLog::query()
+            ->where('action', 'task.subtask.create')
+            ->where('entity_type', 'Task')
+            ->where('entity_id', $taskId)
+            ->count());
+    }
+
+    public function test_nested_task_creation_requires_subtask_permission_before_clock_guard_and_creates_nothing(): void
+    {
+        $this->actAs(['tasks.create'], false);
+
+        $this->postJson('/api/tasks', [
+            'project_id' => $this->project->id,
+            'title' => 'Unauthorized nested task',
+            'subtasks' => [
+                ['title' => 'Unauthorized nested draft'],
+            ],
+        ])->assertForbidden();
+
+        $this->assertDatabaseMissing('tasks', ['title' => 'Unauthorized nested task']);
+        $this->assertDatabaseMissing('task_subtasks', ['title' => 'Unauthorized nested draft']);
     }
 
     public function test_subtask_structure_status_assignment_and_estimate_permissions_are_separate(): void
@@ -314,6 +372,80 @@ class TaskPermissionBoundariesTest extends TestCase
         $this->deleteJson("/api/tasks/{$this->task->id}/emails/{$sentId}")
             ->assertNoContent();
         $this->assertSoftDeleted('task_emails', ['id' => $sentId]);
+    }
+
+    public function test_active_break_blocks_every_task_mutation_and_cannot_be_overridden(): void
+    {
+        Sanctum::actingAs($this->admin);
+        $session = TimeSession::query()->create([
+            'user_id' => $this->admin->id,
+            'clock_in_at' => now(),
+        ]);
+        $session->breaks()->create(['start_at' => now()]);
+
+        $this->patchJson("/api/tasks/{$this->task->id}", [
+            'title' => 'Work attempted during break',
+            'admin_override' => true,
+        ])->assertStatus(409)->assertJsonPath('code', 'BREAK_ACTIVE');
+
+        $this->postJson("/api/tasks/{$this->task->id}/subtasks", [
+            'title' => 'Break-time subtask',
+            'admin_override' => true,
+        ])->assertStatus(409)->assertJsonPath('code', 'BREAK_ACTIVE');
+
+        $this->assertDatabaseMissing('tasks', ['title' => 'Work attempted during break']);
+        $this->assertDatabaseMissing('task_subtasks', ['title' => 'Break-time subtask']);
+        $this->getJson('/api/time')
+            ->assertOk()
+            ->assertJsonPath('data.can_mutate_tasks', false)
+            ->assertJsonPath('data.can_admin_override', false);
+    }
+
+    public function test_archived_tasks_are_filterable_read_only_restorable_and_deletable(): void
+    {
+        $this->actAs(['tasks.archive', 'tasks.edit', 'tasks.subtasks']);
+
+        $this->postJson("/api/tasks/{$this->task->id}/archive")
+            ->assertOk()
+            ->assertJsonPath('data.id', $this->task->id);
+        $this->getJson('/api/tasks')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/tasks?archived=only')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $this->task->id);
+
+        $this->patchJson("/api/tasks/{$this->task->id}", ['title' => 'Archived edit'])
+            ->assertStatus(409)->assertJsonPath('code', 'TASK_ARCHIVED');
+        $this->postJson("/api/tasks/{$this->task->id}/subtasks", ['title' => 'Archived subtask'])
+            ->assertStatus(409)->assertJsonPath('code', 'TASK_ARCHIVED');
+
+        $this->postJson("/api/tasks/{$this->task->id}/restore")
+            ->assertOk()
+            ->assertJsonPath('data.archived_at', null);
+        $this->patchJson("/api/tasks/{$this->task->id}", ['title' => 'Restored edit'])->assertOk();
+        $this->deleteJson("/api/tasks/{$this->task->id}")->assertNoContent();
+        $this->assertSoftDeleted('tasks', ['id' => $this->task->id]);
+    }
+
+    public function test_seeded_task_workflow_and_assignee_lookup_are_explicit(): void
+    {
+        $assigner = $this->actAs(['tasks.assign']);
+
+        $this->assertSame(
+            ['planning', 'pending', 'in_progress', 'quality_check', 'needs_correction', 'blocked', 'complete'],
+            FieldValue::query()
+                ->whereHas('field', fn ($field) => $field->where('key_name', 'task_status'))
+                ->orderBy('sort_order')
+                ->pluck('key_name')
+                ->all(),
+        );
+
+        $response = $this->getJson('/api/bootstrap')->assertOk();
+        $assignees = collect($response->json('data.assignees'));
+        $this->assertTrue($assignees->contains(fn (array $user) => (int) $user['id'] === (int) $assigner->id));
+        $this->assertSame($response->json('data.assignees'), $response->json('data.coworkers'));
+        $this->assertArrayHasKey('first_name', $assignees->first());
+        $this->assertArrayNotHasKey('key_name', $assignees->first());
     }
 
     private function actAs(array $permissions, bool $clockedIn = true): User

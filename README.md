@@ -1,10 +1,12 @@
 # Kernix — Laravel + Vite local stack
 
-Kernix is split into three independently containerized services:
+Kernix is split into five independently containerized services:
 
 - `frontend`: React 19 + TypeScript, built with Vite 8 and served by Nginx
 - `backend`: Laravel 13 REST API with Sanctum cookie authentication
 - `mysql`: MySQL 8.4, initialized by Laravel migrations and seeders
+- `queue`: Laravel's asynchronous worker, including AI estimate reviews
+- `scheduler`: Laravel's scheduler for time-based workflow actions
 
 The extracted PHP application is still present as a fallback. It uses a
 different Compose project, ports, and volumes, so its database is not reused or
@@ -78,9 +80,44 @@ Fresh local databases create these editable starter roles once. Later permission
 | --- | --- |
 | Project Management Role | Full task/project operations, client/contact maintenance, team time, user directory, and analytics; no system administration or user lifecycle changes |
 | Employee Role | Dashboard, messages, personal time tracking, task status, comments/time logs, and subtasks |
-| Client Role | Dashboard only until project membership and client-specific record isolation are implemented |
+| Client Role | Dashboard only until membership-based project and client record isolation is enforced |
 
 Do not grant `tasks.view` or `projects.view` to external client accounts yet: those permissions currently expose every workspace record for that resource, not only records belonging to one client.
+
+## Invitation onboarding
+
+Administrators can open **Administration → Users → Invite user**, choose an
+email address, role, projects, and an expiry, then copy the generated link to
+the recipient. The recipient supplies their own name, username, and password;
+the account is created with the selected role and project memberships.
+
+Invitation links are bearer secrets. They expire, can be used only once, and
+should be shared privately. Only a one-way token hash is stored by the server.
+Project membership records assignments, while resource visibility continues to
+follow the existing role permissions. In particular, `projects.view` and
+`tasks.view` remain workspace-wide until membership-based isolation is added
+across every related API.
+
+## AI project manager
+
+Administrators configure an encrypted OpenRouter API key, an exact model ID,
+monthly spend cap, output cap, timeout, and challenge response window under
+**Administration → Settings → AI project manager**. AI estimate review is then
+enabled separately while editing each project; an eligible human project
+manager remains required for oversight.
+
+Each employee request or employee reply results in at most one OpenRouter call.
+The AI can challenge, approve (including a smaller counteroffer), or reject.
+Provider failures and exhausted budgets leave the request pending for a human.
+Managers and administrators can override a completed AI decision with a
+required reason, and the append-only decision history records both decisions.
+
+Only task-scoped evidence is sent: task details, estimate and logged time,
+subtasks, prior estimate requests for that task, and the current request's
+discussion. OpenRouter calls require zero-data-retention routing and do not use
+tools, plugins, browsing, attachments, emails, unrelated tasks, or employee
+history. Unanswered AI challenges are automatically rejected after the
+configured window (48 hours by default).
 
 Ports and local credentials can be changed in `.env`. If `FRONTEND_PORT` is
 changed, update both `SANCTUM_STATEFUL_DOMAINS` and `CORS_ALLOWED_ORIGINS` with

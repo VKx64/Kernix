@@ -17,7 +17,7 @@ class TaskSubtaskController extends ApiController
     {
         $this->permission($request, 'tasks.subtasks');
         $this->authorizeRequestedFields($request, true);
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $data = $this->validated($request);
         $data['status_value_id'] ??= $this->defaultStatus();
@@ -32,7 +32,7 @@ class TaskSubtaskController extends ApiController
     public function update(Request $request, Task $task, TaskSubtask $subtask): JsonResponse
     {
         $this->authorizeRequestedFields($request);
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->assertNested($task, $subtask);
         $this->withinClient($task);
         $data = $this->validated($request, true);
@@ -46,7 +46,7 @@ class TaskSubtaskController extends ApiController
     public function destroy(Request $request, Task $task, TaskSubtask $subtask): JsonResponse
     {
         $this->permission($request, 'tasks.subtasks');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->assertNested($task, $subtask);
         $this->withinClient($task);
         $subtask->delete();
@@ -58,7 +58,7 @@ class TaskSubtaskController extends ApiController
     public function complete(Request $request, Task $task, TaskSubtask $subtask): JsonResponse
     {
         $this->permission($request, 'tasks.change_status');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->assertNested($task, $subtask);
         $this->withinClient($task);
         $complete = $request->boolean('complete', true);

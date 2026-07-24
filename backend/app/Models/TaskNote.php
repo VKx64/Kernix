@@ -40,6 +40,26 @@ class TaskNote extends DomainModel
         return $this->belongsTo(User::class, 'assigned_user_id');
     }
 
+    public function conversation(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'conversation_id');
+    }
+
+    public function replies(): HasMany
+    {
+        return $this->hasMany(self::class, 'conversation_id');
+    }
+
+    public function estimateRequest(): BelongsTo
+    {
+        return $this->belongsTo(TaskEstimateRequest::class, 'estimate_request_id');
+    }
+
+    public function aiReviewRun(): BelongsTo
+    {
+        return $this->belongsTo(AiReviewRun::class);
+    }
+
     public function attachments(): HasMany
     {
         return $this->hasMany(NoteAttachment::class, 'note_id');
