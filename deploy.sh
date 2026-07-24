@@ -24,6 +24,11 @@ nvm use 22 >/dev/null
 
 echo "==> Pulling latest code"
 cd "$REPO_DIR"
+# chmod (below) and cPanel's Git deploy flow both flip file-mode bits on
+# already-tracked files (e.g. .gitignore placeholders). Ignoring mode
+# changes keeps `git status` clean so cPanel's "Deploy HEAD Commit" button
+# doesn't get blocked by noise that isn't a real content change.
+git config core.fileMode false
 git pull
 
 echo "==> Installing backend dependencies"
