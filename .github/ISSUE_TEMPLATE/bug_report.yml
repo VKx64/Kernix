@@ -1,0 +1,74 @@
+name: Bug Report
+description: Report a problem with Kernix
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's wrong?
+      placeholder: Describe the bug clearly.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low (cosmetic, minor annoyance)
+        - Medium (feature partially broken, workaround exists)
+        - High (feature broken, no workaround)
+        - Critical (data loss, security, site down)
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to...
+        2. Click...
+        3. See error...
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+      placeholder: "Expected: ... / Actual: ..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Frontend (web app)
+        - Backend (API)
+        - Browser extension
+        - Deployment / infra
+        - Other
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "e.g. Chrome 128 on Windows 11, or production/dev"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots / logs
+      description: Drag & drop images here, or paste error output.
+    validations:
+      required: false
