@@ -12,6 +12,7 @@ use App\Services\AiUsageService;
 use App\Services\OpenRouterClient;
 use App\Services\OpenRouterException;
 use App\Services\ProjectAiContext;
+use App\Support\AiFeatures;
 use App\Support\TaskMutationGuard;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -58,6 +59,10 @@ class ProcessAiTaskGeneration implements ShouldBeEncrypted, ShouldQueue
         }
 
         $settings = SystemSetting::firstOrFail();
+        if (! AiFeatures::enabled($settings, AiFeatures::TASK_CREATION)) {
+            $this->failGeneration($generation, 'feature_disabled', 'AI task creation is switched off for this workspace.');
+            return;
+        }
         if (blank($settings->openrouter_api_key) || blank($settings->openrouter_model)) {
             $this->failGeneration($generation, 'not_configured', 'OpenRouter has not been configured.');
             return;
@@ -77,8 +82,8 @@ class ProcessAiTaskGeneration implements ShouldBeEncrypted, ShouldQueue
             // One original user message or clarification reply always causes exactly one provider call.
             $result = $client->structured(
                 $settings,
-                $prompt->system(),
-                $prompt->context($generation, $actor, $context->trusted($project), $allowedUsers->map(fn ($user) => ['id' => $user->id, 'name' => trim($user->first_name.' '.$user->last_name) ?: $user->username])->all()),
+                $prompt->system($settings),
+                $prompt->context($generation, $actor, $context->forTaskCreation($project), $allowedUsers->map(fn ($user) => ['id' => $user->id, 'name' => trim($user->first_name.' '.$user->last_name) ?: $user->username])->all()),
                 'ai_task_generation',
                 $prompt->schema(),
             );

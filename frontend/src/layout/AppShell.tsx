@@ -4,8 +4,8 @@ import { useAuth } from '../auth/AuthProvider'
 import { useWorkspace } from '../auth/WorkspaceProvider'
 import { Icon, type IconName } from '../components/Icon'
 import { Avatar } from '../components/ui'
+import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
 import { api, unwrap } from '../lib/api'
-import { BRAND_MARK, BRAND_NAME } from '../lib/brand'
 import { useCan } from '../lib/permissions'
 import type { ApiEnvelope } from '../types/api'
 
@@ -36,7 +36,7 @@ function formatElapsed(seconds: number) {
 
 export function AppShell() {
   const { user, logout } = useAuth()
-  const { time, timeBusy, timeAction, singleClientMode } = useWorkspace()
+  const { time, timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [timerOpen, setTimerOpen] = useState(false)
@@ -47,7 +47,9 @@ export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
-  const administrationTarget = can('settings.view')
+  // Settings lives under the profile menu only — it is account/admin plumbing,
+  // not one of the workspace areas the sidebar lists.
+  const settingsTarget = can('settings.view')
     ? '/settings'
     : can('users.view')
       ? '/settings/users'
@@ -60,7 +62,6 @@ export function AppShell() {
     if (item.to === '/clients' && singleClientMode) return false
     return !item.permission || can(item.permission)
   })
-  if (administrationTarget) visibleNavigation.push({ to: administrationTarget, label: 'Administration', icon: 'gear' })
 
   const state = time?.state ?? time?.status ?? 'clocked_out'
   const clockedIn = Boolean(time?.clockedIn ?? time?.clocked_in ?? time?.isClockedIn ?? time?.is_clocked_in ?? time?.session ?? ['working', 'clocked_in'].includes(state))
@@ -111,14 +112,13 @@ export function AppShell() {
       <button className={`sidebar-scrim ${mobileOpen ? 'open' : ''}`} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="brand">
-          <span className="brand-mark">{BRAND_MARK}</span>
-          <span className="brand-copy"><strong>{BRAND_NAME}</strong><small>Workspace</small></span>
+          <WorkspaceSwitcher onSwitched={async () => { await refreshWorkspace(); navigate(0) }} />
         </div>
 
         <nav className="main-nav">
           <span className="nav-kicker">Workspace</span>
           {visibleNavigation.map((item) => (
-            <NavLink end={item.to === '/'} className={({ isActive }) => `nav-link ${(isActive || (item.label === 'Administration' && location.pathname.startsWith('/settings'))) ? 'active' : ''}`} key={item.to} to={item.to} onClick={() => setMobileOpen(false)}>
+            <NavLink end={item.to === '/'} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} key={item.to} to={item.to} onClick={() => setMobileOpen(false)}>
               <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
               {item.to === '/messages' && unread > 0 && <b className="nav-count">{unread > 99 ? '99+' : unread}</b>}
@@ -147,40 +147,52 @@ export function AppShell() {
             </form>}
           </div>
           <div className="topbar-actions">
-            {can('time.track') && <div className="popover-wrap">
-              <button className={`timer-trigger ${clockedIn ? 'active' : ''}`} onClick={() => setTimerOpen((open) => !open)}>
-                <span className="live-dot" />
-                <span>{onBreak ? 'Break' : clockedIn ? formatElapsed(elapsed) : 'Clock in'}</span>
-                <Icon name="chevron-down" size={15} />
-              </button>
-              {timerOpen && (
-                <div className="popover timer-popover">
-                  <span className="popover-label">Time tracking</span>
-                  <strong>{clockedIn ? formatElapsed(elapsed) : 'Ready when you are'}</strong>
-                  <p>{onBreak ? 'Your work timer is paused.' : clockedIn ? 'Your work session is active.' : 'Clock in before changing task work.'}</p>
-                  <div className="timer-actions">
-                    {!clockedIn ? (
-                      <button className="btn btn-primary" disabled={timeBusy} onClick={() => void timeAction('clock-in')}><Icon name="play" size={15} /> Clock in</button>
-                    ) : onBreak ? (
-                      <button className="btn btn-primary" disabled={timeBusy} onClick={() => void timeAction('break-end')}><Icon name="play" size={15} /> Resume</button>
-                    ) : (
-                      <button className="btn btn-quiet" disabled={timeBusy} onClick={() => void timeAction('break-start')}><Icon name="pause" size={15} /> Take break</button>
-                    )}
-                    {clockedIn && <button className="btn btn-danger-quiet" disabled={timeBusy} onClick={() => void timeAction('clock-out')}>Clock out</button>}
+            {/* Clocked out: one button, one action. Clocked in: live timer that
+                opens the session controls, so the state is never a guess. */}
+            {can('time.track') && (clockedIn ? (
+              <div className="popover-wrap">
+                <button
+                  className={`clock-pill ${onBreak ? 'is-break' : 'is-running'}`}
+                  aria-expanded={timerOpen}
+                  aria-label={onBreak ? 'On break, open time tracking' : 'Clocked in, open time tracking'}
+                  onClick={() => setTimerOpen((open) => !open)}
+                >
+                  <span className="live-dot" />
+                  <span className="clock-pill-copy">
+                    <small>{onBreak ? 'On break' : 'Clocked in'}</small>
+                    <strong>{formatElapsed(elapsed)}</strong>
+                  </span>
+                  <Icon name="chevron-down" size={14} />
+                </button>
+                {timerOpen && (
+                  <div className="popover timer-popover">
+                    <span className="popover-label">{onBreak ? 'Break in progress' : 'Work session'}</span>
+                    <strong>{formatElapsed(elapsed)}</strong>
+                    <p>{onBreak ? 'Your work timer is paused. Resume to keep changing task work.' : 'Task changes and logged note time are recorded against this session.'}</p>
+                    <div className="timer-actions">
+                      {onBreak
+                        ? <button className="btn btn-primary" disabled={timeBusy} onClick={() => void timeAction('break-end')}><Icon name="play" size={15} /> Resume work</button>
+                        : <button className="btn btn-quiet" disabled={timeBusy} onClick={() => void timeAction('break-start')}><Icon name="pause" size={15} /> Take a break</button>}
+                      <button className="btn btn-danger-quiet" disabled={timeBusy} onClick={() => void timeAction('clock-out')}>Clock out</button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>}
+                )}
+              </div>
+            ) : (
+              <button className="btn btn-primary clock-in-action" disabled={timeBusy} onClick={() => void timeAction('clock-in')}>
+                <Icon name="play" size={15} /> {timeBusy ? 'Clocking in…' : 'Clock in'}
+              </button>
+            ))}
             <button className="icon-button" aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
               <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
             </button>
             <div className="popover-wrap">
-              <button className="user-trigger" onClick={() => setUserOpen((open) => !open)}><Avatar user={user} size={34} /><Icon name="chevron-down" size={14} /></button>
+              <button className="user-trigger" aria-label="Account menu" aria-expanded={userOpen} onClick={() => setUserOpen((open) => !open)}><Avatar user={user} size={34} /><Icon name="chevron-down" size={14} /></button>
               {userOpen && (
                 <div className="popover user-popover">
                   <div className="user-summary"><Avatar user={user} size={40} /><div><strong>{user?.name || user?.username}</strong><span>{user?.email || `@${user?.username ?? ''}`}</span></div></div>
                   <NavLink to="/profile" onClick={() => setUserOpen(false)}><Icon name="profile" size={17} /> Profile</NavLink>
-                  {administrationTarget && <NavLink to={administrationTarget} onClick={() => setUserOpen(false)}><Icon name="gear" size={17} /> Administration</NavLink>}
+                  {settingsTarget && <NavLink to={settingsTarget} onClick={() => setUserOpen(false)}><Icon name="gear" size={17} /> Settings</NavLink>}
                   <button onClick={() => void logout()}><Icon name="logout" size={17} /> Sign out</button>
                 </div>
               )}

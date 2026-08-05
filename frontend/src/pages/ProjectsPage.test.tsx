@@ -79,20 +79,19 @@ describe('ProjectsPage project onboarding integration', () => {
     )
 
     await actor.click(screen.getByRole('button', { name: 'New project' }))
-    expect(await screen.findByRole('dialog', { name: 'Set up a project' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'New project' })).toBeInTheDocument()
 
-    await screen.findByRole('option', { name: 'Acme' })
     await actor.type(screen.getByLabelText(/^Project name/), 'Launch campaign')
-    await actor.selectOptions(screen.getByLabelText(/^Client/), '7')
-    await actor.click(screen.getByRole('button', { name: 'Continue to plan' }))
-    await actor.click(screen.getByRole('button', { name: 'Review project' }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Client' })).toBeEnabled())
+    await actor.click(screen.getByRole('combobox', { name: 'Client' }))
+    await actor.click(await screen.findByRole('option', { name: 'Acme' }))
     await actor.click(screen.getByRole('button', { name: 'Create project' }))
 
     expect(apiPost).toHaveBeenCalledWith('/api/projects', expect.objectContaining({
       name: 'Launch campaign',
       client_id: '7',
     }))
-    expect(await screen.findByRole('heading', { name: 'Launch campaign is ready for the team' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch campaign' })).toBeInTheDocument()
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
 
     await actor.click(screen.getByRole('button', { name: 'Open project tasks' }))
@@ -109,14 +108,13 @@ describe('ProjectsPage project onboarding integration', () => {
     )
 
     await actor.click(screen.getByRole('button', { name: 'New project' }))
-    await screen.findByRole('option', { name: 'Acme' })
     await actor.type(screen.getByLabelText(/^Project name/), 'Launch campaign')
-    await actor.selectOptions(screen.getByLabelText(/^Client/), '7')
-    await actor.click(screen.getByRole('button', { name: 'Continue to plan' }))
-    await actor.click(screen.getByRole('button', { name: 'Review project' }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Client' })).toBeEnabled())
+    await actor.click(screen.getByRole('combobox', { name: 'Client' }))
+    await actor.click(await screen.findByRole('option', { name: 'Acme' }))
     await actor.click(screen.getByRole('button', { name: 'Create project' }))
 
-    expect(await screen.findByRole('heading', { name: 'Launch campaign is ready for the team' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Launch campaign' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('The project was created, but the list could not be refreshed.')
   })
 })

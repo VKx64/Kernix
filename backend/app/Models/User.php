@@ -37,6 +37,29 @@ class User extends Authenticatable
         return ['start_date' => 'date', 'birthdate' => 'date', 'last_login_at' => 'datetime', 'archived_at' => 'datetime'];
     }
 
+    /**
+     * A new account always lands in a workspace, so nobody signs in to an empty
+     * interface. Extra workspaces are granted from the workspace screen.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (User $user) {
+            if ($user->workspaces()->exists()) {
+                return;
+            }
+            $workspace = Workspace::query()->orderBy('id')->first()
+                ?? Workspace::query()->create([
+                    'name' => config('app.name', 'Workspace'),
+                    'slug' => 'default',
+                    'created_by' => $user->id,
+                ]);
+            $user->workspaces()->syncWithoutDetaching([$workspace->id]);
+            if (! $user->active_workspace_id) {
+                $user->forceFill(['active_workspace_id' => $workspace->id])->saveQuietly();
+            }
+        });
+    }
+
     public function getAuthPasswordName(): string
     {
         return 'password_hash';
@@ -65,6 +88,16 @@ class User extends Authenticatable
     public function projects(): BelongsToMany
     {
         return $this->belongsToMany(Project::class)->withPivot('assigned_by')->withTimestamps();
+    }
+
+    public function workspaces(): BelongsToMany
+    {
+        return $this->belongsToMany(Workspace::class, 'workspace_user')->withTimestamps();
+    }
+
+    public function activeWorkspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class, 'active_workspace_id');
     }
 
     public function isAdmin(): bool

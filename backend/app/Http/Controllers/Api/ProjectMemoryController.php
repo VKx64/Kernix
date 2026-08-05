@@ -9,6 +9,7 @@ use App\Models\SystemSetting;
 use App\Services\AiUsageService;
 use App\Services\OpenRouterClient;
 use App\Services\ProjectMemoryPrompt;
+use App\Support\AiFeatures;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,10 +37,11 @@ class ProjectMemoryController extends ApiController
         $this->assertCanManage($request, $project);
         abort_unless($project->ai_memory_enabled, 409, 'AI project memory is disabled for this project.');
         $settings = SystemSetting::firstOrFail();
+        abort_unless(AiFeatures::enabled($settings, AiFeatures::PROJECT_BRIEF), 409, 'AI brief drafting is switched off for this workspace.');
         $usage->assertAvailable($settings);
         $completed = $project->tasks()->whereHas('status', fn ($q) => $q->where('key_name', 'complete'))->latest('updated_at')->limit(30)->get(['title', 'description', 'estimated_minutes', 'actual_minutes'])->toArray();
         $context = json_encode(['project_name' => $project->name, 'project_description' => $project->description, 'recent_completed_work' => $completed], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        $result = $client->structured($settings, $prompt->briefSystem(), $context, 'project_brief', $prompt->briefSchema());
+        $result = $client->structured($settings, $prompt->briefSystem($settings), $context, 'project_brief', $prompt->briefSchema());
         $usage->record('project_brief', 'project_brief_draft', null, $result, $project->id, $request->user()->id);
         $profile = ProjectAiProfile::query()->firstOrCreate(['project_id' => $project->id], ['brief_status' => 'empty', 'version' => 0]);
         $profile->update(['draft_brief' => trim((string) $result['output']['brief']), 'brief_status' => 'draft']);

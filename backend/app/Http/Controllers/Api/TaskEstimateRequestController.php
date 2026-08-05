@@ -39,9 +39,12 @@ class TaskEstimateRequestController extends ApiController
     public function store(Request $request, Task $task): JsonResponse
     {
         $this->permission($request, 'tasks.request_estimate');
+        // Ahead of the guard on purpose: a non-assignee here is an authorization
+        // answer (403 with a reason), not the generic "not your task" 409 the
+        // guard would otherwise return first.
+        abort_unless((int) $task->assignee_user_id === (int) $request->user()->id, 403, 'Only the current task assignee may request more time.');
         TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
-        abort_unless((int) $task->assignee_user_id === (int) $request->user()->id, 403, 'Only the current task assignee may request more time.');
         $data = $request->validate([
             'additional_minutes' => ['required', 'integer', 'min:1', 'max:1000000'],
             'reason' => ['required', 'string', 'max:10000'],
@@ -93,7 +96,7 @@ class TaskEstimateRequestController extends ApiController
     public function approve(Request $request, Task $task, TaskEstimateRequest $estimateRequest): JsonResponse
     {
         $this->authorizeReviewer($request, $task, $estimateRequest);
-        TaskMutationGuard::enforce($request, $task);
+        TaskMutationGuard::enforceOversight($request, $task);
         $data = $request->validate([
             'approved_additional_minutes' => ['sometimes', 'integer', 'min:1', 'max:1000000'],
             'reason' => ['required', 'string', 'max:10000'],
@@ -122,7 +125,7 @@ class TaskEstimateRequestController extends ApiController
     public function reject(Request $request, Task $task, TaskEstimateRequest $estimateRequest): JsonResponse
     {
         $this->authorizeReviewer($request, $task, $estimateRequest);
-        TaskMutationGuard::enforce($request, $task);
+        TaskMutationGuard::enforceOversight($request, $task);
         $data = $request->validate(['reason' => ['required', 'string', 'max:10000']]);
         $this->decisions->decide(
             $estimateRequest->id,
@@ -140,7 +143,7 @@ class TaskEstimateRequestController extends ApiController
     public function override(Request $request, Task $task, TaskEstimateRequest $estimateRequest): JsonResponse
     {
         $this->authorizeReviewer($request, $task, $estimateRequest);
-        TaskMutationGuard::enforce($request, $task);
+        TaskMutationGuard::enforceOversight($request, $task);
         $data = $request->validate([
             'action' => ['required', 'in:approve,reject'],
             'approved_additional_minutes' => ['nullable', 'integer', 'min:1', 'max:1000000', 'required_if:action,approve'],

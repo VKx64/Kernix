@@ -9,6 +9,7 @@ use App\Services\AiUsageService;
 use App\Services\OpenRouterClient;
 use App\Services\ProjectAiContext;
 use App\Services\ProjectMemoryPrompt;
+use App\Support\AiFeatures;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -31,11 +32,12 @@ class AnalyzeCompletedTaskMemory implements ShouldBeEncrypted, ShouldQueue
         $completeId = (int) FieldValue::query()->where('key_name', 'complete')->whereHas('field', fn ($q) => $q->where('key_name', 'task_status'))->value('id');
         if (! $project->ai_memory_enabled || $project->archived_at || $task->archived_at || (int) $task->status_value_id !== $completeId) { $run->update(['status' => 'stale']); return; }
         $settings = SystemSetting::firstOrFail();
+        if (! AiFeatures::enabled($settings, AiFeatures::PROJECT_MEMORY)) { $run->update(['status' => 'stale', 'error_code' => 'feature_disabled']); return; }
         if (blank($settings->openrouter_api_key) || blank($settings->openrouter_model)) { $run->update(['status' => 'failed', 'error_code' => 'not_configured']); return; }
         if ($usage->spentThisMonth() >= (float) $settings->ai_monthly_budget_usd) { $run->update(['status' => 'budget_blocked', 'error_code' => 'monthly_budget_reached']); return; }
         $run->update(['status' => 'running']);
         try {
-            $result = $client->structured($settings, $prompt->learningSystem(), $prompt->learningContext($task, $context->trusted($project)), 'project_memory_lessons', $prompt->learningSchema());
+            $result = $client->structured($settings, $prompt->learningSystem($settings), $prompt->learningContext($task, $context->trusted($project)), 'project_memory_lessons', $prompt->learningSchema());
             $usage->record('project_memory', 'project_memory_learning_run', $run->id, $result, $project->id);
             foreach ($result['output']['lessons'] ?? [] as $lesson) {
                 $content = trim((string) ($lesson['content'] ?? '')); if ($content === '') continue;

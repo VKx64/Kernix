@@ -5,8 +5,9 @@ import { TaskDetailPage } from './TasksPage'
 import type { User } from '../types/api'
 
 const authState = vi.hoisted(() => ({ user: null as User | null }))
-const workspaceState = vi.hoisted(() => ({ canMutateTasks: true, canAdminOverride: false, isOnBreak: false }))
+const workspaceState = vi.hoisted(() => ({ canMutateTasks: true, canAdminOverride: false, isOnBreak: false, adminOverride: false }))
 const timeAction = vi.hoisted(() => vi.fn(async () => undefined))
+const setAdminOverride = vi.hoisted(() => vi.fn())
 const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
   if (path === '/api/bootstrap') {
@@ -52,6 +53,8 @@ vi.mock('../auth/WorkspaceProvider', () => ({
     canMutateTasks: workspaceState.canMutateTasks,
     canAdminOverride: workspaceState.canAdminOverride,
     isOnBreak: workspaceState.isOnBreak,
+    adminOverride: workspaceState.adminOverride,
+    setAdminOverride,
     timeBusy: false,
     timeAction,
   }),
@@ -79,9 +82,11 @@ describe('task detail permission controls', () => {
     workspaceState.canMutateTasks = true
     workspaceState.canAdminOverride = false
     workspaceState.isOnBreak = false
+    workspaceState.adminOverride = false
     apiGet.mockClear()
     apiPost.mockClear()
     timeAction.mockClear()
+    setAdminOverride.mockClear()
   })
 
   it('exposes email, assignment, estimate, and archive controls without leaking unrelated edit controls', async () => {
@@ -89,7 +94,9 @@ describe('task detail permission controls', () => {
     authState.user = {
       id: 2,
       username: 'producer',
-      permissions: ['dashboard.view', 'tasks.view', 'time.track', 'tasks.assign', 'tasks.estimate', 'tasks.email', 'tasks.archive'],
+      // `tasks.work_unassigned` keeps this test focused on permission-based
+      // control surfacing, independent of the separate assignment gate.
+      permissions: ['dashboard.view', 'tasks.view', 'time.track', 'tasks.assign', 'tasks.estimate', 'tasks.email', 'tasks.archive', 'tasks.work_unassigned'],
     }
     renderTask()
 
@@ -122,20 +129,25 @@ describe('task detail permission controls', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
   })
 
-  it('shows the clock gate and explicit administrator override while clocked out', async () => {
+  it('offers the one workspace-wide administrator override from the clock gate', async () => {
+    const actor = userEvent.setup()
     authState.user = { id: 1, username: 'admin', is_admin: true, permissions: [] }
     workspaceState.canMutateTasks = false
     workspaceState.canAdminOverride = true
     renderTask()
 
     expect(await screen.findByText('Clock in to make task changes')).toBeInTheDocument()
-    const overrideCheckbox = screen.getByLabelText('Use administrator override for this task')
+    const overrideCheckbox = screen.getByLabelText('Work with administrator override')
     const overrideHelp = screen.getByRole('button', { name: 'About administrator override' })
     const overrideTooltip = screen.getByRole('tooltip')
     expect(overrideCheckbox).toHaveAttribute('aria-describedby', overrideTooltip.id)
     expect(overrideHelp).toHaveAttribute('aria-describedby', overrideTooltip.id)
     expect(overrideTooltip).toHaveTextContent('Lets you make task changes without clocking in to an active work session.')
-    expect(screen.getByText('Admin override is available in task forms.')).toBeInTheDocument()
+
+    // Exactly one switch on the page — no per-form copies.
+    expect(screen.getAllByLabelText('Work with administrator override')).toHaveLength(1)
+    await actor.click(overrideCheckbox)
+    expect(setAdminOverride).toHaveBeenCalledWith(true)
   })
 
   it('offers ending the break and never exposes administrator override during a break', async () => {
@@ -147,7 +159,7 @@ describe('task detail permission controls', () => {
     renderTask()
 
     expect(await screen.findByText('End your break to make task changes')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Use administrator override for this task')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Work with administrator override')).not.toBeInTheDocument()
     await actor.click(screen.getByRole('button', { name: 'End break' }))
     expect(timeAction).toHaveBeenCalledWith('break-end')
   })

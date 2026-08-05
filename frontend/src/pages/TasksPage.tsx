@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/AuthProvider'
 import { useWorkspace } from '../auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '../components/ClockGate'
 import { Icon } from '../components/Icon'
+import { CompletionProofCard, CompletionProofModal } from '../components/CompletionProof'
+import { TaskAttachments } from '../components/TaskAttachments'
+import { Select } from '../components/fields'
 import { DataTable, EmptyState, EntityForm, ErrorBanner, Minutes, Modal, PageHeader, Pagination, Panel, SearchToolbar, StatusBadge, type Column, type FormFieldSpec } from '../components/ui'
 import { api, displayName, fieldLabel, normalizePage, unwrap } from '../lib/api'
+import { uploadTaskAttachments } from '../lib/attachments'
+import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
 import { useCollection } from '../lib/useCollection'
 import { isAdministrator, useCan } from '../lib/permissions'
-import type { ApiEnvelope, CustomField, EntityId, EstimateRequest, FormPayload, Note, Paginated, Project, Subtask, Task, TaskFolder, UserSummary } from '../types/api'
+import type { ApiEnvelope, CustomField, EntityId, EstimateRequest, FieldValue, FormPayload, Note, Paginated, Project, Subtask, Task, TaskFolder, TaskWorkRequest, UserSummary } from '../types/api'
 import { CreateTaskModal, type CreateTaskPayload } from './CreateTaskModal'
 import { AiCreateTaskModal } from './AiCreateTaskModal'
 
@@ -20,6 +25,21 @@ function actual(task: Task) { return task.actualMinutes ?? task.actual_minutes ?
 function taskProjectId(task: Task) { return task.projectId ?? task.project_id ?? task.project?.id }
 function taskFolderId(task: Task) { return task.taskFolderId ?? task.task_folder_id ?? task.folder?.id ?? null }
 function folderSort(folder: TaskFolder) { return folder.sortOrder ?? folder.sort_order ?? 0 }
+
+/**
+ * Task work is restricted to the assignee server-side. This mirrors the
+ * exceptions the backend honors so the UI can gate controls the same way
+ * instead of letting mutations 409.
+ */
+function isAssignmentGranted(task: Task, userId: EntityId | undefined, can: (permission: string) => boolean, isAdmin: boolean): boolean {
+  return Boolean(
+    isAdmin
+    || can('tasks.work_unassigned')
+    || String(task.creator?.id ?? '') === String(userId ?? '')
+    || String(task.assignee?.id ?? '') === String(userId ?? '')
+    || (task.subtasks ?? []).some((subtask) => String(subtask.assignee?.id ?? '') === String(userId ?? '')),
+  )
+}
 
 interface TaskLookups {
   projects: Project[]
@@ -70,49 +90,55 @@ function useTaskFolderCatalog(projectIds: EntityId[]) {
   const [foldersByProject, setFoldersByProject] = useState<TaskFolderCatalog>({})
   const [errorsByProject, setErrorsByProject] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(Boolean(projectKey))
-  const [error, setError] = useState('')
+  const loadedProjects = useRef(new Set<string>())
 
-  const load = useCallback(async (isCurrent: () => boolean = () => true) => {
+  // Only fetch projects that are not cached yet: opening the create modal or
+  // picking a project used to refetch folders for every project on screen.
+  const load = useCallback(async (isCurrent: () => boolean = () => true, force = false) => {
     const ids = projectKey ? projectKey.split(',') : []
+    if (force) loadedProjects.current.clear()
     if (!ids.length) {
+      loadedProjects.current.clear()
       if (isCurrent()) {
         setFoldersByProject({})
         setErrorsByProject({})
         setLoading(false)
-        setError('')
       }
       return
     }
 
-    setLoading(true)
-    setError('')
-    try {
-      const results = await Promise.allSettled(ids.map(async (projectId) => {
-        const response = await api.get<ApiEnvelope<TaskFolder[]> | TaskFolder[]>(`/api/projects/${projectId}/task-folders`)
-        const folders = unwrap(response)
-        return [projectId, (Array.isArray(folders) ? folders : []).slice().sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name))] as const
-      }))
-      if (isCurrent()) {
-        const nextFolders: TaskFolderCatalog = {}
-        const nextErrors: Record<string, string> = {}
-        results.forEach((result, index) => {
-          const projectId = ids[index]
-          if (result.status === 'fulfilled') nextFolders[projectId] = result.value[1]
-          else nextErrors[projectId] = result.reason instanceof Error ? result.reason.message : 'Unable to load task folders.'
-        })
-        setFoldersByProject(nextFolders)
-        setErrorsByProject(nextErrors)
-        setError(Object.values(nextErrors)[0] ?? '')
-      }
-    } catch (reason) {
-      if (isCurrent()) {
-        const message = reason instanceof Error ? reason.message : 'Unable to load task folders.'
-        setErrorsByProject(Object.fromEntries(ids.map((projectId) => [projectId, message])))
-        setError(message)
-      }
-    } finally {
+    const pending = ids.filter((projectId) => !loadedProjects.current.has(projectId))
+    if (!pending.length) {
       if (isCurrent()) setLoading(false)
+      return
     }
+
+    setLoading(true)
+    const results = await Promise.allSettled(pending.map(async (projectId) => {
+      const response = await api.get<ApiEnvelope<TaskFolder[]> | TaskFolder[]>(`/api/projects/${projectId}/task-folders`)
+      const folders = unwrap(response)
+      return (Array.isArray(folders) ? folders : []).slice().sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name))
+    }))
+    if (!isCurrent()) return
+
+    const nextFolders: TaskFolderCatalog = {}
+    const nextErrors: Record<string, string> = {}
+    results.forEach((result, index) => {
+      const projectId = pending[index]
+      if (result.status === 'fulfilled') {
+        nextFolders[projectId] = result.value
+        loadedProjects.current.add(projectId)
+      } else {
+        nextErrors[projectId] = result.reason instanceof Error ? result.reason.message : 'Unable to load task folders.'
+      }
+    })
+    setFoldersByProject((current) => ({ ...current, ...nextFolders }))
+    setErrorsByProject((current) => {
+      const merged = { ...current, ...nextErrors }
+      pending.forEach((projectId) => { if (!nextErrors[projectId]) delete merged[projectId] })
+      return merged
+    })
+    setLoading(false)
   }, [projectKey])
 
   useEffect(() => {
@@ -121,7 +147,7 @@ function useTaskFolderCatalog(projectIds: EntityId[]) {
     return () => { current = false }
   }, [load])
 
-  return { foldersByProject, errorsByProject, loading, error, reload: () => load() }
+  return { foldersByProject, errorsByProject, loading, error: Object.values(errorsByProject)[0] ?? '', reload: () => load(() => true, true) }
 }
 
 type TaskColumnKey = 'title' | 'status' | 'urgency' | 'assignee' | 'due' | 'time'
@@ -295,7 +321,6 @@ export function TasksPage() {
   const [formBusy, setFormBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [clockBlocked, setClockBlocked] = useState(false)
-  const [adminOverride, setAdminOverride] = useState(false)
   const [folderOpen, setFolderOpen] = useState(false)
   const [editingFolder, setEditingFolder] = useState<TaskFolder | null>(null)
   const [folderBusy, setFolderBusy] = useState(false)
@@ -303,7 +328,7 @@ export function TasksPage() {
   const [movingTaskId, setMovingTaskId] = useState<EntityId | null>(null)
   const [createProjectId, setCreateProjectId] = useState<EntityId | ''>('')
   const [columnPreferences, setColumnPreferences] = useState<TaskColumnPreferences>(taskColumnPreferences)
-  const { canMutateTasks, canAdminOverride } = useWorkspace()
+  const { canMutateTasks, canAdminOverride, adminOverride } = useWorkspace()
   const can = useCan()
   const lookups = useTaskLookups(true)
   const statusOptions = lookupValues(lookups.fields, 'task_status')
@@ -375,18 +400,27 @@ export function TasksPage() {
       className: column.key === 'time' ? 'numeric-cell' : undefined,
     }))
 
-  const create = async (values: CreateTaskPayload) => {
+  const create = async (values: CreateTaskPayload, files: File[] = []) => {
     if (!canMutateTasks && !(canAdminOverride && adminOverride)) { setClockBlocked(true); return }
     setFormBusy(true)
     setFormError('')
     try {
       const response = await api.post<ApiEnvelope<Task> | Task>('/api/tasks', { ...values, admin_override: adminOverride ? 1 : undefined } as Record<string, unknown>)
       const task = unwrap(response)
+      // The task exists from here on: a failed upload must not discard it.
+      let uploadError = ''
+      if (files.length) {
+        try {
+          await uploadTaskAttachments(task.id, files, adminOverride)
+        } catch (reason) {
+          uploadError = reason instanceof Error ? reason.message : 'The task was created, but its files could not be uploaded.'
+        }
+      }
       setClockBlocked(false)
       setCreateOpen(false)
       setCreateProjectId('')
       await reload()
-      navigate(`/tasks/${task.id}`)
+      navigate(`/tasks/${task.id}`, uploadError ? { state: { attachmentError: uploadError } } : undefined)
     } catch (reason) {
       if (isClockGate(reason)) setClockBlocked(true)
       setFormError(reason instanceof Error ? reason.message : 'Unable to create the task.')
@@ -431,7 +465,6 @@ export function TasksPage() {
     setFormError('')
     setCreateOpen(true)
     setClockBlocked(false)
-    setAdminOverride(false)
   }
 
   const closeTaskCreator = () => {
@@ -491,7 +524,7 @@ export function TasksPage() {
   }
 
   return (
-    <div>
+    <div className="page-fixed">
       <PageHeader
         eyebrow="Work queue"
         title="Tasks"
@@ -520,17 +553,35 @@ export function TasksPage() {
       {folderCatalog.error && <ErrorBanner message={folderCatalog.error} onRetry={() => void folderCatalog.reload()} />}
       {folderActionError && !folderOpen && <ErrorBanner message={folderActionError} />}
       {clockBlocked && !createOpen && <ClockGate compact />}
-      {can('tasks.edit') && canAdminOverride && !canMutateTasks && <label className="override-toggle task-folder-override"><input type="checkbox" checked={adminOverride} onChange={(event) => setAdminOverride(event.target.checked)} /> Use administrator override for task folder changes</label>}
       <Panel className="list-panel">
         <SearchToolbar search={search} onSearch={(value) => setFilter('search', value || undefined)} placeholder="Search task title or project…">
-          <label className={`filter-chip ${mine ? 'active' : ''}`}><input type="checkbox" checked={mine} onChange={(event) => setFilter('mine', event.target.checked ? '1' : undefined)} />Mine</label>
-          <label className={`filter-chip ${urgent ? 'active' : ''}`}><input type="checkbox" checked={urgent} onChange={(event) => setFilter('urgent', event.target.checked ? '1' : undefined)} />Urgent</label>
-          <label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => setFilter('archived', event.target.checked ? '1' : undefined)} />Archived</label>
-          <select className={`compact-select project-filter ${projectId ? 'active' : ''}`} aria-label="Project filter" value={projectId} onChange={(event) => setFilter('project_id', event.target.value || undefined)}>
-            <option value="">All projects</option>
-            {lookups.projects.map((project) => <option key={project.id} value={String(project.id)}>{project.name}</option>)}
-          </select>
-          <select className="compact-select" value={sort} onChange={(event) => setFilter('sort', event.target.value === 'due_date' ? undefined : event.target.value)}><option value="due_date">Due date</option><option value="-created_at">Newest</option><option value="urgency">Urgency</option><option value="title">Title</option></select>
+          <div className="filter-segment">
+            <label className={`filter-chip ${mine ? 'active' : ''}`}><input type="checkbox" checked={mine} onChange={(event) => setFilter('mine', event.target.checked ? '1' : undefined)} />Mine</label>
+            <label className={`filter-chip ${urgent ? 'active' : ''}`}><input type="checkbox" checked={urgent} onChange={(event) => setFilter('urgent', event.target.checked ? '1' : undefined)} />Urgent</label>
+            <label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => setFilter('archived', event.target.checked ? '1' : undefined)} />Archived</label>
+          </div>
+          <Select
+            className={`filter-select ${projectId ? 'has-value' : ''}`.trim()}
+            icon="briefcase"
+            label="Project filter"
+            value={projectId}
+            options={[{ value: '', label: 'All projects' }, ...lookups.projects.map((project) => ({ value: String(project.id), label: project.name }))]}
+            placeholder="All projects"
+            onChange={(next) => setFilter('project_id', next || undefined)}
+          />
+          <Select
+            className="filter-select"
+            icon="field"
+            label="Sort tasks"
+            value={sort}
+            options={[
+              { value: 'due_date', label: 'Due date' },
+              { value: '-created_at', label: 'Newest' },
+              { value: 'urgency', label: 'Urgency' },
+              { value: 'title', label: 'Title' },
+            ]}
+            onChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}
+          />
           <details className="task-column-settings">
             <summary className="btn btn-quiet"><Icon name="field" size={15} /> Columns</summary>
             <div className="task-column-menu">
@@ -589,7 +640,7 @@ export function TasksPage() {
         initialProjectId={projectId || undefined}
         projects={lookups.projects}
         folders={createFolders}
-        foldersLoading={(folderCatalog.loading && createProjectId !== '' && createFolders.length === 0) || Boolean(createFolderError)}
+        foldersLoading={folderCatalog.loading && createProjectId !== '' && createFolders.length === 0 && !createFolderError}
         folderError={createFolderError}
         users={lookups.users}
         statusOptions={statusOptions}
@@ -599,8 +650,8 @@ export function TasksPage() {
         canChangeStatus={can('tasks.change_status')}
         canEstimate={can('tasks.estimate')}
         canCreateSubtasks={can('tasks.subtasks')}
-        notice={clockBlocked ? <ClockGate compact /> : undefined}
-        extra={canAdminOverride && !canMutateTasks ? <label className="override-toggle"><input type="checkbox" checked={adminOverride} disabled={formBusy} onChange={(event) => { setAdminOverride(event.target.checked); setFormError('') }} /> Use administrator override</label> : undefined}
+        canAttach={can('tasks.attachments')}
+        notice={clockBlocked ? <ClockGate compact showOverride={false} /> : undefined}
         onProjectChange={setCreateProjectId}
         onErrorDismiss={() => setFormError('')}
         onClose={closeTaskCreator}
@@ -614,22 +665,21 @@ export function TasksPage() {
   )
 }
 
-type DetailTab = 'notes' | 'subtasks' | 'emails' | 'activity'
+type DetailTab = 'notes' | 'subtasks' | 'files' | 'emails' | 'activity'
 
 export function TaskDetailPage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
-  const adminOverrideTooltipId = useId()
+  const location = useLocation()
   const { user } = useAuth()
   const can = useCan()
   const isAdmin = isAdministrator(user)
-  const { canMutateTasks, canAdminOverride } = useWorkspace()
+  const { canMutateTasks, canAdminOverride, adminOverride } = useWorkspace()
   const [task, setTask] = useState<Task | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [clockBlocked, setClockBlocked] = useState(false)
-  const [adminOverride, setAdminOverride] = useState(false)
   const [tab, setTab] = useState<DetailTab>('notes')
   const [editOpen, setEditOpen] = useState(false)
   const [editProjectId, setEditProjectId] = useState<EntityId | ''>('')
@@ -647,9 +697,18 @@ export function TaskDetailPage() {
   const [emailBody, setEmailBody] = useState('')
   const [activity, setActivity] = useState<Array<Record<string, unknown>>>([])
   const [estimateRequests, setEstimateRequests] = useState<EstimateRequest[]>([])
+  const [proofOpen, setProofOpen] = useState(false)
+  const [proofError, setProofError] = useState('')
   const [estimateRequestOpen, setEstimateRequestOpen] = useState(false)
   const [additionalMinutes, setAdditionalMinutes] = useState(30)
   const [estimateReason, setEstimateReason] = useState('')
+  const [workRequests, setWorkRequests] = useState<TaskWorkRequest[]>([])
+  const [workRequestOpen, setWorkRequestOpen] = useState(false)
+  const [workRequestReason, setWorkRequestReason] = useState('')
+  const [workRequestBusy, setWorkRequestBusy] = useState(false)
+  const [workRequestError, setWorkRequestError] = useState('')
+  const [decliningWorkRequest, setDecliningWorkRequest] = useState<TaskWorkRequest | null>(null)
+  const [declineWorkReason, setDeclineWorkReason] = useState('')
   const lookups = useTaskLookups(Boolean(taskId))
   const statusOptions = lookupValues(lookups.fields, 'task_status')
   const typeOptions = lookupValues(lookups.fields, 'task_type')
@@ -673,6 +732,21 @@ export function TaskDetailPage() {
     }
   }, [can, isAdmin, user?.id])
 
+  const loadWorkRequests = useCallback(async (nextTask: Task, signal?: AbortSignal) => {
+    const assigned = isAssignmentGranted(nextTask, user?.id, can, isAdmin)
+    const canReview = can('tasks.review_work_requests')
+    if (assigned && !canReview) {
+      setWorkRequests([])
+      return
+    }
+    try {
+      const response = await api.get<ApiEnvelope<TaskWorkRequest[]> | TaskWorkRequest[]>(`/api/tasks/${nextTask.id}/work-requests`, undefined, signal)
+      setWorkRequests(unwrap(response))
+    } catch (reason) {
+      if (!(reason instanceof DOMException && reason.name === 'AbortError')) setWorkRequests([])
+    }
+  }, [can, isAdmin, user?.id])
+
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!taskId) return
     setLoading(true)
@@ -682,17 +756,28 @@ export function TaskDetailPage() {
       const nextTask = unwrap(response)
       setTask(nextTask)
       await loadEstimateRequests(nextTask, signal)
+      await loadWorkRequests(nextTask, signal)
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === 'AbortError') return
       setError(reason instanceof Error ? reason.message : 'Unable to open this task.')
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [loadEstimateRequests, taskId])
+  }, [loadEstimateRequests, loadWorkRequests, taskId])
 
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
 
   useEffect(() => { setActivity([]) }, [taskId])
+
+  // A task can be created successfully while its files fail to upload; the
+  // creator lands here, so the warning has to travel with the navigation.
+  useEffect(() => {
+    const message = (location.state as { attachmentError?: string } | null)?.attachmentError
+    if (!message) return
+    setMutationError(message)
+    setTab('files')
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
 
   useEffect(() => {
     if (canMutateTasks) setClockBlocked(false)
@@ -746,7 +831,20 @@ export function TaskDetailPage() {
   const canRequestEstimate = !isArchived && can('tasks.request_estimate') && String(task?.assignee?.id ?? '') === String(user?.id ?? '')
   const latestEstimateRequest = estimateRequests[0] ?? null
   const pendingEstimateRequest = estimateRequests.find((request) => request.status === 'pending') ?? null
-  const detailTabs: DetailTab[] = canEmail ? ['notes', 'subtasks', 'emails', 'activity'] : ['notes', 'subtasks', 'activity']
+  const attachments = task?.attachments ?? []
+  const proof = latestProof(task)
+  const proofDetail = proofState(proof)
+  const statusKey = (() => {
+    const value = taskStatus(task ?? ({} as Task))
+    return typeof value === 'object' && value ? (value.key ?? (value as FieldValue & { key_name?: string }).key_name ?? '') : ''
+  })()
+  const isComplete = statusKey === 'complete'
+  const canReviewProof = can('tasks.review_completion')
+  const proofPending = proofDetail?.status === 'pending'
+  const canSubmitProof = !isArchived && !isComplete && canChangeStatus && !proofPending
+  const detailTabs: DetailTab[] = canEmail
+    ? ['notes', 'subtasks', 'files', 'emails', 'activity']
+    : ['notes', 'subtasks', 'files', 'activity']
   const ownsRecentNote = (note: Note) => {
     if (isAdmin) return true
     const creator = note.author?.id ?? (typeof note.createdBy === 'object' ? note.createdBy.id : note.createdBy) ?? (typeof note.created_by === 'object' ? note.created_by.id : note.created_by)
@@ -761,7 +859,16 @@ export function TaskDetailPage() {
       { name: 'task_folder_id', label: 'Folder', type: 'select' as const, disabled: editProjectId === '' || (detailFolderCatalog.loading && detailFolders.length === 0), options: detailFolders.map((folder) => ({ label: folder.name, value: folder.id })), help: editProjectId === '' ? 'Choose a project to see its folders.' : detailFolderCatalog.loading && detailFolders.length === 0 ? 'Loading project folders…' : detailFolderCatalog.error ? 'Project folders could not be loaded.' : detailFolders.length ? 'Leave blank to keep the task Ungrouped.' : 'This project has no named folders yet.' },
     ] : []),
     ...(can('tasks.assign') ? [{ name: 'assignee_user_id', label: 'Assignee', type: 'select' as const, options: lookups.users.map((person) => ({ label: displayName(person), value: person.id })) }] : []),
-    ...(canChangeStatus && statusOptions.length ? [{ name: 'status_value_id', label: 'Status', type: 'select' as const, options: statusOptions.map((value) => ({ label: value.label, value: value.id })) }] : []),
+    // Complete is reached by submitting proof, so it is not offered here.
+    ...(canChangeStatus && statusOptions.length ? [{
+      name: 'status_value_id',
+      label: 'Status',
+      type: 'select' as const,
+      options: statusOptions
+        .filter((value) => canReviewProof || (value.key ?? (value as FieldValue & { key_name?: string }).key_name) !== 'complete')
+        .map((value) => ({ label: value.label, value: value.id })),
+      help: canReviewProof ? undefined : 'Mark this task complete with the Complete task button, which asks for proof.',
+    }] : []),
     ...(can('tasks.edit') && typeOptions.length ? [{ name: 'type_value_id', label: 'Type', type: 'select' as const, options: typeOptions.map((value) => ({ label: value.label, value: value.id })) }] : []),
     ...(can('tasks.edit') && urgencyOptions.length ? [{ name: 'urgency_value_id', label: 'Urgency', type: 'select' as const, options: urgencyOptions.map((value) => ({ label: value.label, value: value.id })) }] : []),
     ...(can('tasks.edit') ? [{ name: 'due_date', label: 'Due date', type: 'date' as const }, { name: 'description', label: 'Description', type: 'textarea' as const, wide: true }] : []),
@@ -777,6 +884,12 @@ export function TaskDetailPage() {
 
   if (loading) return <div className="full-page-loading"><span className="spinner" /> Loading task…</div>
   if (error || !task) return <ErrorBanner message={error || 'Task not found.'} onRetry={() => void load()} />
+
+  const assignmentGranted = isAssignmentGranted(task, user?.id, can, isAdmin)
+  const blockedByAssignment = !assignmentGranted
+  const myPendingWorkRequest = workRequests.find((request) => request.status === 'pending' && String(request.requester?.id ?? '') === String(user?.id ?? '')) ?? null
+  const canReviewWorkRequests = can('tasks.review_work_requests')
+  const pendingWorkRequestsForReview = canReviewWorkRequests ? workRequests.filter((request) => request.status === 'pending') : []
 
   const editInitial: FormPayload = {
     title: task.title,
@@ -915,52 +1028,276 @@ export function TaskDetailPage() {
     }
   }
 
+  const submitProof = async (summary: string, files: File[]) => {
+    if (!canMutateTasks && !(canAdminOverride && adminOverride)) { setClockBlocked(true); return }
+    setBusy(true)
+    setProofError('')
+    try {
+      await submitCompletionProof(task.id, summary, files, adminOverride)
+      setProofOpen(false)
+      await load()
+    } catch (reason) {
+      if (isClockGate(reason)) setClockBlocked(true)
+      setProofError(reason instanceof Error ? reason.message : 'The proof could not be submitted.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const settleProof = async (approved: boolean, reason: string) => {
+    if (!proof) return
+    await mutate(() => settleCompletionProof(task.id, proof.id, approved, reason, adminOverride))
+  }
+
+  const submitWorkRequest = async () => {
+    const reason = workRequestReason.trim()
+    if (reason.length < 10) return
+    setWorkRequestBusy(true)
+    setWorkRequestError('')
+    try {
+      await api.post(`/api/tasks/${task.id}/work-requests`, { reason })
+      setWorkRequestOpen(false)
+      setWorkRequestReason('')
+      await load()
+    } catch (reason_) {
+      setWorkRequestError(reason_ instanceof Error ? reason_.message : 'Unable to send this request.')
+    } finally {
+      setWorkRequestBusy(false)
+    }
+  }
+
+  const withdrawWorkRequest = async (request: TaskWorkRequest) => {
+    setWorkRequestBusy(true)
+    setWorkRequestError('')
+    try {
+      await api.post(`/api/tasks/${task.id}/work-requests/${request.id}/withdraw`)
+      await load()
+    } catch (reason) {
+      setWorkRequestError(reason instanceof Error ? reason.message : 'Unable to withdraw this request.')
+    } finally {
+      setWorkRequestBusy(false)
+    }
+  }
+
+  const approveWorkRequest = async (request: TaskWorkRequest) => {
+    setWorkRequestBusy(true)
+    setWorkRequestError('')
+    try {
+      await api.post(`/api/tasks/${task.id}/work-requests/${request.id}/approve`, {})
+      await load()
+    } catch (reason) {
+      setWorkRequestError(reason instanceof Error ? reason.message : 'Unable to approve this request.')
+    } finally {
+      setWorkRequestBusy(false)
+    }
+  }
+
+  const declineWorkRequest = async () => {
+    if (!decliningWorkRequest || !declineWorkReason.trim()) return
+    setWorkRequestBusy(true)
+    setWorkRequestError('')
+    try {
+      await api.post(`/api/tasks/${task.id}/work-requests/${decliningWorkRequest.id}/decline`, { reason: declineWorkReason.trim() })
+      setDecliningWorkRequest(null)
+      setDeclineWorkReason('')
+      await load()
+    } catch (reason) {
+      setWorkRequestError(reason instanceof Error ? reason.message : 'Unable to decline this request.')
+    } finally {
+      setWorkRequestBusy(false)
+    }
+  }
+
   return (
     <div className="task-detail-page">
       <button className="back-link" onClick={() => navigate('/tasks')}><Icon name="arrow-left" size={17} /> Back to tasks</button>
-      <div className="task-detail-heading">
-        <div><div className="task-breadcrumb">{task.project?.client?.name && <span>{task.project.client.name}</span>}{task.project && can('projects.view') ? <Link to={`/tasks?project_id=${task.project.id}`}>{task.project.name}</Link> : <span>{task.project?.name ?? 'No project'}</span>}<span>{detailFolder?.name ?? 'Ungrouped'}</span></div><h1>{task.title}</h1><div className="task-heading-meta"><StatusBadge value={taskStatus(task)} /><StatusBadge value={taskUrgency(task)} />{(task.aiTaskGenerationId ?? task.ai_task_generation_id) && <span className="ai-generated-badge"><Icon name="sparkles" size={13} /> AI-generated batch #{task.aiTaskGenerationId ?? task.ai_task_generation_id}</span>}<span>Assigned to {displayName(task.assignee)}</span>{dueDate(task) && <span>Due {new Date(dueDate(task)!).toLocaleDateString()}</span>}</div></div>
-        <div className="page-actions">{can('tasks.archive') && !isArchived && <button className="btn btn-danger-quiet" disabled={busy} onClick={() => void archiveTask()}>Archive</button>}{can('tasks.archive') && isArchived && <button className="btn btn-primary" disabled={busy} onClick={() => void restoreTask()}><Icon name="play" size={16} /> Restore task</button>}{can('tasks.archive') && <button className="btn btn-danger-quiet" disabled={busy} onClick={() => void deleteTask()}><Icon name="trash" size={16} /> Delete</button>}{canEditTaskFields && !isArchived && <button className="btn btn-primary" onClick={() => { setEditProjectId(detailProjectId ?? ''); setEditOpen(true); setClockBlocked(false) }}><Icon name="edit" size={16} /> Edit task</button>}</div>
-      </div>
-      {(clockBlocked || (canWriteTask && !canMutateTasks)) && <ClockGate />}
-      {canWriteTask && canAdminOverride && !canMutateTasks && (
-        <div className="override-toggle">
-          <label><input type="checkbox" aria-describedby={adminOverrideTooltipId} checked={adminOverride} onChange={(event) => setAdminOverride(event.target.checked)} /> Use administrator override for this task</label>
-          <span className="override-tooltip">
-            <button className="override-tooltip-trigger" type="button" aria-label="About administrator override" aria-describedby={adminOverrideTooltipId}>?</button>
-            <span className="override-tooltip-content" id={adminOverrideTooltipId} role="tooltip">Lets you make task changes without clocking in to an active work session. Use it for administrative corrections or exceptional changes.</span>
-          </span>
+      <header className="task-hero">
+        <div className="task-breadcrumb">
+          {task.project?.client?.name && <span>{task.project.client.name}</span>}
+          {task.project && can('projects.view')
+            ? <Link to={`/tasks?project_id=${task.project.id}`}>{task.project.name}</Link>
+            : <span>{task.project?.name ?? 'No project'}</span>}
+          <span>{detailFolder?.name ?? 'Ungrouped'}</span>
         </div>
-      )}
+        <div className="task-hero-top">
+          <h1>{task.title}</h1>
+          <div className="page-actions">
+            {canSubmitProof && <button className="btn btn-primary" disabled={busy || blockedByAssignment} onClick={() => { setProofError(''); setProofOpen(true); setClockBlocked(false) }}><Icon name="check" size={16} /> Complete task</button>}
+            {canEditTaskFields && !isArchived && <button className={`btn ${canSubmitProof ? 'btn-quiet' : 'btn-primary'}`} disabled={blockedByAssignment} onClick={() => { setEditProjectId(detailProjectId ?? ''); setEditOpen(true); setClockBlocked(false) }}><Icon name="edit" size={16} /> Edit task</button>}
+            {can('tasks.archive') && isArchived && <button className="btn btn-primary" disabled={busy || blockedByAssignment} onClick={() => void restoreTask()}><Icon name="play" size={16} /> Restore task</button>}
+            {can('tasks.archive') && !isArchived && <button className="btn btn-quiet" disabled={busy || blockedByAssignment} onClick={() => void archiveTask()}>Archive</button>}
+            {can('tasks.archive') && <button className="btn btn-danger-quiet" disabled={busy || blockedByAssignment} onClick={() => void deleteTask()}><Icon name="trash" size={16} /> Delete</button>}
+          </div>
+        </div>
+        <div className="task-hero-chips">
+          <StatusBadge value={taskStatus(task)} />
+          <StatusBadge value={taskUrgency(task)} />
+          {isArchived && <span className="task-chip is-warning"><Icon name="inbox" size={13} /> Archived</span>}
+          <span className="task-chip"><Icon name="user" size={13} /> {displayName(task.assignee)}</span>
+          {dueDate(task) && <span className={`task-chip ${new Date(dueDate(task)!) < new Date() && !isArchived ? 'is-danger' : ''}`.trim()}><Icon name="calendar" size={13} /> {new Date(dueDate(task)!).toLocaleDateString()}</span>}
+          {(task.aiTaskGenerationId ?? task.ai_task_generation_id) && <span className="task-chip ai-generated-badge"><Icon name="sparkles" size={13} /> AI batch #{task.aiTaskGenerationId ?? task.ai_task_generation_id}</span>}
+        </div>
+      </header>
+
+      {(clockBlocked || (canWriteTask && !canMutateTasks)) && <ClockGate compact />}
       {mutationError && <ErrorBanner message={mutationError} />}
-      <section className="task-time-strip">
-        <div><span>Estimated</span><strong><Minutes value={estimatedTotal} /></strong></div>
-        <div className="time-progress"><span style={{ width: `${progress}%` }} /></div>
-        <div><span>Actual</span><strong><Minutes value={actualTotal} /></strong></div>
-        <div><span>Progress</span><strong>{estimatedTotal ? `${progress}%` : 'No estimate'}</strong></div>
-      </section>
-      {(canRequestEstimate || latestEstimateRequest) && <section className="task-estimate-request-row">
-        {latestEstimateRequest ? <div className="task-estimate-request-summary"><div><span className="eyebrow">Latest estimate request</span><strong><Minutes value={latestEstimateRequest.requestedAdditionalMinutes ?? latestEstimateRequest.requested_additional_minutes ?? 0} /> additional</strong>{(latestEstimateRequest.reviewMode ?? latestEstimateRequest.review_mode) === 'ai' && <small>AI project manager · {(latestEstimateRequest.aiState ?? latestEstimateRequest.ai_state ?? 'queued').replaceAll('_', ' ')}</small>}</div><StatusBadge value={latestEstimateRequest.status} />{(latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id) && <Link className="text-link" to={`/messages/${latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id}?scope=all`}>Open conversation →</Link>}</div> : <p>No estimate increase has been requested.</p>}
-        {canRequestEstimate && <button className="btn btn-quiet" disabled={busy} onClick={() => { setEstimateRequestOpen(true); setClockBlocked(false) }}><Icon name="clock" size={16} /> Request more time</button>}
-      </section>}
-      {task.description && <Panel title="Brief"><div className="prose">{task.description}</div></Panel>}
-      <section className="task-workspace panel">
-        <div className="detail-tabs">
-          {detailTabs.map((value) => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{value[0].toUpperCase() + value.slice(1)}{value === 'notes' ? <b>{noteList.length}</b> : value === 'subtasks' ? <b>{subtasks.length}</b> : null}</button>)}
+      {workRequestError && <ErrorBanner message={workRequestError} />}
+
+      {blockedByAssignment && (
+        <section className="panel assignment-gate">
+          {myPendingWorkRequest ? (
+            <EmptyState
+              icon="user"
+              title={myPendingWorkRequest.status === 'pending' ? 'Your request is waiting on a reviewer' : `Your request was ${myPendingWorkRequest.status}`}
+              description={myPendingWorkRequest.status === 'pending'
+                ? 'You are not assigned to this task yet. A reviewer will approve or decline your request to work on it.'
+                : (myPendingWorkRequest.decisionReason ?? myPendingWorkRequest.decision_reason) || 'You are not assigned to this task.'}
+              action={myPendingWorkRequest.status === 'pending' && (
+                <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => void withdrawWorkRequest(myPendingWorkRequest)}>Withdraw request</button>
+              )}
+            />
+          ) : (
+            <EmptyState
+              icon="user"
+              title="You are not assigned to this task"
+              description="This task is assigned to someone else. Ask to be put on it before working on it."
+              action={can('tasks.request_work') && (
+                <button type="button" className="btn btn-primary" onClick={() => { setWorkRequestError(''); setWorkRequestReason(''); setWorkRequestOpen(true) }}>Request to work on this</button>
+              )}
+            />
+          )}
+        </section>
+      )}
+
+      <div className="task-detail-grid">
+        <aside className="task-side">
+          {canReviewWorkRequests && pendingWorkRequestsForReview.length > 0 && (
+            <section className="task-side-card work-request-review">
+              <h2>Work requests</h2>
+              {pendingWorkRequestsForReview.map((request) => (
+                <div className="work-request-row" key={request.id}>
+                  <div>
+                    <strong>{displayName(request.requester)}</strong>
+                    <p>{request.reason}</p>
+                  </div>
+                  {decliningWorkRequest?.id === request.id ? (
+                    <div>
+                      <label className="form-field wide">
+                        <span className="field-label">Why decline?</span>
+                        <textarea value={declineWorkReason} disabled={workRequestBusy} onChange={(event) => setDeclineWorkReason(event.target.value)} placeholder="Tell the requester why…" />
+                      </label>
+                      <div className="proof-review-actions">
+                        <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(null); setDeclineWorkReason('') }}>Cancel</button>
+                        <button type="button" className="btn btn-danger-quiet" disabled={workRequestBusy || !declineWorkReason.trim()} onClick={() => void declineWorkRequest()}>Confirm decline</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="proof-review-actions">
+                      <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(request); setDeclineWorkReason('') }}>Decline</button>
+                      <button type="button" className="btn btn-primary" disabled={workRequestBusy} onClick={() => void approveWorkRequest(request)}>Approve</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
+          {proof && (
+            <section className="task-side-card">
+              <h2>Completion proof</h2>
+              <CompletionProofCard
+                proof={proof}
+                canReview={canReviewProof && !isArchived}
+                busy={busy}
+                onSettle={(approved, reason) => void settleProof(approved, reason)}
+                onResubmit={canSubmitProof ? () => { setProofError(''); setProofOpen(true) } : undefined}
+              />
+            </section>
+          )}
+          <section className="task-side-card">
+            <h2>Time</h2>
+            <div className="task-progress-meter">
+              <div className="time-progress"><span style={{ width: `${progress}%` }} /></div>
+              <strong>{estimatedTotal ? `${progress}%` : 'No estimate'}</strong>
+            </div>
+            <dl className="task-facts">
+              <div><dt>Estimated</dt><dd><Minutes value={estimatedTotal} /></dd></div>
+              <div><dt>Logged</dt><dd><Minutes value={actualTotal} /></dd></div>
+            </dl>
+            {(canRequestEstimate || latestEstimateRequest) && (
+              <div className="task-side-extra">
+                {latestEstimateRequest && (
+                  <div className="task-estimate-request-summary">
+                    <div>
+                      <span className="eyebrow">Latest request</span>
+                      <strong><Minutes value={latestEstimateRequest.requestedAdditionalMinutes ?? latestEstimateRequest.requested_additional_minutes ?? 0} /> additional</strong>
+                      {(latestEstimateRequest.reviewMode ?? latestEstimateRequest.review_mode) === 'ai' && <small>AI project manager · {(latestEstimateRequest.aiState ?? latestEstimateRequest.ai_state ?? 'queued').replaceAll('_', ' ')}</small>}
+                    </div>
+                    <StatusBadge value={latestEstimateRequest.status} />
+                    {(latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id) && <Link className="text-link" to={`/messages/${latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id}?scope=all`}>Open conversation →</Link>}
+                  </div>
+                )}
+                {canRequestEstimate && <button className="btn btn-quiet" disabled={busy || blockedByAssignment} onClick={() => { setEstimateRequestOpen(true); setClockBlocked(false) }}><Icon name="clock" size={16} /> Request more time</button>}
+              </div>
+            )}
+          </section>
+
+          <section className="task-side-card">
+            <h2>Details</h2>
+            <dl className="task-facts">
+              <div><dt>Project</dt><dd>{task.project?.name ?? 'No project'}</dd></div>
+              <div><dt>Folder</dt><dd>{detailFolder?.name ?? 'Ungrouped'}</dd></div>
+              <div><dt>Type</dt><dd>{fieldLabel(task.typeValue ?? task.type_value ?? task.type)}</dd></div>
+              <div><dt>Assignee</dt><dd>{displayName(task.assignee)}</dd></div>
+              <div><dt>Due</dt><dd>{dueDate(task) ? new Date(dueDate(task)!).toLocaleDateString() : '—'}</dd></div>
+              <div><dt>Created by</dt><dd>{displayName(task.creator)}</dd></div>
+            </dl>
+          </section>
+        </aside>
+
+        <div className="task-main">
+          {task.description && (
+            <section className="task-brief panel">
+              <h2>Brief</h2>
+              <div className="prose">{task.description}</div>
+            </section>
+          )}
+          <section className="task-workspace panel">
+            <div className="detail-tabs">
+              {detailTabs.map((value) => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{value[0].toUpperCase() + value.slice(1)}{value === 'notes' ? <b>{noteList.length}</b> : value === 'subtasks' ? <b>{subtasks.length}</b> : value === 'files' ? <b>{attachments.length}</b> : null}</button>)}
+            </div>
+            <div className="tab-content">
+              {tab === 'notes' && <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy || blockedByAssignment} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsRecentNote(note)} canDelete={(note) => !isArchived && canComment && ownsRecentNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />}
+              {tab === 'subtasks' && <SubtasksTab subtasks={subtasks} title={subtaskTitle} busy={busy || blockedByAssignment} canManage={!isArchived && canManageSubtasks} canComplete={!isArchived && canChangeStatus} canEditAny={!isArchived && (canManageSubtasks || canChangeStatus || can('tasks.assign') || can('tasks.estimate'))} onTitle={setSubtaskTitle} onAdd={() => void addSubtask()} onComplete={(subtask) => void completeSubtask(subtask)} onEdit={setEditingSubtask} onDelete={(subtask) => void deleteSubtask(subtask)} onMove={(subtask, direction) => void moveSubtask(subtask, direction)} />}
+              {tab === 'files' && (
+                <TaskAttachments
+                  taskId={task.id}
+                  attachments={attachments}
+                  canManage={can('tasks.attachments')}
+                  readOnly={isArchived || blockedByAssignment}
+                  adminOverride={adminOverride && canAdminOverride}
+                  onChanged={() => load()}
+                />
+              )}
+              {tab === 'emails' && canEmail && <EmailsTab emails={emails} to={emailTo} subject={emailSubject} body={emailBody} busy={busy || blockedByAssignment} readOnly={isArchived} onTo={setEmailTo} onSubject={setEmailSubject} onBody={setEmailBody} onSend={() => void sendEmail()} onDelete={(email) => void deleteEmail(email)} />}
+              {tab === 'activity' && <ActivityList rows={activity} />}
+            </div>
+          </section>
         </div>
-        <div className="tab-content">
-          {tab === 'notes' && <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsRecentNote(note)} canDelete={(note) => !isArchived && canComment && ownsRecentNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />}
-          {tab === 'subtasks' && <SubtasksTab subtasks={subtasks} title={subtaskTitle} busy={busy} canManage={!isArchived && canManageSubtasks} canComplete={!isArchived && canChangeStatus} canEditAny={!isArchived && (canManageSubtasks || canChangeStatus || can('tasks.assign') || can('tasks.estimate'))} onTitle={setSubtaskTitle} onAdd={() => void addSubtask()} onComplete={(subtask) => void completeSubtask(subtask)} onEdit={setEditingSubtask} onDelete={(subtask) => void deleteSubtask(subtask)} onMove={(subtask, direction) => void moveSubtask(subtask, direction)} />}
-          {tab === 'emails' && canEmail && <EmailsTab emails={emails} to={emailTo} subject={emailSubject} body={emailBody} busy={busy} readOnly={isArchived} onTo={setEmailTo} onSubject={setEmailSubject} onBody={setEmailBody} onSend={() => void sendEmail()} onDelete={(email) => void deleteEmail(email)} />}
-          {tab === 'activity' && <ActivityList rows={activity} />}
-        </div>
-      </section>
+      </div>
+      <CompletionProofModal
+        open={proofOpen}
+        busy={busy}
+        error={proofError}
+        taskTitle={task.title}
+        onClose={() => { if (!busy) setProofOpen(false) }}
+        onSubmit={submitProof}
+      />
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit task" size="lg">
-        {clockBlocked && <ClockGate compact />}
+        {clockBlocked && <ClockGate compact showOverride={false} />}
         <EntityForm fields={editFields} initialValues={editInitial} busy={busy} error={mutationError} onValuesChange={(values) => setEditProjectId((values.project_id ?? '') as EntityId | '')} onCancel={() => setEditOpen(false)} onSubmit={saveTask} />
       </Modal>
       <Modal open={estimateRequestOpen} onClose={() => { if (!busy) setEstimateRequestOpen(false) }} title="Request more time" description="Ask the project manager to increase this task’s estimate." size="md" closeDisabled={busy}>
-        {clockBlocked && <ClockGate compact />}
+        {clockBlocked && <ClockGate compact showOverride={false} />}
         <form className="entity-form" onSubmit={(event) => { event.preventDefault(); void requestMoreTime() }}>
           {pendingEstimateRequest && <div className="warning-banner">Submitting this will replace your pending request for <Minutes value={pendingEstimateRequest.requestedAdditionalMinutes ?? pendingEstimateRequest.requested_additional_minutes ?? 0} />.</div>}
           <div className="form-grid">
@@ -968,6 +1305,18 @@ export function TaskDetailPage() {
             <label className="form-field wide"><span className="field-label">Why do you need more time?</span><textarea value={estimateReason} onChange={(event) => setEstimateReason(event.target.value)} placeholder="Explain what changed or what remains to be done…" required /></label>
           </div>
           <footer className="form-footer"><button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setEstimateRequestOpen(false)}>Cancel</button><button className="btn btn-primary" disabled={busy || additionalMinutes < 1 || !estimateReason.trim()}>{busy ? 'Sending…' : pendingEstimateRequest ? 'Replace request' : 'Send request'}</button></footer>
+        </form>
+      </Modal>
+      <Modal open={workRequestOpen} onClose={() => { if (!workRequestBusy) setWorkRequestOpen(false) }} title="Request to work on this task" description="Explain why you should be assigned, then wait for a reviewer to respond." size="md" closeDisabled={workRequestBusy}>
+        <form className="entity-form" onSubmit={(event) => { event.preventDefault(); void submitWorkRequest() }}>
+          <div className="form-grid">
+            <label className="form-field wide">
+              <span className="field-label">Why do you want this task? <b aria-hidden="true">*</b></span>
+              <textarea value={workRequestReason} disabled={workRequestBusy} onChange={(event) => setWorkRequestReason(event.target.value)} placeholder="At least 10 characters…" required />
+              <span className="field-help">Minimum 10 characters.</span>
+            </label>
+          </div>
+          <footer className="form-footer"><button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => setWorkRequestOpen(false)}>Cancel</button><button className="btn btn-primary" disabled={workRequestBusy || workRequestReason.trim().length < 10}>{workRequestBusy ? 'Sending…' : 'Send request'}</button></footer>
         </form>
       </Modal>
       <Modal open={Boolean(editingNote)} onClose={() => setEditingNote(null)} title="Edit note" size="md">

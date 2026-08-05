@@ -24,6 +24,8 @@ final class DefaultRoles
                     'time.track',
                     'time.view_team',
                     'tasks.view',
+                    'tasks.work_unassigned',
+                    'tasks.review_work_requests',
                     'tasks.create',
                     'tasks.create_with_ai',
                     'tasks.edit',
@@ -65,6 +67,7 @@ final class DefaultRoles
                     'tasks.log_time',
                     'tasks.subtasks',
                     'tasks.request_estimate',
+                    'tasks.request_work',
                 ],
             ],
             [

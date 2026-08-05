@@ -31,9 +31,18 @@ final class PermissionCatalog
             ],
         ],
         [
+            'group' => 'Workspaces',
+            'permissions' => [
+                ['key' => 'workspaces.manage', 'label' => 'Manage workspaces', 'description' => 'Create and rename workspaces and choose who can work inside them.', 'requires' => []],
+            ],
+        ],
+        [
             'group' => 'Tasks',
             'permissions' => [
                 ['key' => 'tasks.view', 'label' => 'View tasks', 'description' => 'View all workspace tasks and their activity.', 'requires' => []],
+                ['key' => 'tasks.work_unassigned', 'label' => 'Work on anyone\'s task', 'description' => 'Change tasks you are not the assignee of. Without this, work is limited to your own assignments and reviewers keep their own approvals.', 'requires' => ['tasks.view']],
+                ['key' => 'tasks.request_work', 'label' => 'Request to work on a task', 'description' => 'Ask a project manager to be assigned to a task you picked up unexpectedly.', 'requires' => ['tasks.view', 'messages.view']],
+                ['key' => 'tasks.review_work_requests', 'label' => 'Review work requests', 'description' => 'Approve or decline requests to be assigned to a task on managed projects.', 'requires' => ['tasks.assign', 'messages.view']],
                 ['key' => 'tasks.create', 'label' => 'Create tasks', 'description' => 'Create new tasks while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.create_with_ai', 'label' => 'Create tasks with AI', 'description' => 'Turn a plain-language request into one or more tasks while clocked in.', 'requires' => ['tasks.create']],
                 ['key' => 'tasks.edit', 'label' => 'Edit task details', 'description' => 'Edit task title, description, project, type, urgency, and due date while clocked in.', 'requires' => ['tasks.view', 'time.track']],
@@ -45,6 +54,8 @@ final class PermissionCatalog
                 ['key' => 'tasks.estimate', 'label' => 'Set task estimates', 'description' => 'Change task and subtask estimates while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.request_estimate', 'label' => 'Request more task time', 'description' => 'Request an increase to the estimate of an assigned task while clocked in.', 'requires' => ['tasks.view', 'tasks.comment', 'messages.view']],
                 ['key' => 'tasks.review_estimate_requests', 'label' => 'Review estimate requests', 'description' => 'Approve, adjust, or reject estimate increase requests for managed projects.', 'requires' => ['tasks.estimate', 'tasks.comment', 'messages.view']],
+                ['key' => 'tasks.review_completion', 'label' => 'Review completion proof', 'description' => 'Approve or reject submitted proof of completion, including when the AI audit cannot decide.', 'requires' => ['tasks.view', 'tasks.change_status']],
+                ['key' => 'tasks.attachments', 'label' => 'Manage task attachments', 'description' => 'Upload and remove task files while clocked in; viewing and downloading needs only task access.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.email', 'label' => 'Manage task email', 'description' => 'View captured task email at any time; sending or removing email requires an active clock-in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.archive', 'label' => 'Archive tasks', 'description' => 'Archive and restore tasks while clocked in.', 'requires' => ['tasks.view', 'time.track']],
             ],

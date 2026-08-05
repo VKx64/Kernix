@@ -12,8 +12,11 @@ export type IconName =
   | 'close'
   | 'contact'
   | 'dashboard'
+  | 'download'
   | 'edit'
+  | 'eye'
   | 'field'
+  | 'file'
   | 'flag'
   | 'folder'
   | 'gear'
@@ -21,7 +24,9 @@ export type IconName =
   | 'logout'
   | 'menu'
   | 'more-horizontal'
+  | 'image'
   | 'moon'
+  | 'paperclip'
   | 'pause'
   | 'play'
   | 'plus'
@@ -33,6 +38,8 @@ export type IconName =
   | 'sun'
   | 'task'
   | 'trash'
+  | 'upload'
+  | 'video'
   | 'user'
   | 'users'
 
@@ -48,7 +55,14 @@ const paths: Record<IconName, React.ReactNode> = {
   close: <><path d="m6 6 12 12M18 6 6 18"/></>,
   contact: <><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M18 8h4M20 6v4"/></>,
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+  download: <><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 19h16"/></>,
   edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></>,
+  eye: <><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></>,
+  file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></>,
+  image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 19 5-5 3 3 4-4 4 4"/></>,
+  paperclip: <path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/>,
+  upload: <><path d="M12 20V8"/><path d="m7 12 5-5 5 5"/><path d="M4 4h16"/></>,
+  video: <><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 11 6-3v8l-6-3Z"/></>,
   field: <><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="17" cy="12" r="2"/></>,
   flag: <><path d="M5 21V4"/><path d="M5 5h11l-2 4 2 4H5"/></>,
   folder: <path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>,

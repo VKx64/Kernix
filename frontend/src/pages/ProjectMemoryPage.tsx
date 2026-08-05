@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { Icon } from '../components/Icon'
-import { ErrorBanner, Panel, StatusBadge } from '../components/ui'
+import { EmptyState, ErrorBanner, LoadingRows, PageHeader, Panel, StatusBadge } from '../components/ui'
 import { api, unwrap } from '../lib/api'
 import type { ApiEnvelope, ProjectMemoryData, ProjectMemoryEntry } from '../types/api'
+
+const MEMORY_DESCRIPTION = 'Reviewed context the AI can use when planning tasks and checking time requests.'
 
 export function ProjectMemoryPage() {
   const { projectId } = useParams()
@@ -48,7 +50,11 @@ export function ProjectMemoryPage() {
     finally { setBusy(false) }
   }
 
-  if (loading) return <Panel><div className="loading-block"><span className="spinner" /> Loading project memory…</div></Panel>
+  if (loading) return <div className="memory-page">
+    <Link className="back-link" to="/projects"><Icon name="arrow-left" size={15} /> Projects</Link>
+    <PageHeader eyebrow="Project knowledge" title="Project memory" description={MEMORY_DESCRIPTION} />
+    <Panel><LoadingRows rows={3} columns={2} /></Panel>
+  </div>
   if (!data) return <ErrorBanner message={error || 'Project memory could not be loaded.'} onRetry={() => void load()} />
   const pending = data.entries.filter((entry) => entry.status === 'pending')
   const approved = data.entries.filter((entry) => entry.status === 'approved')
@@ -56,15 +62,12 @@ export function ProjectMemoryPage() {
   const visibleEntries = view === 'pending' ? pending : view === 'approved' ? approved : history
   return <div className="memory-page">
     <Link className="back-link" to="/projects"><Icon name="arrow-left" size={15} /> Projects</Link>
-    <header className="memory-page-heading">
-      <div className="memory-heading-mark"><Icon name="sparkles" size={20} /></div>
-      <div>
-        <span className="eyebrow">Project knowledge</span>
-        <h1>{data.project.name}</h1>
-        <p>Reviewed context the AI can use when planning tasks and checking time requests.</p>
-      </div>
-      <Link className="btn btn-quiet" to={`/tasks?project_id=${data.project.id}`}><Icon name="task" size={16} /> View tasks</Link>
-    </header>
+    <PageHeader
+      eyebrow="Project knowledge"
+      title={data.project.name}
+      description={MEMORY_DESCRIPTION}
+      actions={<Link className="btn btn-quiet" to={`/tasks?project_id=${data.project.id}`}><Icon name="task" size={16} /> View tasks</Link>}
+    />
     {error && <ErrorBanner message={error} />}
     {!data.project.ai_memory_enabled && <div className="memory-disabled-banner"><Icon name="pause" size={17} /><div><strong>Learning is paused</strong><span>Approved knowledge still works, but completed tasks will not suggest new lessons.</span></div></div>}
 
@@ -83,7 +86,7 @@ export function ProjectMemoryPage() {
         </> : <div className={`memory-brief-copy${data.profile.approved_brief ? '' : ' empty'}`}>{data.profile.approved_brief || 'No approved project brief yet.'}</div>}
       </Panel>
 
-      <aside className="memory-summary-panel">
+      <Panel className="memory-summary-panel">
         <div className="memory-summary-heading"><span className="memory-summary-icon"><Icon name="sparkles" size={17} /></span><div><strong>AI context</strong><small>Manager controlled</small></div></div>
         <dl>
           <div><dt>Approved</dt><dd>{approved.length}</dd></div>
@@ -91,7 +94,7 @@ export function ProjectMemoryPage() {
           <div><dt>Learning</dt><dd className={data.project.ai_memory_enabled ? 'is-on' : ''}>{data.project.ai_memory_enabled ? 'On' : 'Off'}</dd></div>
         </dl>
         <p>The AI can suggest knowledge, but only manager-approved items are used in future decisions.</p>
-      </aside>
+      </Panel>
     </div>
 
     <Panel className="memory-library">
@@ -112,7 +115,7 @@ function MemoryEmpty({ view }: { view: 'pending' | 'approved' | 'history' }) {
     : view === 'approved'
       ? { icon: 'check' as const, title: 'No approved lessons yet', description: 'Approved lessons become trusted context for future AI work.' }
       : { icon: 'more-horizontal' as const, title: 'No history yet', description: 'Archived, rejected, and replaced lessons will be kept here.' }
-  return <div className="memory-empty"><span><Icon name={copy.icon} size={19} /></span><div><h3>{copy.title}</h3><p>{copy.description}</p></div></div>
+  return <EmptyState icon={copy.icon} title={copy.title} description={copy.description} />
 }
 
 function MemoryCard({ entry, actions }: { entry: ProjectMemoryEntry; actions?: React.ReactNode }) {

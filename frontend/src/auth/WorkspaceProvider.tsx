@@ -15,11 +15,24 @@ interface WorkspaceContextValue {
   canAdminOverride: boolean
   canMutateTasks: boolean
   isOnBreak: boolean
+  /** One workspace-wide switch instead of a checkbox on every task form. */
+  adminOverride: boolean
+  setAdminOverride: (next: boolean) => void
   refresh: () => Promise<void>
   timeAction: (action: TimeAction) => Promise<void>
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
+
+const OVERRIDE_STORAGE_KEY = 'kernix.admin-override'
+
+function storedOverride(): boolean {
+  try {
+    return window.sessionStorage.getItem(OVERRIDE_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
@@ -28,6 +41,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [time, setTime] = useState<TimeStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeBusy, setTimeBusy] = useState(false)
+  const [overrideRequested, setOverrideRequested] = useState(storedOverride)
 
   const refresh = useCallback(async () => {
     const [settingsResult, timeResult] = await Promise.allSettled([
@@ -74,6 +88,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   )
   const requiresClock = Boolean(settings.taskMutationsRequireClockIn ?? settings.task_mutations_require_clock_in ?? true)
   const canMutateTasks = !isOnBreak && (explicitCanMutate ?? (!requiresClock || clockedIn))
+  // Losing the privilege (a break, a role change) drops the switch on its own,
+  // so no screen can keep sending an override the server would reject.
+  const adminOverride = canAdminOverride && overrideRequested
+
+  const setAdminOverride = useCallback((next: boolean) => {
+    setOverrideRequested(next)
+    try {
+      if (next) window.sessionStorage.setItem(OVERRIDE_STORAGE_KEY, '1')
+      else window.sessionStorage.removeItem(OVERRIDE_STORAGE_KEY)
+    } catch {
+      // Private-mode storage failures leave the switch in memory only.
+    }
+  }, [])
 
   const value = useMemo(() => ({
     settings,
@@ -84,9 +111,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     canAdminOverride,
     canMutateTasks,
     isOnBreak,
+    adminOverride,
+    setAdminOverride,
     refresh,
     timeAction,
-  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, isOnBreak, refresh, timeAction])
+  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, isOnBreak, adminOverride, setAdminOverride, refresh, timeAction])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

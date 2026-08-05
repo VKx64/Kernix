@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Icon } from './Icon'
+import { Icon, type IconName } from './Icon'
 import type { EntityId, FormPayload, FormValue, PaginationMeta, UserSummary } from '../types/api'
 import { displayName, fieldLabel } from '../lib/api'
 
@@ -70,10 +70,10 @@ export function StatusBadge({ value, color }: { value: unknown; color?: string |
   )
 }
 
-export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+export function EmptyState({ title, description, action, icon = 'search' }: { title: string; description?: string; action?: ReactNode; icon?: IconName }) {
   return (
     <div className="empty-state">
-      <span className="empty-orb"><Icon name="search" size={24} /></span>
+      <span className="empty-orb"><Icon name={icon} size={24} /></span>
       <h3>{title}</h3>
       {description && <p>{description}</p>}
       {action}
@@ -311,6 +311,8 @@ export interface FormFieldSpec {
   placeholder?: string
   required?: boolean
   options?: FormOption[]
+  /** Offered in a dropdown but not enforced — the field stays free text. */
+  suggestions?: FormOption[]
   help?: string
   min?: number
   step?: number
@@ -381,17 +383,25 @@ export function EntityForm({
                       {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   ) : (
-                    <input
-                      id={id}
-                      type={field.type ?? 'text'}
-                      value={String(current ?? '')}
-                      required={field.required}
-                      disabled={field.disabled}
-                      placeholder={field.placeholder}
-                      min={field.min}
-                      step={field.step}
-                      onChange={(event) => set(field.type === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value)}
-                    />
+                    <>
+                      <input
+                        id={id}
+                        type={field.type ?? 'text'}
+                        value={String(current ?? '')}
+                        required={field.required}
+                        disabled={field.disabled}
+                        placeholder={field.placeholder}
+                        min={field.min}
+                        step={field.step}
+                        list={field.suggestions?.length ? `${id}-suggestions` : undefined}
+                        onChange={(event) => set(field.type === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value)}
+                      />
+                      {field.suggestions?.length ? (
+                        <datalist id={`${id}-suggestions`}>
+                          {field.suggestions.map((option) => <option key={option.value} value={String(option.value)}>{option.label}</option>)}
+                        </datalist>
+                      ) : null}
+                    </>
                   )}
                   {field.help && <span className="field-help">{field.help}</span>}
                 </>

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\Task;
 use App\Models\TaskNote;
+use App\Models\User;
 use App\Services\AiEstimateReviewCoordinator;
 use App\Services\TaskMessageService;
 use App\Support\SingleClient;
@@ -54,6 +56,51 @@ class MessageController extends ApiController
         $root = $this->ownedConversations($request)->with($this->relations())->findOrFail($message);
 
         return $this->data($this->presentConversation($root, $request));
+    }
+
+    /**
+     * Opening a conversation with someone. Every conversation still hangs off a
+     * task — that is the shared context both people need — but the sender picks
+     * the task and the person instead of waiting for a task to reach them.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $this->permission($request, 'messages.view');
+        $this->permission($request, 'tasks.comment');
+        $data = $request->validate([
+            'task_id' => ['required', 'integer'],
+            'recipient_id' => ['required', 'integer'],
+            'body' => ['required', 'string', 'max:100000'],
+        ]);
+        $task = Task::query()
+            ->when(SingleClient::enabled(), fn (Builder $query) => $query->whereHas('project', fn (Builder $project) => $project->where('client_id', SingleClient::id() ?? 0)))
+            ->findOrFail($data['task_id']);
+        TaskMutationGuard::enforce($request, $task);
+        abort_if((int) $data['recipient_id'] === (int) $request->user()->id, 422, 'Pick somebody other than yourself.');
+        abort_unless($this->recipientQuery($request)->whereKey($data['recipient_id'])->exists(), 422, 'That person cannot receive messages.');
+        $root = $this->messages->start($task, $request->user(), (int) $data['recipient_id'], trim($data['body']));
+        $this->audit($request, 'task.message.start', $task, [
+            'conversation_id' => $root->id,
+            'recipient_id' => (int) $data['recipient_id'],
+        ]);
+
+        return $this->data($this->presentConversation($root->fresh($this->relations()), $request), 201);
+    }
+
+    /** People the signed-in user is allowed to open a conversation with. */
+    public function recipients(Request $request): JsonResponse
+    {
+        $this->permission($request, 'messages.view');
+        $query = $this->recipientQuery($request);
+        if ($search = $request->string('search')->trim()->toString()) {
+            $query->where(fn (Builder $name) => $name
+                ->where('first_name', 'like', "%{$search}%")
+                ->orWhere('last_name', 'like', "%{$search}%")
+                ->orWhere('username', 'like', "%{$search}%"));
+        }
+
+        return $this->data($query->orderBy('first_name')->orderBy('last_name')->limit(100)->get()
+            ->map(fn (User $user) => $this->userSummary($user))->all());
     }
 
     public function reply(Request $request, int $message): JsonResponse
@@ -156,6 +203,41 @@ class MessageController extends ApiController
         return $query;
     }
 
+    /**
+     * The messages surface shows task context beside the thread — status, due
+     * date, and time — so it needs more than the shared four-field summary.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function conversationTaskSummary(?Task $task): ?array
+    {
+        if (! $task) {
+            return null;
+        }
+
+        return $this->taskSummary($task) + [
+            'due_date' => $task->due_date?->toDateString(),
+            'estimated_minutes' => $task->estimated_minutes,
+            'actual_minutes' => $task->actual_minutes,
+            'assignee_user_id' => $task->assignee_user_id,
+            'assignee' => $this->userSummary($task->assignee),
+            'status_value' => $task->status ? [
+                'id' => $task->status->id,
+                'label' => $task->status->label,
+                'key_name' => $task->status->key_name,
+                'color' => $task->status->color,
+            ] : null,
+        ];
+    }
+
+    private function recipientQuery(Request $request): Builder
+    {
+        return User::query()
+            ->whereKeyNot($request->user()->id)
+            ->where('status', 'active')
+            ->whereNull('archived_at');
+    }
+
     private function replyRecipient(Request $request, TaskNote $root): int
     {
         if ($root->estimateRequest) {
@@ -186,7 +268,7 @@ class MessageController extends ApiController
     private function relations(): array
     {
         return [
-            'task.project.client',
+            'task.project.client', 'task.status', 'task.assignee',
             'estimateRequest.requester', 'estimateRequest.reviewer', 'estimateRequest.decider',
             'estimateRequest.latestAiReviewRun', 'estimateRequest.decisions.decider',
             'replies' => fn ($query) => $query->with(['author', 'assignedUser', 'attachments'])->oldest(),
@@ -200,7 +282,7 @@ class MessageController extends ApiController
         $root->setRelation('messages', $messages);
         $root->setAttribute('latest_message', $messages->last());
         $root->setAttribute('unread_count', $messages->filter(fn (TaskNote $message) => (int) $message->assigned_user_id === (int) $request->user()->id && ! $message->read_at)->count());
-        $root->setRelation('task', $this->summaryRelation($this->taskSummary($root->task)));
+        $root->setRelation('task', $this->summaryRelation($this->conversationTaskSummary($root->task)));
         if ($root->estimateRequest) {
             $estimateRequest = $root->estimateRequest;
             $estimateRequest->setRelation('requester', $this->summaryRelation($this->userSummary($estimateRequest->requester)));

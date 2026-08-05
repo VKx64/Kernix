@@ -37,7 +37,9 @@ function localDate(date: Date) {
 }
 
 function Donut({ rows, label }: { rows: Array<{ name: string; minutes: number; color?: string }>; label: string }) {
-  const colors = ['#8b5cf6', '#c084fc', '#5eead4', '#fbbf24', '#60a5fa', '#fb7185']
+  // Reads the live theme tokens so the donut matches the rest of the palette in
+  // both light and dark, instead of carrying its own near-miss purples.
+  const colors = ['var(--primary)', 'var(--blue)', 'var(--success)', 'var(--warning)', 'var(--primary-strong)', 'var(--danger)']
   const total = rows.reduce((sum, row) => sum + Number(row.minutes || 0), 0)
   if (!rows.length || total <= 0) return <div className="chart-empty">No logged time in this range.</div>
   return (

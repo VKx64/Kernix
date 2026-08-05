@@ -61,6 +61,10 @@ vi.mock('../auth/WorkspaceProvider', () => ({
   useWorkspace: () => ({
     canMutateTasks: workspaceState.canMutateTasks,
     canAdminOverride: workspaceState.canAdminOverride,
+    adminOverride: false,
+    setAdminOverride: vi.fn(),
+    timeBusy: false,
+    timeAction: vi.fn(),
   }),
 }))
 
@@ -79,6 +83,15 @@ vi.mock('../lib/api', async (importOriginal) => {
 const columns: Column<Task>[] = [
   { key: 'title', header: 'Task', render: (task) => task.title },
 ]
+
+type Actor = ReturnType<typeof userEvent.setup>
+
+/** Scoped to the popup: the page's native filter selects expose options too. */
+async function choose(actor: Actor, field: string, option: string) {
+  await actor.click(screen.getByRole('combobox', { name: field }))
+  const menu = await screen.findByRole('listbox', { name: field })
+  await actor.click(await within(menu).findByRole('option', { name: option }))
+}
 
 describe('TaskQueueTable', () => {
   it('renders tasks in one flat table without project or folder group sections', () => {
@@ -157,7 +170,7 @@ describe('TasksPage project folders', () => {
     render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
 
     expect(await screen.findByRole('heading', { name: 'Tasks' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Project filter' })).toHaveValue('5')
+    expect(screen.getByRole('combobox', { name: 'Project filter' })).toHaveTextContent('Launch')
     expect(screen.queryByRole('button', { name: /Collapse/ })).not.toBeInTheDocument()
 
     await actor.click(screen.getByText('Folders'))
@@ -190,10 +203,10 @@ describe('TasksPage project folders', () => {
 
     await actor.click(await screen.findByRole('button', { name: 'New task' }))
     const project = await screen.findByRole('combobox', { name: 'Project' })
-    expect(project).toHaveValue('5')
+    expect(project).toHaveTextContent('Launch')
     expect(project).toBeDisabled()
     await actor.type(screen.getByLabelText(/^Task title/), 'Schedule review')
-    await actor.selectOptions(await screen.findByLabelText(/^Folder/), '12')
+    await choose(actor, 'Folder', 'Delivery')
     await actor.click(screen.getByRole('button', { name: 'Create task' }))
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/tasks', expect.objectContaining({
@@ -208,19 +221,19 @@ describe('TasksPage project folders', () => {
     render(<MemoryRouter initialEntries={['/tasks']}><TasksPage /></MemoryRouter>)
 
     await actor.click(screen.getByRole('button', { name: 'New task' }))
-    const project = await screen.findByRole('combobox', { name: 'Project' })
-    const folder = screen.getByLabelText(/^Folder/)
+    await screen.findByRole('combobox', { name: 'Project' })
+    const folder = screen.getByRole('combobox', { name: 'Folder' })
     expect(folder).toBeDisabled()
 
-    await actor.selectOptions(project, '5')
-    await within(folder).findByRole('option', { name: 'Delivery' })
-    await actor.selectOptions(folder, '12')
-    expect(folder).toHaveValue('12')
+    await choose(actor, 'Project', 'Launch')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Folder' })).toBeEnabled())
+    await choose(actor, 'Folder', 'Delivery')
+    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Delivery')
 
-    await actor.selectOptions(project, '6')
-    expect(folder).toHaveValue('')
-    await within(folder).findByRole('option', { name: 'Content' })
-    await actor.selectOptions(folder, '21')
+    await choose(actor, 'Project', 'Website')
+    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Ungrouped')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Folder' })).toBeEnabled())
+    await choose(actor, 'Folder', 'Content')
     await actor.type(screen.getByLabelText(/^Task title/), 'Write homepage copy')
     await actor.click(screen.getByRole('button', { name: 'Create task' }))
 

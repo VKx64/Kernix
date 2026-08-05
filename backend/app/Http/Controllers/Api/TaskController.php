@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Models\FieldValue;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskAttachment;
+use App\Models\TaskCompletionProof;
 use App\Models\TaskFolder;
 use App\Models\User;
 use App\Services\TaskMutationService;
 use App\Support\SingleClient;
 use App\Support\TaskMutationGuard;
+use App\Support\TaskStatuses;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -148,6 +151,7 @@ class TaskController extends ApiController
             array_key_exists('task_folder_id', $data) ? $data['task_folder_id'] : $task->task_folder_id,
             $targetProjectId,
         );
+        $this->assertCompletionIsProven($request, $task, $data);
         $before = $this->taskMutations->updateTask($task, $data, $request->user());
         $this->audit($request, 'task.update', $task, ['before' => $before, 'after' => $task->getAttributes()]);
 
@@ -168,8 +172,12 @@ class TaskController extends ApiController
     public function restore(Request $request, int $task): JsonResponse
     {
         $this->permission($request, 'tasks.archive');
+        // The task is archived by definition here, so the full guard would
+        // reject it as read-only. Clock first, then the assignment check once
+        // the row is loaded.
         TaskMutationGuard::enforce($request);
         $model = Task::findOrFail($task);
+        TaskMutationGuard::enforceAssignment($request->user(), $model);
         $this->withinClient($model);
         $projectIsActive = Project::query()
             ->whereKey($model->project_id)
@@ -188,7 +196,10 @@ class TaskController extends ApiController
         // Deletion is intentionally tied to the existing archive privilege:
         // both actions remove work from active queues and remain clock-gated.
         $this->permission($request, 'tasks.archive');
+        // An archived task must stay deletable, so the read-only check is
+        // skipped here while the assignment check still applies.
         TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforceAssignment($request->user(), $task);
         $this->withinClient($task);
         $task->delete();
         $this->audit($request, 'task.delete', $task);
@@ -270,6 +281,30 @@ class TaskController extends ApiController
         return false;
     }
 
+    /**
+     * Complete is reached by submitting proof, not by picking it from the
+     * status list. Reviewers keep a manual path for corrections.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertCompletionIsProven(Request $request, Task $task, array $data): void
+    {
+        if (! array_key_exists('status_value_id', $data)
+            || ! TaskStatuses::is($data['status_value_id'], TaskStatuses::COMPLETE)
+            || TaskStatuses::is($task->status_value_id, TaskStatuses::COMPLETE)) {
+            return;
+        }
+        if ($request->user()->canDo('tasks.review_completion')) {
+            return;
+        }
+
+        abort_unless(
+            $task->completionProofs()->where('status', 'approved')->exists(),
+            422,
+            'Submit proof of completion for this task instead of setting it to Complete directly.',
+        );
+    }
+
     private function assertProjectVisible(int $projectId): void
     {
         $query = Project::query()->whereKey($projectId)->whereNull('archived_at');
@@ -330,6 +365,8 @@ class TaskController extends ApiController
             'project.client', 'project.status', 'project.manager', 'folder', 'status', 'type', 'urgency', 'assignee', 'creator',
             'notes' => fn ($query) => $query->with(['author', 'assignedUser', 'attachments'])->latest(),
             'subtasks' => fn ($query) => $query->with(['status', 'assignee'])->orderBy('sort_order')->orderBy('id'),
+            'attachments' => fn ($query) => $query->with('uploader')->orderByDesc('id'),
+            'completionProofs' => fn ($query) => $query->with(['submitter', 'reviewer'])->latest('id'),
         ];
         $canViewEmails = $request->user()->canDo('tasks.email');
         if ($canViewEmails) {
@@ -347,6 +384,16 @@ class TaskController extends ApiController
             $note->setRelation('author', $this->summaryRelation($this->userSummary($note->author)));
             $note->setRelation('assignedUser', $this->summaryRelation($this->userSummary($note->assignedUser)));
         }
+        // Attachments ship as summaries so no storage path ever reaches a client.
+        $task->setRelation('attachments', $task->attachments->map(
+            fn (TaskAttachment $attachment) => collect($attachment->toSummary($this->userSummary($attachment->uploader)))
+        ));
+        $task->setRelation('completionProofs', $task->completionProofs->map(
+            fn (TaskCompletionProof $proof) => collect($proof->toSummary(
+                $this->userSummary($proof->submitter),
+                $this->userSummary($proof->reviewer),
+            ))
+        ));
         if ($canViewEmails) {
             foreach ($task->emails as $email) {
                 $sender = $this->summaryRelation($this->userSummary($email->sender));

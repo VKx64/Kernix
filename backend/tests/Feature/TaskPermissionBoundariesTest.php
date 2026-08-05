@@ -68,13 +68,17 @@ class TaskPermissionBoundariesTest extends TestCase
         ]);
 
         $this->patchJson("/api/tasks/{$this->task->id}", [
-            'status_value_id' => $this->taskStatus('complete')->id,
+            'status_value_id' => $this->taskStatus('in_progress')->id,
         ])->assertForbidden();
 
         $statusChanger = $this->actAs(['tasks.change_status']);
         $this->patchJson("/api/tasks/{$this->task->id}", [
-            'status_value_id' => $this->taskStatus('complete')->id,
+            'status_value_id' => $this->taskStatus('in_progress')->id,
         ])->assertOk();
+        // Complete is proof-gated, so the status permission alone cannot reach it.
+        $this->patchJson("/api/tasks/{$this->task->id}", [
+            'status_value_id' => $this->taskStatus('complete')->id,
+        ])->assertStatus(422);
         $this->patchJson("/api/tasks/{$this->task->id}", [
             'title' => 'Not allowed by status permission',
         ])->assertForbidden();
@@ -108,8 +112,10 @@ class TaskPermissionBoundariesTest extends TestCase
         ])->assertForbidden();
         $this->assertDatabaseMissing('tasks', ['title' => 'Estimate injection']);
 
+        // Neither the assigner nor the estimator is this task's assignee or
+        // creator, so acting on it needs tasks.work_unassigned made explicit.
         $target = User::factory()->create();
-        $assigner = $this->actAs(['tasks.assign']);
+        $assigner = $this->actAs(['tasks.assign', 'tasks.work_unassigned'], true, false);
         $this->patchJson("/api/tasks/{$createdId}", [
             'assignee_user_id' => $target->id,
         ])->assertOk();
@@ -117,7 +123,7 @@ class TaskPermissionBoundariesTest extends TestCase
             'estimated_minutes' => 90,
         ])->assertForbidden();
 
-        $estimator = $this->actAs(['tasks.estimate']);
+        $estimator = $this->actAs(['tasks.estimate', 'tasks.work_unassigned'], true, false);
         $this->patchJson("/api/tasks/{$createdId}", [
             'estimated_minutes' => 90,
         ])->assertOk();
@@ -230,7 +236,10 @@ class TaskPermissionBoundariesTest extends TestCase
             'assignee_user_id' => $target->id,
         ])->assertOk();
 
+        // Later actAs() calls reassigned the fixture task away from
+        // structurer; restore it so the closing delete stays authorized.
         Sanctum::actingAs($structurer);
+        $this->task->update(['assignee_user_id' => $structurer->id]);
         $this->deleteJson("/api/tasks/{$this->task->id}/subtasks/{$subtaskId}")
             ->assertNoContent();
         $this->assertSoftDeleted('task_subtasks', ['id' => $subtaskId]);
@@ -261,7 +270,10 @@ class TaskPermissionBoundariesTest extends TestCase
             'body' => 'Another commenter cannot edit the author note.',
         ])->assertForbidden();
 
+        // otherCommenter's actAs() call reassigned the fixture task; restore
+        // it so commenter's own follow-up actions stay assignee-authorized.
         Sanctum::actingAs($commenter);
+        $this->task->update(['assignee_user_id' => $commenter->id]);
         $oldNote = TaskNote::query()->create([
             'task_id' => $this->task->id,
             'body' => 'An old author note',
@@ -448,7 +460,14 @@ class TaskPermissionBoundariesTest extends TestCase
         $this->assertArrayNotHasKey('key_name', $assignees->first());
     }
 
-    private function actAs(array $permissions, bool $clockedIn = true): User
+    /**
+     * Work is assignee-only. Most of these boundary checks are about a field
+     * or status permission, not about the assignment gate, so by default the
+     * shared fixture task follows whoever is acting. Pass assignFixtureTask
+     * false when a test deliberately wants to act on someone else's task and
+     * grant tasks.work_unassigned explicitly instead.
+     */
+    private function actAs(array $permissions, bool $clockedIn = true, bool $assignFixtureTask = true): User
     {
         $this->roleSequence++;
         $role = Role::query()->create([
@@ -471,6 +490,9 @@ class TaskPermissionBoundariesTest extends TestCase
                 'user_id' => $user->id,
                 'clock_in_at' => now(),
             ]);
+        }
+        if ($assignFixtureTask) {
+            $this->task->update(['assignee_user_id' => $user->id]);
         }
         Sanctum::actingAs($user);
 

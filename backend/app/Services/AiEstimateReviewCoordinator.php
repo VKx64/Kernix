@@ -7,6 +7,7 @@ use App\Models\AiReviewRun;
 use App\Models\SystemSetting;
 use App\Models\TaskEstimateRequest;
 use App\Models\TaskNote;
+use App\Support\AiFeatures;
 use Illuminate\Support\Facades\DB;
 
 class AiEstimateReviewCoordinator
@@ -19,6 +20,8 @@ class AiEstimateReviewCoordinator
             || $request->review_mode !== 'ai'
             || ! $request->task->project->ai_estimate_review_enabled
             || $request->task->archived_at !== null
+            // The workspace switch is the outer gate over the project setting.
+            || ! AiFeatures::enabled(SystemSetting::firstOrFail(), AiFeatures::ESTIMATE_REVIEW)
         ) {
             return null;
         }

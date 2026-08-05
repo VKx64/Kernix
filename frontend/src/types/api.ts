@@ -168,6 +168,52 @@ export interface Attachment {
   mime_type?: string
 }
 
+export interface TaskAttachment {
+  id: EntityId
+  taskId?: EntityId
+  task_id?: EntityId
+  originalName?: string
+  original_name?: string
+  mimeType?: string
+  mime_type?: string
+  fileSize?: number
+  file_size?: number
+  canPreview?: boolean
+  can_preview?: boolean
+  uploadedBy?: UserSummary | null
+  uploaded_by?: UserSummary | null
+  createdAt?: string
+  created_at?: string
+}
+
+export interface CompletionProof {
+  id: EntityId
+  taskId?: EntityId
+  task_id?: EntityId
+  summary: string
+  status: 'pending' | 'approved' | 'rejected' | string
+  aiState?: string
+  ai_state?: string
+  aiVerdict?: string | null
+  ai_verdict?: string | null
+  aiMessage?: string | null
+  ai_message?: string | null
+  aiMissingEvidence?: string[]
+  ai_missing_evidence?: string[]
+  awaitsHumanReview?: boolean
+  awaits_human_review?: boolean
+  reviewMode?: string | null
+  review_mode?: string | null
+  reviewReason?: string | null
+  review_reason?: string | null
+  submittedBy?: UserSummary | null
+  submitted_by?: UserSummary | null
+  reviewedBy?: UserSummary | null
+  reviewed_by?: UserSummary | null
+  createdAt?: string
+  created_at?: string
+}
+
 export interface Note {
   id: EntityId
   taskId?: EntityId
@@ -288,6 +334,9 @@ export interface Task {
   notes?: Note[]
   subtasks?: Subtask[]
   emails?: Note[]
+  attachments?: TaskAttachment[]
+  completionProofs?: CompletionProof[]
+  completion_proofs?: CompletionProof[]
   timeTotals?: {
     taskEstimated?: number
     taskActual?: number
@@ -297,6 +346,23 @@ export interface Task {
     totalActual?: number
   }
   time_totals?: Record<string, number>
+}
+
+export interface TaskWorkRequest {
+  id: EntityId
+  taskId?: EntityId
+  task_id?: EntityId
+  task?: Pick<Task, 'id' | 'title' | 'project'>
+  reason: string
+  status: 'pending' | 'approved' | 'declined' | 'withdrawn' | string
+  requester?: UserSummary | null
+  decider?: UserSummary | null
+  decisionReason?: string | null
+  decision_reason?: string | null
+  decidedAt?: string | null
+  decided_at?: string | null
+  createdAt?: string | null
+  created_at?: string | null
 }
 
 export interface AiTaskGeneration {
@@ -379,7 +445,7 @@ export interface EstimateRequest {
 }
 
 export interface Message extends Note {
-  task?: Pick<Task, 'id' | 'title'>
+  task?: Pick<Task, 'id' | 'title' | 'project' | 'assignee' | 'status_value' | 'due_date' | 'estimated_minutes' | 'actual_minutes'>
   sender?: UserSummary
   subject?: string
   messages?: Note[]
@@ -468,6 +534,49 @@ export interface AnalyticsData {
   timeline?: Array<{ date: string; minutes: number; count?: number }>
 }
 
+export interface OliverAction {
+  type: string
+  status: 'done' | 'refused' | string
+  summary: string
+  task_id?: EntityId | null
+}
+
+export interface OliverMessage {
+  id: EntityId | string
+  role: 'user' | 'assistant' | string
+  body: string
+  actions?: OliverAction[]
+  error_code?: string | null
+  created_at?: string
+}
+
+export interface OliverThread {
+  conversation?: { id: EntityId; title?: string; last_message_at?: string | null }
+  available?: boolean
+  messages?: OliverMessage[]
+}
+
+export interface Workspace {
+  id: EntityId
+  name: string
+  slug?: string
+  active?: boolean
+  member_count?: number | null
+  memberCount?: number | null
+  created_at?: string
+}
+
+export interface AiFeatureSetting {
+  key: string
+  label: string
+  description: string
+  enabled: boolean
+  prompt: string
+  default_prompt: string
+  enabled_field: string
+  prompt_field: string
+}
+
 export interface AppSettings {
   appName?: string
   app_name?: string
@@ -491,6 +600,7 @@ export interface AppSettings {
   ai_request_timeout_seconds?: number
   ai_inactivity_hours?: number
   ai_current_month_cost_usd?: number
+  ai_features?: AiFeatureSetting[]
   ai_current_month_usage_by_feature?: Array<{
     feature: string
     cost_usd: string | number

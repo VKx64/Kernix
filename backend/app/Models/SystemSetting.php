@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\AiFeatures;
+
 class SystemSetting extends DomainModel
 {
     public $incrementing = false;
@@ -10,7 +12,12 @@ class SystemSetting extends DomainModel
 
     protected function casts(): array
     {
-        return [
+        $features = [];
+        foreach (AiFeatures::keys() as $feature) {
+            $features[AiFeatures::enabledColumn($feature)] = 'boolean';
+        }
+
+        return $features + [
             's3_use_path_style' => 'boolean',
             'single_client_mode' => 'boolean',
             'smtp_password' => 'encrypted',

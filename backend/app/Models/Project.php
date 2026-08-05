@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Project extends DomainModel
 {
-    use SoftDeletes;
+    use BelongsToWorkspace, SoftDeletes;
 
     protected function casts(): array
     {
@@ -21,6 +22,13 @@ class Project extends DomainModel
             'ai_task_creation_enabled' => 'boolean',
             'ai_memory_enabled' => 'boolean',
         ];
+    }
+
+    protected function workspaceIdFromParent(): ?int
+    {
+        return $this->client_id
+            ? Client::acrossWorkspaces()->whereKey($this->client_id)->value('workspace_id')
+            : null;
     }
 
     public function client(): BelongsTo

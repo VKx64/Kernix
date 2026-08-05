@@ -36,8 +36,10 @@ class TaskEstimateRequestApiTest extends TestCase
         $this->employee = $this->userWith('Estimate requester', [
             'dashboard.view', 'tasks.view', 'tasks.comment', 'messages.view', 'time.track', 'tasks.request_estimate',
         ]);
+        // The manager reviews a task assigned to the employee, not to
+        // themselves, so acting on it needs tasks.work_unassigned.
         $this->manager = $this->userWith('Estimate reviewer', [
-            'dashboard.view', 'tasks.view', 'tasks.comment', 'messages.view', 'time.track', 'tasks.estimate', 'tasks.review_estimate_requests',
+            'dashboard.view', 'tasks.view', 'tasks.comment', 'messages.view', 'time.track', 'tasks.estimate', 'tasks.review_estimate_requests', 'tasks.work_unassigned',
         ]);
         $client = Client::query()->create(['name' => 'Estimate client', 'created_by' => $this->admin->id]);
         $this->project = Project::query()->create([
@@ -139,7 +141,7 @@ class TaskEstimateRequestApiTest extends TestCase
         ])->assertCreated();
 
         $newManager = $this->userWith('New estimate reviewer', [
-            'dashboard.view', 'tasks.view', 'tasks.comment', 'messages.view', 'time.track', 'tasks.estimate', 'tasks.review_estimate_requests',
+            'dashboard.view', 'tasks.view', 'tasks.comment', 'messages.view', 'time.track', 'tasks.estimate', 'tasks.review_estimate_requests', 'tasks.work_unassigned',
         ]);
         $session = $this->clockIn($newManager);
         $this->project->update(['manager_user_id' => $newManager->id]);

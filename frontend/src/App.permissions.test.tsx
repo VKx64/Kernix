@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import type { ReactNode } from 'react'
 import App from './App'
@@ -39,11 +40,12 @@ describe('permission routes and navigation', () => {
     expect(await screen.findByRole('heading', { name: 'This area is not in your role.' })).toBeInTheDocument()
   })
 
-  it('links Administration to the first allowed tab and hides task/time controls', async () => {
+  it('links Settings from the profile menu to the first allowed tab and hides task/time controls', async () => {
     authState.user = { id: 2, username: 'user-manager', permissions: ['dashboard.view', 'users.view'] }
     render(<MemoryRouter initialEntries={['/not-a-route']}><App /></MemoryRouter>)
-    const administration = await screen.findByRole('link', { name: 'Administration' })
-    expect(administration).toHaveAttribute('href', '/settings/users')
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Account menu' }))
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/users')
     expect(screen.getByText('Kernix')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(/Search tasks/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Clock in' })).not.toBeInTheDocument()
@@ -54,6 +56,7 @@ describe('permission routes and navigation', () => {
     render(<MemoryRouter initialEntries={['/settings/users']}><App /></MemoryRouter>)
     expect(await screen.findByRole('heading', { name: 'Your role has no workspace access.' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open profile' })).toHaveAttribute('href', '/profile')
-    expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Account menu' }))
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
   })
 })

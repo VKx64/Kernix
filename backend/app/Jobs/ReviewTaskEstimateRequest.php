@@ -72,7 +72,7 @@ class ReviewTaskEstimateRequest implements ShouldBeEncrypted, ShouldQueue
             return;
         }
 
-        $systemPrompt = $prompt->system($request);
+        $systemPrompt = $prompt->system($request, $settings);
         $context = $prompt->context($request);
         $run->update([
             'status' => 'running',

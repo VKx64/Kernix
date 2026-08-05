@@ -34,6 +34,25 @@ function renderModal(overrides: Partial<ComponentProps<typeof CreateTaskModal>> 
   return { ...render(<CreateTaskModal {...props} />), props, onSubmit }
 }
 
+type Actor = ReturnType<typeof userEvent.setup>
+
+async function choose(actor: Actor, field: string, option: string) {
+  await actor.click(screen.getByRole('combobox', { name: field }))
+  await actor.click(await screen.findByRole('option', { name: option }))
+}
+
+/** Clicks a selectable day in whichever month the picker opens on, returning its ISO value. */
+async function pickDay(actor: Actor, field: string, day: number) {
+  await actor.click(screen.getByRole('button', { name: field }))
+  const popup = await screen.findByRole('dialog', { name: field })
+  const cell = within(popup)
+    .getAllByRole('button')
+    .find((button) => button.dataset.day && !button.className.includes('is-outside') && button.textContent === String(day))
+  if (!cell) throw new Error(`No selectable day ${day} in the ${field} picker.`)
+  await actor.click(cell)
+  return cell.dataset.day as string
+}
+
 describe('CreateTaskModal', () => {
   it('focuses the title and keeps permitted core properties compact', async () => {
     const view = renderModal()
@@ -78,12 +97,12 @@ describe('CreateTaskModal', () => {
 
     await actor.type(screen.getByLabelText('Task title'), '  Ship campaign  ')
     await actor.type(screen.getByLabelText('Description'), '  Helpful context  ')
-    await actor.selectOptions(screen.getByLabelText('Folder'), '11')
-    await actor.selectOptions(screen.getByLabelText('Type'), '31')
-    await actor.selectOptions(screen.getByLabelText('Status'), '21')
-    await actor.selectOptions(screen.getByLabelText('Assignee'), '9')
-    await actor.type(screen.getByLabelText('Due date'), '2026-08-31')
-    await actor.selectOptions(screen.getByLabelText('Priority'), '41')
+    await choose(actor, 'Folder', 'Pre-production')
+    await choose(actor, 'Type', 'Milestone')
+    await choose(actor, 'Status', 'In progress')
+    await choose(actor, 'Assignee', 'Casey Worker')
+    const due = await pickDay(actor, 'Due date', 18)
+    await choose(actor, 'Priority', 'High')
 
     await actor.click(screen.getByLabelText('More task properties'))
     await actor.click(screen.getByRole('button', { name: 'Time estimate' }))
@@ -105,11 +124,11 @@ describe('CreateTaskModal', () => {
       type_value_id: '31',
       urgency_value_id: '41',
       assignee_user_id: '9',
-      due_date: '2026-08-31',
+      due_date: due,
       description: 'Helpful context',
       estimated_minutes: 90,
       subtasks: [{ title: 'Draft brief' }, { title: 'Review copy' }],
-    })
+    }, [])
   })
 
   it('does not expose More options the user lacks permission to add', () => {
@@ -120,22 +139,76 @@ describe('CreateTaskModal', () => {
     expect(screen.queryByRole('button', { name: 'Subtasks' })).not.toBeInTheDocument()
   })
 
-  it('uses configured default labels without duplicating their options', () => {
+  it('uses configured default labels without duplicating their options', async () => {
+    const actor = userEvent.setup()
     renderModal({
       statusOptions: [{ id: 20, key: 'pending', label: 'Ready' }, { id: 21, label: 'In progress' }],
       typeOptions: [{ id: 30, key: 'task', label: 'Work item' }, { id: 31, label: 'Milestone' }],
       urgencyOptions: [{ id: 40, key: 'normal', label: 'Standard' }, { id: 41, label: 'High' }],
     })
 
-    const status = screen.getByLabelText('Status')
-    const type = screen.getByLabelText('Type')
-    const priority = screen.getByLabelText('Priority')
-    expect(status).toHaveDisplayValue('Ready')
-    expect(type).toHaveDisplayValue('Work item')
-    expect(priority).toHaveDisplayValue('Standard')
-    expect(within(status).getAllByRole('option', { name: 'Ready' })).toHaveLength(1)
-    expect(within(type).getAllByRole('option', { name: 'Work item' })).toHaveLength(1)
-    expect(within(priority).getAllByRole('option', { name: 'Standard' })).toHaveLength(1)
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Ready')
+    expect(screen.getByRole('combobox', { name: 'Type' })).toHaveTextContent('Work item')
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Standard')
+
+    for (const [field, label] of [['Status', 'Ready'], ['Type', 'Work item'], ['Priority', 'Standard']]) {
+      await actor.click(screen.getByRole('combobox', { name: field }))
+      const menu = await screen.findByRole('listbox', { name: field })
+      expect(within(menu).getAllByRole('option', { name: label })).toHaveLength(1)
+      await actor.keyboard('{Escape}')
+    }
+  })
+
+  it('undoes an optional choice from the same menu', async () => {
+    const actor = userEvent.setup()
+    renderModal()
+
+    await choose(actor, 'Assignee', 'Casey Worker')
+    expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Casey Worker')
+
+    await choose(actor, 'Assignee', 'Unassigned')
+    expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Unassigned')
+  })
+
+  it('stages files for upload and hands them to the submit handler', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal({ canAttach: true })
+
+    await actor.click(screen.getByLabelText('More task properties'))
+    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
+
+    const storyboard = new File(['frame'], 'storyboard.png', { type: 'image/png' })
+    await actor.upload(screen.getByLabelText('Attach files'), storyboard)
+    expect(screen.getByText('storyboard.png')).toBeInTheDocument()
+
+    await actor.upload(screen.getByLabelText('Attach files'), new File(['x'], 'clip.mp4', { type: 'video/mp4' }))
+    await actor.click(screen.getByRole('button', { name: 'Remove clip.mp4' }))
+    expect(screen.queryByText('clip.mp4')).not.toBeInTheDocument()
+
+    await actor.type(screen.getByLabelText('Task title'), 'Ship campaign')
+    await actor.click(screen.getByRole('button', { name: 'Create task' }))
+
+    expect(onSubmit).toHaveBeenCalledWith({ project_id: '5', title: 'Ship campaign' }, [storyboard])
+  })
+
+  it('refuses executable attachments before they reach the API', async () => {
+    const actor = userEvent.setup()
+    renderModal({ canAttach: true })
+
+    await actor.click(screen.getByLabelText('More task properties'))
+    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
+    await actor.upload(screen.getByLabelText('Attach files'), new File(['<?php'], 'payload.php', { type: 'text/x-php' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('payload.php is an executable or script file.')
+    expect(screen.queryByText('payload.php')).not.toBeInTheDocument()
+  })
+
+  it('hides attachments entirely without the permission', async () => {
+    const actor = userEvent.setup()
+    renderModal({ canAttach: false })
+
+    await actor.click(screen.getByLabelText('More task properties'))
+    expect(screen.queryByRole('button', { name: 'Attachments' })).not.toBeInTheDocument()
   })
 
   it('stops inline drafting at the backend subtask limit', async () => {

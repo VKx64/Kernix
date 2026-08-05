@@ -2,17 +2,25 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Task extends DomainModel
 {
-    use SoftDeletes;
+    use BelongsToWorkspace, SoftDeletes;
 
     protected function casts(): array
     {
         return ['due_date' => 'date', 'archived_at' => 'datetime'];
+    }
+
+    protected function workspaceIdFromParent(): ?int
+    {
+        return $this->project_id
+            ? Project::acrossWorkspaces()->whereKey($this->project_id)->value('workspace_id')
+            : null;
     }
 
     public function project(): BelongsTo
@@ -60,9 +68,24 @@ class Task extends DomainModel
         return $this->hasMany(TaskNote::class);
     }
 
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(TaskAttachment::class);
+    }
+
+    public function completionProofs(): HasMany
+    {
+        return $this->hasMany(TaskCompletionProof::class);
+    }
+
     public function estimateRequests(): HasMany
     {
         return $this->hasMany(TaskEstimateRequest::class);
+    }
+
+    public function workRequests(): HasMany
+    {
+        return $this->hasMany(TaskWorkRequest::class);
     }
 
     public function emails(): HasMany

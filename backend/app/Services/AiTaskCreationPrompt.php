@@ -3,11 +3,20 @@
 namespace App\Services;
 
 use App\Models\AiTaskGeneration;
+use App\Models\SystemSetting;
 use App\Models\User;
+use App\Support\AiFeatures;
 
 class AiTaskCreationPrompt
 {
-    public function system(): string
+    public function system(?SystemSetting $settings = null): string
+    {
+        return $settings === null
+            ? $this->defaultSystem()
+            : AiFeatures::prompt($settings, AiFeatures::TASK_CREATION, $this->defaultSystem());
+    }
+
+    public function defaultSystem(): string
     {
         return <<<'PROMPT'
 You convert a project manager's plain-language request into immediately usable project tasks.
@@ -17,6 +26,7 @@ Return no more than 10 top-level tasks and no more than 50 total tasks plus subt
 Use only allowed active user IDs. Do not invent users, folders, statuses, permissions, or facts.
 Dates use YYYY-MM-DD, cannot be in the past, and should not exceed the project due date.
 Keep titles specific and descriptions concise. Split work only when that makes ownership or delivery clearer.
+Read the project context before proposing anything: never restate work that already exists in existing_open_tasks or recently_completed_tasks, and follow the conventions those titles show. Note gaps the request implies but does not spell out, and align dates with the project's own schedule.
 PROMPT;
     }
 

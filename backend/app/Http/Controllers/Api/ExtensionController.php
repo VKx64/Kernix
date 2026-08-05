@@ -78,7 +78,7 @@ class ExtensionController extends ApiController
     public function updateStatus(Request $request, Task $task): JsonResponse
     {
         $this->permission($request, 'tasks.change_status');
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         abort_if($task->archived_at, 409, 'Archived tasks are read-only.');
         $data = $request->validate([
@@ -100,7 +100,7 @@ class ExtensionController extends ApiController
         if ($request->integer('time_minutes') > 0) {
             $this->permission($request, 'tasks.log_time');
         }
-        TaskMutationGuard::enforce($request);
+        TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         abort_if($task->archived_at, 409, 'Archived tasks are read-only.');
         $data = $request->validate([

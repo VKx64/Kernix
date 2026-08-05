@@ -5,8 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Models\Client;
 use App\Models\SystemSetting;
 use App\Models\AiUsageEvent;
+use App\Models\Workspace;
+use App\Support\CurrentWorkspace;
+use App\Services\AiEstimateReviewPrompt;
+use App\Services\AiTaskCreationPrompt;
 use App\Services\AiUsageService;
+use App\Services\OliverPrompt;
 use App\Services\OpenRouterClient;
+use App\Services\ProjectMemoryPrompt;
+use App\Services\TaskCompletionAuditPrompt;
+use App\Support\AiFeatures;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -36,6 +44,9 @@ class SettingsController extends ApiController
             'task_mutations_require_clock_in' => true,
             'permissions' => $request->user()->permissions(),
             'can_admin_override' => $request->user()->isAdmin(),
+            'active_workspace' => CurrentWorkspace::forUser($request->user())
+                ? Workspace::query()->find(CurrentWorkspace::forUser($request->user()))?->toSummary(true)
+                : null,
         ]);
     }
 
@@ -63,13 +74,23 @@ class SettingsController extends ApiController
             'ai_request_timeout_seconds' => ['sometimes', 'integer', 'between:10,180'],
             'ai_inactivity_hours' => ['sometimes', 'integer', 'between:1,720'],
         ];
+        foreach (AiFeatures::keys() as $feature) {
+            $rules[AiFeatures::enabledColumn($feature)] = ['sometimes', 'boolean'];
+            $rules[AiFeatures::promptColumn($feature)] = ['sometimes', 'nullable', 'string', 'max:20000'];
+        }
         $data = $request->validate($rules);
         if ($section) {
             $allowed = match ($section) {
                 'system' => ['default_timezone', 'system_logo', 'sidebar_logo', 'email_logo', 'favicon', 'single_client_mode', 'single_client_id'],
                 'smtp' => ['smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password', 'smtp_from_email', 'smtp_from_name'],
                 'storage' => ['storage_driver', 'local_upload_path', 'local_public_url', 's3_bucket', 's3_region', 's3_access_key', 's3_secret_key', 's3_endpoint', 's3_public_url_base', 's3_use_path_style'],
-                'ai' => ['openrouter_api_key', 'openrouter_model', 'ai_monthly_budget_usd', 'ai_max_output_tokens', 'ai_request_timeout_seconds', 'ai_inactivity_hours'],
+                'ai' => array_merge(
+                    ['openrouter_api_key', 'openrouter_model', 'ai_monthly_budget_usd', 'ai_max_output_tokens', 'ai_request_timeout_seconds', 'ai_inactivity_hours'],
+                    array_merge(...array_map(
+                        fn (string $feature) => [AiFeatures::enabledColumn($feature), AiFeatures::promptColumn($feature)],
+                        AiFeatures::keys(),
+                    )),
+                ),
                 default => [],
             };
             $data = array_intersect_key($data, array_flip($allowed));
@@ -117,6 +138,26 @@ class SettingsController extends ApiController
         ]);
     }
 
+    /**
+     * The shipped prompts, so the editor can show what a blank box falls back
+     * to and offer a one-click restore.
+     *
+     * @return array<string, string>
+     */
+    private function defaultPrompts(): array
+    {
+        $memory = app(ProjectMemoryPrompt::class);
+
+        return [
+            AiFeatures::TASK_CREATION => app(AiTaskCreationPrompt::class)->defaultSystem(),
+            AiFeatures::ESTIMATE_REVIEW => app(AiEstimateReviewPrompt::class)->defaultSystem(),
+            AiFeatures::PROJECT_MEMORY => $memory->defaultLearningSystem(),
+            AiFeatures::PROJECT_BRIEF => $memory->defaultBriefSystem(),
+            AiFeatures::COMPLETION_AUDIT => app(TaskCompletionAuditPrompt::class)->defaultSystem(),
+            AiFeatures::OLIVER => app(OliverPrompt::class)->defaultSystem(),
+        ];
+    }
+
     private function present(SystemSetting $settings, ?Request $request = null): array
     {
         $data = array_merge($settings->toArray(), [
@@ -127,6 +168,7 @@ class SettingsController extends ApiController
             'ai_current_month_cost_usd' => (float) AiUsageEvent::query()
                 ->where('created_at', '>=', now()->startOfMonth())
                 ->sum('cost_usd'),
+            'ai_features' => AiFeatures::catalog($settings, $this->defaultPrompts()),
             'ai_current_month_usage_by_feature' => AiUsageEvent::query()
                 ->where('created_at', '>=', now()->startOfMonth())
                 ->selectRaw('feature, SUM(cost_usd) as cost_usd, COUNT(*) as calls')

@@ -82,7 +82,36 @@ class DatabaseSeeder extends Seeder
                 'theme_preset' => 'imagic_purple', 'created_at' => $now, 'updated_at' => $now,
             ]);
         }
+        $this->ensureDefaultWorkspace($now);
         DB::table('system_settings')->insertOrIgnore(['id' => 1, 'default_timezone' => 'Asia/Manila', 'smtp_port' => 587, 'smtp_encryption' => 'tls', 'smtp_from_name' => config('app.name', 'Kernix'), 'storage_driver' => 'local', 'local_upload_path' => 'uploads', 'single_client_mode' => false, 'created_at' => $now, 'updated_at' => $now]);
+    }
+
+    /**
+     * Nobody should sign in without a workspace, including accounts inserted by
+     * this seeder rather than through the model.
+     */
+    private function ensureDefaultWorkspace(mixed $now): void
+    {
+        $workspaceId = DB::table('workspaces')->orderBy('id')->value('id');
+        if (! $workspaceId) {
+            $workspaceId = DB::table('workspaces')->insertGetId([
+                'name' => config('app.name', 'Workspace'),
+                'slug' => 'default',
+                'created_by' => DB::table('users')->min('id'),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $unassigned = DB::table('users')
+            ->whereNotExists(fn ($query) => $query->select(DB::raw(1))->from('workspace_user')->whereColumn('workspace_user.user_id', 'users.id'))
+            ->pluck('id')
+            ->map(fn ($userId) => ['workspace_id' => $workspaceId, 'user_id' => $userId, 'created_at' => $now, 'updated_at' => $now])
+            ->all();
+        if ($unassigned !== []) {
+            DB::table('workspace_user')->insertOrIgnore($unassigned);
+        }
+        DB::table('users')->whereNull('active_workspace_id')->update(['active_workspace_id' => $workspaceId]);
     }
 
     /** @param array{name: string, key_name: string, sort_order: int, permissions: array<int, string>} $definition */

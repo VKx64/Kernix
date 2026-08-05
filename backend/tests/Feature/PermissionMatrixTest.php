@@ -10,8 +10,11 @@ use App\Models\FieldValue;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\Task;
+use App\Models\TaskAttachment;
+use App\Models\TaskCompletionProof;
 use App\Models\TaskEstimateRequest;
 use App\Models\TaskNote;
+use App\Models\TaskWorkRequest;
 use App\Models\TimeSession;
 use App\Models\User;
 use App\Support\PermissionCatalog;
@@ -121,8 +124,9 @@ class PermissionMatrixTest extends TestCase
             'tasks.create' => $this->taskCreateRequest($actor),
             'tasks.create_with_ai' => $this->aiTaskGenerationReadRequest($actor),
             'tasks.edit' => $this->taskPatchRequest($actor, ['title' => 'Matrix edited task']),
+            // Not 'complete': that status is reached through completion proof.
             'tasks.change_status' => $this->taskPatchRequest($actor, [
-                'status_value_id' => $this->fieldValue('task_status', 'complete')->id,
+                'status_value_id' => $this->fieldValue('task_status', 'in_progress')->id,
             ]),
             'tasks.comment' => $this->taskChildRequest($actor, 'notes', ['body' => 'Matrix comment']),
             'tasks.log_time' => $this->taskChildRequest($actor, 'notes', ['body' => 'Matrix time log', 'time_minutes' => 15]),
@@ -133,8 +137,17 @@ class PermissionMatrixTest extends TestCase
             'tasks.estimate' => $this->taskPatchRequest($actor, ['estimated_minutes' => 30]),
             'tasks.request_estimate' => $this->taskEstimateRequest($actor),
             'tasks.review_estimate_requests' => $this->taskEstimateReviewRequest($actor),
+            'tasks.attachments' => $this->taskAttachmentDeleteRequest($actor),
+            'tasks.review_completion' => $this->taskCompletionReviewRequest($actor),
             'tasks.email' => $this->taskEmailRequest($actor),
             'tasks.archive' => $this->taskArchiveRequest($actor),
+            'tasks.work_unassigned' => $this->taskWorkUnassignedRequest($actor),
+            'tasks.request_work' => $this->taskRequestWorkRequest($actor),
+            'tasks.review_work_requests' => $this->taskReviewWorkRequestsRequest($actor),
+            'workspaces.manage' => $this->request('POST', '/api/workspaces', [
+                'name' => 'Matrix workspace '.$actor->id,
+                'activate' => false,
+            ], 201, true),
             'projects.view' => $this->request('GET', '/api/projects'),
             'projects.create' => $this->projectCreateRequest($actor),
             'projects.edit' => $this->projectPatchRequest($actor, ['name' => 'Matrix edited project']),
@@ -212,6 +225,112 @@ class PermissionMatrixTest extends TestCase
         $task = $this->task($actor);
 
         return $this->request('POST', '/api/tasks/'.$task->id.'/'.$child, $payload, 201, true);
+    }
+
+    /**
+     * Submitting proof needs multipart, so the matrix exercises the review
+     * side. Reviewers are, by definition, not the assignee, so the fixture
+     * task is deliberately assigned to someone else.
+     */
+    private function taskCompletionReviewRequest(User $actor): array
+    {
+        $assignee = User::factory()->create();
+        [, $project] = $this->workspace($actor);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix completion review '.$actor->id,
+            'status_value_id' => $this->fieldValue('task_status', 'pending')->id,
+            'actual_minutes' => 0,
+            'assignee_user_id' => $assignee->id,
+            'created_by' => $this->admin->id,
+        ]);
+        $proof = TaskCompletionProof::query()->create([
+            'task_id' => $task->id,
+            'submitted_by' => $assignee->id,
+            'summary' => 'Matrix proof of completion for the permission sweep.',
+            'status' => 'pending',
+            'ai_state' => 'failed',
+        ]);
+
+        return $this->request('POST', '/api/tasks/'.$task->id.'/completion-proofs/'.$proof->id.'/approve', [], 200, true);
+    }
+
+    /**
+     * "Work on anyone's task" is a modifier, not a standalone endpoint gate,
+     * so it is exercised by pairing it with an ordinary edit on a task
+     * assigned to someone else.
+     */
+    private function taskWorkUnassignedRequest(User $actor): array
+    {
+        $other = User::factory()->create();
+        [, $project] = $this->workspace($actor);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix unassigned task '.$actor->id,
+            'status_value_id' => $this->fieldValue('task_status', 'pending')->id,
+            'actual_minutes' => 0,
+            'assignee_user_id' => $other->id,
+            'created_by' => $this->admin->id,
+        ]);
+
+        return $this->request('PATCH', '/api/tasks/'.$task->id, ['title' => 'Matrix edited unassigned task'], 200, true);
+    }
+
+    private function taskRequestWorkRequest(User $actor): array
+    {
+        $other = User::factory()->create();
+        [, $project] = $this->workspace($actor);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix work request task '.$actor->id,
+            'status_value_id' => $this->fieldValue('task_status', 'pending')->id,
+            'actual_minutes' => 0,
+            'assignee_user_id' => $other->id,
+            'created_by' => $this->admin->id,
+        ]);
+
+        return $this->request('POST', '/api/tasks/'.$task->id.'/work-requests', [
+            'reason' => 'I already started on this and would like to keep going.',
+        ], 201, true);
+    }
+
+    private function taskReviewWorkRequestsRequest(User $actor): array
+    {
+        $requester = User::factory()->create();
+        [, $project] = $this->workspace($actor);
+        $task = Task::query()->create([
+            'project_id' => $project->id,
+            'title' => 'Matrix review work request task '.$actor->id,
+            'status_value_id' => $this->fieldValue('task_status', 'pending')->id,
+            'actual_minutes' => 0,
+            'assignee_user_id' => $requester->id,
+            'created_by' => $this->admin->id,
+        ]);
+        $workRequest = TaskWorkRequest::query()->create([
+            'task_id' => $task->id,
+            'requester_user_id' => $requester->id,
+            'reason' => 'I would like to help finish this task.',
+            'status' => TaskWorkRequest::PENDING,
+        ]);
+
+        return $this->request('POST', '/api/tasks/'.$task->id.'/work-requests/'.$workRequest->id.'/approve', [], 200, true);
+    }
+
+    /** Uploads need multipart, so the matrix exercises the delete side instead. */
+    private function taskAttachmentDeleteRequest(User $actor): array
+    {
+        $task = $this->task($actor);
+        $attachment = TaskAttachment::query()->create([
+            'task_id' => $task->id,
+            'original_name' => 'matrix-brief.pdf',
+            'file_name' => 'matrix-brief.pdf',
+            'storage_path' => "task-attachments/{$task->id}/matrix-brief.pdf",
+            'mime_type' => 'application/pdf',
+            'file_size' => 1024,
+            'uploaded_by' => $this->admin->id,
+        ]);
+
+        return $this->request('DELETE', '/api/tasks/'.$task->id.'/attachments/'.$attachment->id, [], 204, true);
     }
 
     private function taskEmailRequest(User $actor): array
@@ -415,6 +534,7 @@ class PermissionMatrixTest extends TestCase
         return [$client, $project];
     }
 
+    /** Work is assignee-only, so fixture tasks default to the acting user. */
     private function task(User $actor): Task
     {
         [, $project] = $this->workspace($actor);
@@ -424,6 +544,7 @@ class PermissionMatrixTest extends TestCase
             'title' => 'Matrix task '.$actor->id,
             'status_value_id' => $this->fieldValue('task_status', 'pending')->id,
             'actual_minutes' => 0,
+            'assignee_user_id' => $actor->id,
             'created_by' => $this->admin->id,
         ]);
     }
@@ -472,7 +593,9 @@ class PermissionMatrixTest extends TestCase
         return User::factory()->create(['role_id' => $role->id]);
     }
 
-    /** @return array<int, string> */
+    /**
+     * @return array<int, string>
+     */
     private function permissionClosure(string $key): array
     {
         $permissions = ['dashboard.view'];
@@ -487,15 +610,32 @@ class PermissionMatrixTest extends TestCase
         };
         $visit($key);
 
-        return $permissions;
+        // These keys are exercised against a fixture task deliberately
+        // assigned to someone else, because that is what a reviewer actually
+        // is. tasks.work_unassigned is the permission that makes that
+        // possible, so it belongs in their closures. It is deliberately not
+        // added for every key: most work is still assignee-only, and this
+        // matrix is what proves that gate stays in force.
+        return match ($key) {
+            'tasks.review_estimate_requests', 'tasks.review_completion', 'tasks.review_work_requests' => [
+                ...$permissions,
+                'tasks.work_unassigned',
+            ],
+            // tasks.work_unassigned is a modifier, not a standalone endpoint
+            // gate: its own test pairs it with an ordinary edit permission so
+            // there is a real mutation to prove it unlocked.
+            'tasks.work_unassigned' => [...$permissions, 'time.track', 'tasks.edit'],
+            default => $permissions,
+        };
     }
 
     private function isTaskMutation(string $key): bool
     {
         return in_array($key, [
             'tasks.create', 'tasks.edit', 'tasks.change_status', 'tasks.comment', 'tasks.log_time',
-            'tasks.subtasks', 'tasks.assign', 'tasks.estimate', 'tasks.archive',
+            'tasks.subtasks', 'tasks.assign', 'tasks.estimate', 'tasks.archive', 'tasks.attachments', 'tasks.review_completion',
             'tasks.request_estimate', 'tasks.review_estimate_requests',
+            'tasks.work_unassigned', 'tasks.request_work', 'tasks.review_work_requests',
         ], true);
     }
 
@@ -513,7 +653,7 @@ class PermissionMatrixTest extends TestCase
         $tables = [
             'roles', 'role_permissions', 'fields', 'field_values', 'users', 'clients', 'contacts',
             'projects', 'tasks', 'task_subtasks', 'task_notes', 'task_emails', 'time_sessions',
-            'task_estimate_requests',
+            'task_estimate_requests', 'task_work_requests',
             'time_breaks', 'system_settings', 'audit_logs', 'sessions', 'personal_access_tokens',
         ];
         $snapshot = [];

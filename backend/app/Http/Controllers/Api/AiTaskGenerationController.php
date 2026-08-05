@@ -6,8 +6,10 @@ use App\Jobs\ProcessAiTaskGeneration;
 use App\Models\AiTaskGeneration;
 use App\Models\AuditLog;
 use App\Models\Project;
+use App\Models\SystemSetting;
 use App\Models\TaskFolder;
 use App\Services\AiTaskBatchService;
+use App\Support\AiFeatures;
 use App\Support\TaskMutationGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +23,7 @@ class AiTaskGenerationController extends ApiController
         $this->permission($request, 'tasks.create_with_ai');
         TaskMutationGuard::enforce($request);
         abort_if($project->archived_at, 409, 'Archived projects cannot create tasks.');
+        abort_unless(AiFeatures::enabled(SystemSetting::firstOrFail(), AiFeatures::TASK_CREATION), 409, 'AI task creation is switched off for this workspace.');
         abort_unless($project->ai_task_creation_enabled, 409, 'AI task creation is disabled for this project.');
         $data = $request->validate(['prompt' => ['required', 'string', 'max:10000'], 'task_folder_id' => ['sometimes', 'nullable', 'integer', Rule::exists('task_folders', 'id')]]);
         if (! empty($data['task_folder_id'])) abort_unless(TaskFolder::query()->whereKey($data['task_folder_id'])->where('project_id', $project->id)->exists(), 422, 'The folder does not belong to this project.');

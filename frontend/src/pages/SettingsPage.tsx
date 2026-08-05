@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../auth/WorkspaceProvider'
+import { AiFeatureSettings } from '../components/AiFeatureSettings'
 import { EntityForm, ErrorBanner, PageHeader, Panel, type FormFieldSpec } from '../components/ui'
 import { api, ApiError, normalizePage, unwrap } from '../lib/api'
 import { useCan } from '../lib/permissions'
@@ -7,6 +8,14 @@ import type { ApiEnvelope, AppSettings, Client, FormPayload, Paginated } from '.
 import { SettingsNav } from './EntityPages'
 
 type SettingsSection = 'system' | 'smtp' | 'storage' | 'ai'
+
+// Starting points only — the field stays free text so any OpenRouter model ID works.
+// Prices are OpenRouter's per-million input/output rates at the time of writing.
+const SUGGESTED_MODELS = [
+  { value: 'anthropic/claude-opus-5', label: 'Claude Opus 5 — deepest reasoning, $5 / $25 per 1M' },
+  { value: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5 — balanced default, $3 / $15 per 1M' },
+  { value: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5 — fastest and cheapest, $1 / $5 per 1M' },
+]
 
 function cleanPayload(payload: FormPayload) {
   return Object.fromEntries(Object.entries(payload).filter(([key, item]) => !(key.includes('password') || key.includes('secret') || key.includes('access_key') || key.includes('api_key')) || item !== ''))
@@ -53,9 +62,9 @@ export function SettingsPage() {
       { name: 'default_timezone', label: 'Default timezone', required: true, placeholder: 'Asia/Manila' },
       { name: 'single_client_mode', label: 'Use single-client mode', type: 'checkbox', help: 'Hides the client switcher and client directory.' },
       { name: 'single_client_id', label: 'Single client', type: 'select', options: clients.map((client) => ({ label: client.name, value: client.id })) },
-      { name: 'system_logo', label: 'System logo URL', type: 'url', wide: true },
-      { name: 'sidebar_logo', label: 'Sidebar logo URL', type: 'url', wide: true },
-      { name: 'favicon', label: 'Favicon URL', type: 'url', wide: true },
+      { name: 'system_logo', label: 'System logo URL', type: 'url' },
+      { name: 'sidebar_logo', label: 'Sidebar logo URL', type: 'url' },
+      { name: 'favicon', label: 'Favicon URL', type: 'url' },
     ],
     smtp: [
       { name: 'smtp_host', label: 'SMTP host', placeholder: 'smtp.example.com' },
@@ -73,7 +82,7 @@ export function SettingsPage() {
     ],
     ai: [
       { name: 'openrouter_api_key', label: 'OpenRouter API key', type: 'password', wide: true, help: settings?.has_openrouter_api_key ? 'A key is saved. Leave blank to keep it.' : 'Stored encrypted and never returned to the browser.' },
-      { name: 'openrouter_model', label: 'OpenRouter model ID', required: true, wide: true, placeholder: 'provider/model-name', help: 'Enter the exact model ID from OpenRouter. No model is selected automatically.' },
+      { name: 'openrouter_model', label: 'OpenRouter model ID', required: true, wide: true, placeholder: 'provider/model-name', suggestions: SUGGESTED_MODELS, help: 'Pick a suggested model or type any OpenRouter model ID. Nothing is selected automatically.' },
       { name: 'ai_monthly_budget_usd', label: 'Monthly budget (USD)', type: 'number', min: 0.01, step: 0.01 },
       { name: 'ai_max_output_tokens', label: 'Maximum response tokens', type: 'number', min: 100 },
       { name: 'ai_request_timeout_seconds', label: 'Request timeout (seconds)', type: 'number', min: 10 },
@@ -114,9 +123,9 @@ export function SettingsPage() {
     {(settings.ai_current_month_usage_by_feature?.length ?? 0) > 0 && <div className="ai-usage-breakdown" aria-label="AI usage by feature">
       {settings.ai_current_month_usage_by_feature?.map((usage) => <p key={usage.feature}><span>{aiFeatureLabel(usage.feature)}</span><strong>${Number(usage.cost_usd).toFixed(4)} · {usage.calls} call{usage.calls === 1 ? '' : 's'}</strong></p>)}
     </div>}
-    <p>Task data is sent with zero-data-retention routing. Each AI feature must be enabled per project.</p>
+    <p>Task data is sent with zero-data-retention routing. A feature also has to be enabled on the project that uses it.</p>
     {canEdit && <button type="button" className="btn btn-quiet" disabled={testingAi || !settings.ai_configured} onClick={() => void testAi()}>{testingAi ? 'Testing…' : 'Test saved connection'}</button>}
   </div> : undefined
   const title = section === 'system' ? 'System preferences' : section === 'smtp' ? 'Outgoing email' : section === 'storage' ? 'File storage' : 'AI project manager'
-  return <div><PageHeader eyebrow="Administration" title="Settings" description="System behavior, integrations, outgoing email, and file storage." /><SettingsNav />{error && <ErrorBanner message={error} onRetry={() => void load()} />}{saved && <div className="success-banner">{saved}</div>}<div className="settings-layout"><aside className="settings-sections">{(['system', 'smtp', 'storage', 'ai'] as SettingsSection[]).map((item) => <button className={section === item ? 'active' : ''} onClick={() => { setSection(item); setError(''); setSaved('') }} key={item}>{item === 'smtp' ? 'Outgoing email' : item === 'ai' ? 'AI project manager' : item[0].toUpperCase() + item.slice(1)}</button>)}</aside><Panel className="settings-form-panel" title={title}>{loading ? <div className="panel-loading"><span className="spinner" /> Loading settings…</div> : settings ? <EntityForm key={section} fields={specs[section].map((field) => ({ ...field, disabled: !canEdit }))} initialValues={initial} busy={busy} submitDisabled={!canEdit} submitLabel="Save changes" onSubmit={save} extra={!canEdit ? <p className="read-only-note">Your role can view these settings but cannot change them.</p> : aiExtra} /> : null}</Panel></div></div>
+  return <div><PageHeader eyebrow="Settings" title="System" description="System behavior, integrations, outgoing email, and file storage." /><SettingsNav />{error && <ErrorBanner message={error} onRetry={() => void load()} />}{saved && <div className="success-banner">{saved}</div>}<div className="settings-layout"><aside className="settings-sections">{(['system', 'smtp', 'storage', 'ai'] as SettingsSection[]).map((item) => <button className={section === item ? 'active' : ''} onClick={() => { setSection(item); setError(''); setSaved('') }} key={item}>{item === 'smtp' ? 'Outgoing email' : item === 'ai' ? 'AI project manager' : item[0].toUpperCase() + item.slice(1)}</button>)}</aside><Panel className="settings-form-panel" title={title}>{loading ? <div className="panel-loading"><span className="spinner" /> Loading settings…</div> : settings ? <><EntityForm key={section} fields={specs[section].map((field) => ({ ...field, disabled: !canEdit }))} initialValues={initial} busy={busy} submitDisabled={!canEdit} submitLabel="Save changes" onSubmit={save} extra={!canEdit ? <p className="read-only-note">Your role can view these settings but cannot change them.</p> : aiExtra} />{section === 'ai' && (settings.ai_features?.length ?? 0) > 0 && <AiFeatureSettings features={settings.ai_features ?? []} canEdit={canEdit} busy={busy} onSave={save} />}</> : null}</Panel></div></div>
 }

@@ -32,17 +32,17 @@ class RbacCoreTest extends TestCase
     public function test_catalog_is_the_exact_grouped_assignable_contract_and_seeder_removes_obsolete_admin_grants(): void
     {
         $keys = PermissionCatalog::keys();
-        $this->assertCount(43, $keys);
-        $this->assertCount(43, array_unique($keys));
-        $this->assertCount(12, PermissionCatalog::groups());
+        $this->assertCount(49, $keys);
+        $this->assertCount(49, array_unique($keys));
+        $this->assertCount(13, PermissionCatalog::groups());
         $this->assertNotContains('tasks.delete', $keys);
         $this->assertNotContains('roles.edit', $keys);
         $this->assertSame(['tasks.comment'], PermissionCatalog::requires('tasks.log_time'));
         $this->assertSame(['dashboard.view'], PermissionCatalog::requires('time.view_team'));
 
         $response = $this->getJson('/api/roles/permissions')->assertOk();
-        $this->assertCount(12, $response->json('data'));
-        $this->assertCount(43, collect($response->json('data'))->flatMap(fn (array $group) => $group['permissions']));
+        $this->assertCount(13, $response->json('data'));
+        $this->assertCount(49, collect($response->json('data'))->flatMap(fn (array $group) => $group['permissions']));
         $response->assertJsonFragment([
             'key' => 'tasks.assign',
             'requires' => ['tasks.view', 'time.track'],
