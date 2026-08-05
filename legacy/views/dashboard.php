@@ -176,49 +176,14 @@ function dash_fmt_mins(int $m): string {
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  // Pull the theme's primary color so the slices can be tinted accordingly.
-  // We sample lightness around the primary hue for variety.
-  function themePrimaryHsl() {
-    const styles = getComputedStyle(document.documentElement);
-    const primary = (styles.getPropertyValue('--primary') || '#8b5cf6').trim();
-    return hexToHsl(primary);
-  }
-
-  function hexToHsl(hex) {
-    let h = hex.replace('#', '');
-    if (h.length === 3) h = h.split('').map(c => c + c).join('');
-    const r = parseInt(h.substring(0,2),16) / 255;
-    const g = parseInt(h.substring(2,4),16) / 255;
-    const b = parseInt(h.substring(4,6),16) / 255;
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
-    let H = 0, S = 0;
-    const L = (max + min) / 2;
-    if (max !== min) {
-      const d = max - min;
-      S = L > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: H = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: H = (b - r) / d + 2; break;
-        case b: H = (r - g) / d + 4; break;
-      }
-      H /= 6;
-    }
-    return { h: H * 360, s: S * 100, l: L * 100 };
-  }
-
-  // Generate N colors derived from the theme primary
+  // Achromatic palette — charts are told apart by a lightness ramp
+  // (--chart-1 .. --chart-5) rather than a hue, same convention as the
+  // token set. Cycle the five stops if there are more series than that.
   function paletteFromTheme(n) {
-    const base = themePrimaryHsl();
+    const styles = getComputedStyle(document.documentElement);
+    const ramp = [1, 2, 3, 4, 5].map(i => (styles.getPropertyValue(`--chart-${i}`) || '').trim());
     const out = [];
-    // Spread saturation and lightness, slight hue rotation for variety
-    for (let i = 0; i < n; i++) {
-      const t = n === 1 ? 0 : i / (n - 1);
-      // Hue shift ±30 deg around base; lightness 35% → 65%; saturation 55% → 75%
-      const h = (base.h + (t - 0.5) * 60 + 360) % 360;
-      const s = 55 + t * 20;
-      const l = 35 + t * 30;
-      out.push(`hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`);
-    }
+    for (let i = 0; i < n; i++) out.push(ramp[i % ramp.length]);
     return out;
   }
 
@@ -288,7 +253,7 @@ function dash_fmt_mins(int $m): string {
       <svg viewBox="0 0 ${size} ${size}" class="donut-svg">
         <defs>
           <filter id="donut-shadow" x="-10%" y="-10%" width="120%" height="120%">
-            <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.35"/>
+            <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="black" flood-opacity="0.35"/>
           </filter>
         </defs>
         <g filter="url(#donut-shadow)">

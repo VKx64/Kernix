@@ -38,7 +38,7 @@ if ($me && function_exists('messages_unread_count')) {
 }
 ?>
 <!doctype html>
-<html lang="en" data-theme="dark" data-theme-preset="<?= e(function_exists('theme_preset_for_user') ? theme_preset_for_user($me) : 'imagic_purple') ?>">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

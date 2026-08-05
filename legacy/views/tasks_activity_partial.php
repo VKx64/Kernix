@@ -8,21 +8,24 @@ if (empty($events)): ?>
 <?php else:
     // Icon and color map for action types
     $iconMap = [
-        'create'    => ['icon' => '+',  'color' => '#22c55e'],
+        'create'    => ['icon' => '+',  'color' => 'var(--success)'],
         'update'    => ['icon' => '✎',  'color' => 'var(--primary-hover)'],
         'delete'    => ['icon' => '×',  'color' => 'var(--danger)'],
         'archive'   => ['icon' => '📦', 'color' => 'var(--text-muted)'],
         'unarchive' => ['icon' => '↩',  'color' => 'var(--text-muted)'],
-        'send'      => ['icon' => '✈',  'color' => 'var(--accent)'],
+        'send'      => ['icon' => '✈',  'color' => 'var(--accent-foreground)'],
     ];
 ?>
   <div class="activity-timeline">
     <?php foreach ($events as $ev):
         $cfg = $iconMap[$ev['action']] ?? ['icon'=>'•', 'color'=>'var(--text-muted)'];
         $changes = $ev['changes_json'] ? json_decode($ev['changes_json'], true) : null;
+        $dotColor = $cfg['color'];
+        $dotBg = "color-mix(in oklch, {$dotColor} 15%, transparent)";
+        $dotBorder = "color-mix(in oklch, {$dotColor} 40%, transparent)";
     ?>
       <div class="activity-item">
-        <div class="activity-dot" style="background:<?= $cfg['color'] ?>22;color:<?= $cfg['color'] ?>;border-color:<?= $cfg['color'] ?>66"><?= $cfg['icon'] ?></div>
+        <div class="activity-dot" style="background:<?= $dotBg ?>;color:<?= $dotColor ?>;border-color:<?= $dotBorder ?>"><?= $cfg['icon'] ?></div>
         <div class="activity-body">
           <div class="activity-summary">
             <strong><?= e($ev['actor_name'] ?: 'System') ?></strong>

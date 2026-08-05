@@ -18,52 +18,43 @@
   transition: all .15s; white-space: nowrap;
 }
 .toggle-pill:hover { background: var(--glass-bg-2); color: var(--text); border-color: var(--primary-glow); }
-.toggle-pill.active { background: var(--primary-glow); border-color: var(--primary); color: var(--primary-hover); }
-.toggle-pill.active-danger { background: rgba(248,113,113,.15); border-color: rgba(248,113,113,.4); color: var(--danger); }
-/* Light mode — primary-glow is too pale on white, give the active state real contrast */
-[data-theme="light"] .toggle-pill.active {
+.toggle-pill.active {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--primary-foreground);
 }
-[data-theme="light"] .toggle-pill.active-danger {
+.toggle-pill.active-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--destructive-foreground);
 }
 
 .pill-switch { position: relative; width: 28px; height: 16px; flex-shrink: 0; }
 .pill-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .pill-switch-track {
   position: absolute; inset: 0;
-  background: rgba(255,255,255,.2);
-  border: 1px solid transparent;
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
   transition: background .15s, border-color .15s;
 }
-.pill-switch input:checked + .pill-switch-track { background: var(--primary); }
-/* Light mode — white-on-white-ish track is invisible; use a soft dark fill + visible border */
-[data-theme="light"] .pill-switch-track {
-  background: rgba(0, 0, 0, 0.12);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-[data-theme="light"] .pill-switch input:checked + .pill-switch-track {
+.pill-switch input:checked + .pill-switch-track {
   background: var(--primary);
   border-color: var(--primary);
 }
-/* When the parent toggle-pill is active in light mode, the track sits on a
-   colored pill background; switch the track to a white tint and the thumb
-   to white so it still reads. */
-[data-theme="light"] .toggle-pill.active .pill-switch-track {
-  background: rgba(255, 255, 255, 0.35);
-  border-color: rgba(255, 255, 255, 0.5);
+/* When the parent toggle-pill is active, the track sits on a filled pill
+   background — switch the track to a translucent primary-foreground tint
+   so it still reads against the solid fill. */
+.toggle-pill.active .pill-switch-track {
+  background: color-mix(in oklch, var(--primary-foreground) 35%, transparent);
+  border-color: color-mix(in oklch, var(--primary-foreground) 50%, transparent);
 }
 
 .pill-switch-thumb {
   position: absolute; top: 2px; left: 2px;
   width: 12px; height: 12px;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--background);
+  border: 1px solid var(--border);
   border-radius: 50%;
   transition: transform .15s;
   pointer-events: none;
@@ -431,8 +422,8 @@
   object-fit: cover;
 }
 .user-cell-avatar.initials {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: #fff; font-size: 11px; font-weight: 700;
+  background: var(--primary);
+  color: var(--primary-foreground); font-size: 11px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
 .user-cell-name { font-weight: 500; font-size: 13px; }

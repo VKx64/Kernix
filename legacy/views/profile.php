@@ -164,28 +164,6 @@ $usernameProper = ucfirst(strtolower($me['username'] ?? ''));
       </form>
     </div>
 
-    <!-- DISPLAY / THEME -->
-    <div class="ts17-card">
-      <div class="ts17-card-title">Display Theme</div>
-      <p class="muted" style="font-size:12px;margin:0 0 10px">
-        Pick a color theme. Applies to your view only.
-      </p>
-      <div class="theme-preset-grid" id="theme-preset-grid">
-        <?php foreach ($themePresets as $p): ?>
-          <button type="button"
-                  class="theme-preset-card <?= $p['id'] === $currentThemeId ? 'active' : '' ?>"
-                  data-theme-id="<?= e($p['id']) ?>">
-            <div class="theme-preset-swatches">
-              <?php foreach ($p['swatches'] as $color): ?>
-                <span class="theme-preset-swatch" style="background:<?= e($color) ?>"></span>
-              <?php endforeach; ?>
-            </div>
-            <div class="theme-preset-name"><?= e($p['name']) ?></div>
-          </button>
-        <?php endforeach; ?>
-      </div>
-    </div>
-
     <!-- PASSWORD -->
     <div class="ts17-card">
       <div class="ts17-card-title">Change Password</div>
@@ -401,52 +379,7 @@ $usernameProper = ucfirst(strtolower($me['username'] ?? ''));
     }
   });
 
-  // ============================================================
-  //  Theme preset picker — live preview + save
-  // ============================================================
-  const themeGrid = document.getElementById('theme-preset-grid');
-  if (themeGrid) {
-    themeGrid.addEventListener('click', async (e) => {
-      const card = e.target.closest('[data-theme-id]');
-      if (!card) return;
-      const newId = card.dataset.themeId;
-      const prevActive = themeGrid.querySelector('.active');
-      if (prevActive === card) return;
-
-      // Optimistic update — apply immediately so the user sees it
-      const prevId = prevActive?.dataset.themeId || null;
-      document.documentElement.setAttribute('data-theme-preset', newId);
-      themeGrid.querySelectorAll('.theme-preset-card').forEach(c => {
-        c.classList.toggle('active', c === card);
-      });
-
-      // Save in background
-      const fd = new FormData();
-      fd.append('_csrf', CSRF);
-      fd.append('theme_preset', newId);
-      try {
-        const res = await fetch(`${BASE}/index.php?p=profile&action=save`, {
-          method: 'POST', body: fd, headers: {'X-Requested-With': 'XMLHttpRequest'}
-        });
-        const j = await res.json();
-        if (j.ok) {
-          window.showToast?.('Theme updated.', 'success');
-        } else {
-          // Revert on failure
-          if (prevId) document.documentElement.setAttribute('data-theme-preset', prevId);
-          themeGrid.querySelectorAll('.theme-preset-card').forEach(c => {
-            c.classList.toggle('active', c.dataset.themeId === prevId);
-          });
-          window.showToast?.(j.message || 'Failed.', 'error');
-        }
-      } catch {
-        if (prevId) document.documentElement.setAttribute('data-theme-preset', prevId);
-        themeGrid.querySelectorAll('.theme-preset-card').forEach(c => {
-          c.classList.toggle('active', c.dataset.themeId === prevId);
-        });
-        window.showToast?.('Network error.', 'error');
-      }
-    });
-  }
+  // Theme preset picker removed — light/dark is the only switch now
+  // (handled globally by the theme-toggle button in the topbar).
 })();
 </script>

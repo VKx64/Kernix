@@ -101,8 +101,6 @@ function handle_index(): void
         'recentNotes'     => $recentNotes,
         'unreadMessages'  => $unreadMessages,
         'myOpenTasks'     => $myOpenTasks,
-        'themePresets'    => function_exists('theme_presets')      ? theme_presets()             : [],
-        'currentThemeId'  => function_exists('theme_preset_for_user') ? theme_preset_for_user($me) : 'imagic_purple',
     ]);
     } catch (\Throwable $e) {
         while (ob_get_level() > 0) ob_end_clean();
@@ -142,7 +140,6 @@ function handle_save(): void
         'birthdate',
         'wise_account', 'gcash_account',
         'timezone',
-        'theme_preset',
     ];
 
     $errors = [];
@@ -171,15 +168,6 @@ function handle_save(): void
                 continue;
             }
         }
-        if ($f === 'theme_preset') {
-            $validIds = function_exists('theme_preset_ids') ? theme_preset_ids() : ['imagic_purple'];
-            if ($val === '' || !in_array($val, $validIds, true)) {
-                $val = function_exists('theme_preset_default') ? theme_preset_default() : 'imagic_purple';
-            }
-            $data[$f] = $val;
-            continue;
-        }
-
         $data[$f] = ($val === '') ? null : $val;
     }
 
