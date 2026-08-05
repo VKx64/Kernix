@@ -309,6 +309,7 @@ export function DataTable<TData, TValue>({
   emptyDescription,
   pageSize = 20,
   initialVisibility,
+  showViewOptions = true,
 }: {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -324,6 +325,8 @@ export function DataTable<TData, TValue>({
   emptyDescription?: string
   pageSize?: number
   initialVisibility?: VisibilityState
+  /** Off when the page owns its own column control, so the two do not both show. */
+  showViewOptions?: boolean
 }) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -373,7 +376,7 @@ export function DataTable<TData, TValue>({
           </Button>
         )}
         {toolbar}
-        <DataTableViewOptions table={table} />
+        {showViewOptions && <DataTableViewOptions table={table} />}
       </div>
 
       {loading ? (

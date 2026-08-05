@@ -295,6 +295,7 @@ export function TaskQueueTable({
         emptyTitle="No tasks match this view"
         emptyDescription="Try changing a filter or create the next piece of work."
         onRowClick={onTaskClick}
+        showViewOptions={false}
       />
       <Dialog open={Boolean(folderTask)} onOpenChange={(open) => { if (!open) setFolderTask(null) }}>
         <DialogContent className="sm:max-w-md">
