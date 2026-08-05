@@ -1,14 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { useAuth } from '../auth/AuthProvider'
-import { Avatar, EmptyState, ErrorBanner, Minutes, Modal, StatusBadge } from '../components/ui'
-import { Select } from '../components/fields'
-import { Icon } from '../components/Icon'
-import { OliverChat } from '../components/OliverChat'
-import { api, displayName, normalizePage, unwrap } from '../lib/api'
-import { useCollection } from '../lib/useCollection'
-import { useCan } from '../lib/permissions'
-import type { ApiEnvelope, Attachment, EntityId, EstimateRequest, Message, Note, Paginated, Task, UserSummary } from '../types/api'
+import {
+  Briefcase,
+  Check,
+  Inbox,
+  Paperclip,
+  Plus,
+  Search,
+  Send,
+  UserRound,
+} from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
+import { Avatar, EmptyState, ErrorBanner, Minutes, StatusBadge } from '@/components/shared'
+import { OliverChat } from '@/components/OliverChat'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+import { api, displayName, normalizePage, unwrap } from '@/lib/api'
+import { useCollection } from '@/lib/useCollection'
+import { useCan } from '@/lib/permissions'
+import type { ApiEnvelope, Attachment, EntityId, EstimateRequest, Message, Note, Paginated, Task, UserSummary } from '@/types/api'
 
 function noteTime(note?: Note | null) {
   const date = note?.createdAt ?? note?.created_at
@@ -111,6 +139,25 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Enter', 'Open'],
 ]
 
+function attachmentList(files: Attachment[]) {
+  return (
+    <ul className="space-y-1">
+      {files.map((file) => (
+        <li key={file.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Paperclip className="size-3.5 shrink-0" />
+          {file.url ? (
+            <a href={file.url} target="_blank" rel="noreferrer" className="truncate underline-offset-2 hover:underline">
+              {attachmentName(file)}
+            </a>
+          ) : (
+            <span className="truncate">{attachmentName(file)}</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function NewMessageModal({ open, onClose, onStarted }: { open: boolean; onClose: () => void; onStarted: (conversation: Message) => void }) {
   const [recipients, setRecipients] = useState<UserSummary[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
@@ -161,20 +208,56 @@ function NewMessageModal({ open, onClose, onStarted }: { open: boolean; onClose:
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New conversation" description="Conversations are attached to a task so both of you share the same context." size="md">
-      <div className="new-message-form">
-        <Select label="Send to" value={recipientId} placeholder="Choose a person…" icon="profile" options={recipients.map((person) => ({ value: String(person.id), label: displayName(person) }))} onChange={setRecipientId} />
-        <label className="message-search"><Icon name="search" size={16} /><input value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Search tasks…" /></label>
-        <Select label="About task" value={taskId} placeholder={tasks.length ? 'Choose a task…' : 'No tasks match'} icon="task" options={tasks.map((task) => ({ value: String(task.id), label: task.project?.name ? `${task.title} · ${task.project.name}` : task.title }))} onChange={setTaskId} />
-        <label className="field-label" htmlFor="new-message-body">Message</label>
-        <textarea id="new-message-body" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write your message…" rows={5} />
-        {error && <div className="form-error" role="alert">{error}</div>}
-        <footer className="form-footer">
-          <button type="button" className="btn btn-quiet" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" disabled={busy || !recipientId || !taskId || !body.trim()} onClick={() => void send()}><Icon name="send" size={15} /> {busy ? 'Sending…' : 'Send message'}</button>
-        </footer>
-      </div>
-    </Modal>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New conversation</DialogTitle>
+          <DialogDescription>Conversations are attached to a task so both of you share the same context.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Send to</Label>
+            <Select value={recipientId} onValueChange={setRecipientId}>
+              <SelectTrigger aria-label="Send to" className="w-full">
+                <SelectValue placeholder="Choose a person…" />
+              </SelectTrigger>
+              <SelectContent>
+                {recipients.map((person) => <SelectItem key={person.id} value={String(person.id)}>{displayName(person)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-message-task-search">Search tasks</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input id="new-message-task-search" className="pl-8" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Search tasks…" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>About task</Label>
+            <Select value={taskId} onValueChange={setTaskId}>
+              <SelectTrigger aria-label="About task" className="w-full">
+                <SelectValue placeholder={tasks.length ? 'Choose a task…' : 'No tasks match'} />
+              </SelectTrigger>
+              <SelectContent>
+                {tasks.map((task) => <SelectItem key={task.id} value={String(task.id)}>{task.project?.name ? `${task.title} · ${task.project.name}` : task.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-message-body">Message</Label>
+            <Textarea id="new-message-body" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write your message…" rows={5} />
+          </div>
+          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" disabled={busy || !recipientId || !taskId || !body.trim()} onClick={() => void send()}>
+            <Send /> {busy ? 'Sending…' : 'Send message'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -439,215 +522,328 @@ export function MessagesPage() {
   const runDecision = decisionKind === 'override' ? overrideDecision : decide
 
   return (
-    <div className="triage">
-      <header className="triage-bar">
-        <strong>Messages</strong>
-        <label className="message-search"><Icon name="search" size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search conversations…" /></label>
-        <div className="triage-bar-actions">
-          <button className="btn btn-quiet" onClick={() => void markAll()}><Icon name="check" size={15} /> Mark all read</button>
-          {can('tasks.comment') && <button className="btn btn-primary" onClick={() => setComposerOpen(true)}><Icon name="plus" size={15} /> New message</button>}
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            value={search}
+            onChange={(event) => { setSearch(event.target.value); setPage(1) }}
+            placeholder="Search conversations…"
+            aria-label="Search conversations"
+          />
         </div>
-      </header>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => void markAll()}><Check /> Mark all read</Button>
+          {can('tasks.comment') && <Button onClick={() => setComposerOpen(true)}><Plus /> New message</Button>}
+        </div>
+      </div>
+
       <NewMessageModal open={composerOpen} onClose={() => setComposerOpen(false)} onStarted={async (conversation) => { setComposerOpen(false); await reload(); navigate(`/messages/${conversation.id}?view=all`) }} />
       {detailError && <ErrorBanner message={detailError} />}
 
-      <section className="triage-body">
-        <nav className="triage-views" aria-label="Conversation views">
-          <div className="triage-view-group">
-            <span className="triage-view-kicker">Inbox</span>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[200px_320px_1fr] xl:grid-cols-[200px_340px_1fr_260px]">
+        <nav aria-label="Conversation views" className="flex flex-col gap-4 lg:overflow-y-auto">
+          <div className="space-y-1">
+            <p className="px-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Inbox</p>
             {INBOX_VIEWS.map((item) => (
-              <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => setView(item.key)}>
-                {item.label}<b>{counts[item.key]}</b>
-              </button>
+              <Button
+                key={item.key}
+                variant={view === item.key ? 'secondary' : 'ghost'}
+                className="w-full justify-between"
+                onClick={() => setView(item.key)}
+              >
+                {item.label}
+                <Badge variant="outline">{counts[item.key]}</Badge>
+              </Button>
             ))}
           </div>
-          <div className="triage-view-group">
-            <span className="triage-view-kicker">Smart views</span>
+          <div className="space-y-1">
+            <p className="px-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">Smart views</p>
             {SMART_VIEWS.map((item) => (
-              <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => setView(item.key)}>
-                {item.label}<b className={item.tone ?? ''}>{counts[item.key]}</b>
-              </button>
+              <Button
+                key={item.key}
+                variant={view === item.key ? 'secondary' : 'ghost'}
+                className="w-full justify-between"
+                onClick={() => setView(item.key)}
+              >
+                {item.label}
+                <Badge variant={item.tone === 'danger' ? 'destructive' : 'outline'} className={item.tone === 'warning' ? 'border-warning text-warning' : undefined}>
+                  {counts[item.key]}
+                </Badge>
+              </Button>
             ))}
           </div>
-          <button className={`oliver-entry ${oliverOpen ? 'active' : ''}`} onClick={() => navigate('/messages/oliver')}>
-            <span className="oliver-avatar">O</span>
-            <div><span className="message-list-head"><strong>Oliver</strong></span><p>Your AI project manager</p></div>
-          </button>
-          <div className="triage-shortcuts">
-            <span className="triage-view-kicker">Shortcuts</span>
-            {SHORTCUTS.map(([keys, meaning]) => <p key={keys}><span>{keys}</span><small>{meaning}</small></p>)}
+          <Button
+            variant={oliverOpen ? 'secondary' : 'outline'}
+            className="h-auto w-full justify-start gap-2 py-2"
+            onClick={() => navigate('/messages/oliver')}
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">O</span>
+            <span className="flex flex-col items-start">
+              <strong className="text-sm font-medium">Oliver</strong>
+              <span className="text-xs text-muted-foreground">Your AI project manager</span>
+            </span>
+          </Button>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p className="px-2 font-medium uppercase tracking-widest">Shortcuts</p>
+            {SHORTCUTS.map(([keys, meaning]) => (
+              <p key={keys} className="flex items-center justify-between px-2">
+                <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem]">{keys}</kbd>
+                <span>{meaning}</span>
+              </p>
+            ))}
           </div>
         </nav>
 
-        <div className="triage-list">
-          <div className="triage-list-head">
-            <label className="triage-check">
-              <input
-                type="checkbox"
-                aria-label="Select all conversations"
-                checked={visibleMessages.length > 0 && picked.size === visibleMessages.length}
-                onChange={(event) => setPicked(event.target.checked ? new Set(visibleMessages.map((message) => String(message.id))) : new Set())}
-              />
-            </label>
-            <span>{picked.size ? `${picked.size} selected` : `${visibleMessages.length} conversation${visibleMessages.length === 1 ? '' : 's'}`}</span>
-            <div className="triage-list-actions">
-              {picked.size > 0 && <button disabled={busy} onClick={() => void markPickedRead()}>Read</button>}
-              <button onClick={() => setNewestFirst((current) => !current)}>{newestFirst ? 'Newest first' : 'Oldest first'}</button>
-            </div>
+        <Card className="flex min-h-0 flex-col gap-0 py-0">
+          <div className="flex items-center gap-2 border-b p-3">
+            <Checkbox
+              aria-label="Select all conversations"
+              checked={visibleMessages.length > 0 && picked.size === visibleMessages.length}
+              onCheckedChange={(checked) => setPicked(checked ? new Set(visibleMessages.map((message) => String(message.id))) : new Set())}
+            />
+            <span className="flex-1 text-sm text-muted-foreground">
+              {picked.size ? `${picked.size} selected` : `${visibleMessages.length} conversation${visibleMessages.length === 1 ? '' : 's'}`}
+            </span>
+            {picked.size > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => void markPickedRead()}>Read</Button>}
+            <Button size="sm" variant="ghost" onClick={() => setNewestFirst((current) => !current)}>{newestFirst ? 'Newest first' : 'Oldest first'}</Button>
           </div>
-          {error && <ErrorBanner message={error} onRetry={() => void reload()} />}
-          <div className="message-list">
-            {loading ? Array.from({ length: 6 }, (_, index) => <div className="message-skeleton" key={index}><span className="skeleton circle"/><div><span className="skeleton"/><span className="skeleton short"/></div></div>)
-              : orderedRows.length ? groups.map((group) => (
-                <div key={group.key}>
-                  <div className="triage-group"><span>{group.label}</span><i /><b>{group.rows.length}</b></div>
-                  {group.rows.map((message) => {
-                    const latest = message.latestMessage ?? message.latest_message ?? message
-                    const person = counterpart(message, user?.id)
-                    const lastFromMe = String(latest.author?.id ?? latest.createdBy ?? latest.created_by) === String(user?.id)
-                    const request = estimateRequest(message)
-                    const id = String(message.id)
-                    return (
-                      <div
-                        key={message.id}
-                        className={`triage-row ${isUnread(message) ? 'unread' : ''} ${id === String(messageId) ? 'active' : ''} ${cursor === orderedRows.indexOf(message) ? 'cursor' : ''}`.replace(/\s+/g, ' ').trim()}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openRow(message)}
-                        onKeyDown={(event) => { if (event.key === 'Enter') openRow(message) }}
-                      >
-                        <label className="triage-check" onClick={(event) => event.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Select conversation with ${displayName(person)}`}
-                            checked={picked.has(id)}
-                            onChange={(event) => setPicked((current) => {
-                              const next = new Set(current)
-                              if (event.target.checked) next.add(id)
-                              else next.delete(id)
-                              return next
-                            })}
-                          />
-                        </label>
-                        <Avatar user={person} size={34} />
-                        <div className="triage-row-body">
-                          <span className="message-list-head"><strong>{displayName(person)}</strong><time>{shortAge(latest)}</time></span>
-                          <b>{request ? <span className="row-tag">Estimate</span> : null}<span>{message.task?.title || message.subject || 'Task message'}</span></b>
-                          <p>{lastFromMe ? <span className="row-prefix">You:</span> : null}{latest.body}</p>
-                        </div>
-                        {isUnread(message) && <span className={`unread-dot ${request?.status === 'pending' ? 'is-decision' : ''}`.trim()} />}
-                      </div>
-                    )
-                  })}
+          {error && <div className="p-3"><ErrorBanner message={error} onRetry={() => void reload()} /></div>}
+          <ScrollArea className="min-h-0 flex-1">
+            {loading ? (
+              <div className="space-y-3 p-3">
+                {Array.from({ length: 6 }, (_, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <Skeleton className="size-8 shrink-0 rounded-full" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : orderedRows.length ? groups.map((group) => (
+              <div key={group.key}>
+                <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
+                  <span>{group.label}</span>
+                  <span className="h-px flex-1 bg-border" />
+                  <span>{group.rows.length}</span>
                 </div>
-              )) : <EmptyState title={view === 'needs-reply' ? 'You’re all caught up' : 'Nothing in this view'} description={view === 'needs-reply' ? 'New replies and estimate requests land here.' : 'Try another view, or start a conversation.'} action={can('tasks.comment') ? <button className="btn btn-quiet" onClick={() => setComposerOpen(true)}><Icon name="plus" size={15} /> Start a conversation</button> : undefined} />}
-          </div>
-          {(meta.lastPage ?? 1) > 1 && <div className="message-list-footer"><button disabled={meta.page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button><span>Page {meta.page} of {meta.lastPage ?? 1}</span><button disabled={meta.page >= (meta.lastPage ?? 1)} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
-        </div>
-
-        <article className={`message-detail ${oliverOpen ? 'is-oliver' : ''}`.trim()}>
-          {oliverOpen ? <OliverChat /> : detailLoading ? <div className="detail-loading"><span className="spinner" /> Opening conversation…</div> : selected ? (
-            <>
-              <header className="conversation-header">
-                <Avatar user={partner} size={36} />
-                <div className="conversation-identity">
-                  <strong>{displayName(partner)}</strong>
-                  <span>
-                    {selectedRequest ? <span className="row-tag">Estimate</span> : null}
-                    {selected.task && can('tasks.view')
-                      ? <Link to={`/tasks/${selected.task.id}`}>{selected.task.title}</Link>
-                      : selected.task?.title || selected.subject || 'Task conversation'}
-                  </span>
-                </div>
-                <div className="conversation-header-actions">
-                  <button className="key-button" onClick={() => replyRef.current?.focus()}>Reply <span>R</span></button>
-                  <button className="key-button" onClick={() => void toggleUnread()}>{isUnread(selected) ? 'Mark read' : 'Mark unread'}</button>
-                </div>
-              </header>
-
-              <div className="conversation-thread" ref={threadRef}>
-                {threadMessages.map((message, index) => {
-                  const mine = String(message.author?.id ?? message.createdBy ?? message.created_by) === String(user?.id)
-                  const actor = message.actorName ?? message.actor_name ?? displayName(message.author)
-                  const isAi = (message.actorType ?? message.actor_type) === 'ai'
-                  const isSystem = (message.actorType ?? message.actor_type) === 'system'
-                  const previous = threadMessages[index - 1]
-                  const newDay = dayLabel(message) !== dayLabel(previous)
-                  // Consecutive lines from the same person read as one turn, so the
-                  // name and avatar only repeat when the speaker or the day changes.
-                  const sameSpeaker = !newDay && previous && String(previous.author?.id ?? previous.createdBy ?? previous.created_by) === String(message.author?.id ?? message.createdBy ?? message.created_by)
-                    && (previous.actorType ?? previous.actor_type) === (message.actorType ?? message.actor_type)
+                {group.rows.map((message) => {
+                  const latest = message.latestMessage ?? message.latest_message ?? message
+                  const person = counterpart(message, user?.id)
+                  const lastFromMe = String(latest.author?.id ?? latest.createdBy ?? latest.created_by) === String(user?.id)
+                  const request = estimateRequest(message)
+                  const id = String(message.id)
+                  const unread = isUnread(message)
                   return (
-                    <div key={message.id}>
-                      {newDay && <div className="thread-day"><span>{dayLabel(message)}</span></div>}
-                      {isSystem ? (
-                        <p className="thread-system">{message.body}</p>
-                      ) : (
-                        <article className={`${mine ? 'mine' : ''} ${isAi ? 'ai-message' : ''} ${sameSpeaker ? 'continued' : ''}`.replace(/\s+/g, ' ').trim()}>
-                          {!sameSpeaker && (
-                            <div className="conversation-author">
-                              <Avatar user={message.author} size={28} />
-                              <div><strong>{actor}</strong>{isAi && <span className="ai-actor-badge">AI</span>}<time>{noteTime(message)}</time></div>
-                            </div>
-                          )}
-                          <div className="conversation-bubble" title={noteTime(message)}>{message.body.split('\n').map((line, lineIndex) => <p key={lineIndex}>{line || <br />}</p>)}</div>
-                          {(message.attachments?.length ?? 0) > 0 && (
-                            <ul className="thread-files">
-                              {message.attachments?.map((file) => <li key={file.id}><Icon name="paperclip" size={13} />{file.url ? <a href={file.url} target="_blank" rel="noreferrer">{attachmentName(file)}</a> : <span>{attachmentName(file)}</span>}</li>)}
-                            </ul>
-                          )}
-                        </article>
+                    <div
+                      key={message.id}
+                      className={cn(
+                        'flex cursor-pointer items-start gap-2.5 border-b px-3 py-2.5 transition-colors hover:bg-accent/60',
+                        id === String(messageId) && 'bg-accent',
+                        cursor === orderedRows.indexOf(message) && 'ring-1 ring-inset ring-ring',
+                      )}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openRow(message)}
+                      onKeyDown={(event) => { if (event.key === 'Enter') openRow(message) }}
+                    >
+                      <span onClick={(event) => event.stopPropagation()} className="pt-1.5">
+                        <Checkbox
+                          aria-label={`Select conversation with ${displayName(person)}`}
+                          checked={picked.has(id)}
+                          onCheckedChange={(checked) => setPicked((current) => {
+                            const next = new Set(current)
+                            if (checked) next.add(id)
+                            else next.delete(id)
+                            return next
+                          })}
+                        />
+                      </span>
+                      <Avatar user={person} className="size-8 shrink-0" />
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <strong className={cn('truncate text-sm', unread && 'font-semibold')}>{displayName(person)}</strong>
+                          <time className="shrink-0 text-xs text-muted-foreground">{shortAge(latest)}</time>
+                        </div>
+                        <p className="flex items-center gap-1.5 truncate text-sm">
+                          {request ? <Badge variant="outline" className="shrink-0">Estimate</Badge> : null}
+                          <span className="truncate">{message.task?.title || message.subject || 'Task message'}</span>
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">{lastFromMe ? <span className="font-medium">You: </span> : null}{latest.body}</p>
+                      </div>
+                      {unread && (
+                        <span
+                          aria-hidden="true"
+                          className={cn('mt-1.5 size-2 shrink-0 rounded-full', request?.status === 'pending' ? 'bg-warning' : 'bg-primary')}
+                        />
                       )}
                     </div>
                   )
                 })}
-
-                {/* The estimate decision happens in the thread, where the ask was made. */}
-                {selectedRequest && (
-                  <section className="estimate-card">
-                    <div className="estimate-card-facts">
-                      <div><span>Requested</span><strong><Minutes value={requestedMinutes(selectedRequest)} /></strong></div>
-                      <div><span>Estimate then</span><strong><Minutes value={selectedRequest.baseEstimatedMinutes ?? selectedRequest.base_estimated_minutes ?? 0} /></strong></div>
-                      {selectedRequest.status === 'approved' && <div><span>Approved</span><strong><Minutes value={approvedMinutes(selectedRequest)} /></strong></div>}
-                      <StatusBadge value={selectedRequest.status} />
-                    </div>
-                    {aiReview && <p className="estimate-card-note"><strong>AI project manager:</strong> {aiStatusLine}</p>}
-                    {selectedRequest.status === 'replaced' && <p className="estimate-card-note">This request was replaced by a newer request.</p>}
-                    {decisionKind && !decisionMode && (
-                      <div className="estimate-card-actions">
-                        <button className="btn btn-primary" onClick={() => { setDecisionMode('approve'); setDecisionMinutes(requestedMinutes(selectedRequest)) }}>
-                          <Icon name="check" size={15} /> {decisionKind === 'override' ? 'Override as approved' : 'Approve'} <Minutes value={requestedMinutes(selectedRequest)} />
-                        </button>
-                        <button className="btn btn-quiet" onClick={() => setDecisionMode('reject')}>{decisionKind === 'override' ? 'Override as rejected' : 'Reject'}</button>
-                      </div>
-                    )}
-                    {decisionKind && decisionMode && (
-                      <div className="estimate-card-form">
-                        {decisionMode === 'approve' && (
-                          <label><span>Approved additional minutes</span><input type="number" min="1" max={decisionKind === 'override' ? requestedMinutes(selectedRequest) : undefined} value={decisionMinutes} onChange={(event) => setDecisionMinutes(Number(event.target.value))} /></label>
-                        )}
-                        <label><span>{decisionKind === 'override' ? 'Reason for override' : `Why are you ${decisionMode === 'approve' ? 'approving' : 'rejecting'} it?`}</span><textarea value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} placeholder="This is kept in the decision history…" /></label>
-                        <div className="estimate-card-actions">
-                          <button className="btn btn-quiet" onClick={() => { setDecisionMode(null); setDecisionReason('') }}>Cancel</button>
-                          <button className="btn btn-primary" disabled={busy || !decisionReason.trim() || (decisionMode === 'approve' && decisionMinutes < 1)} onClick={() => void runDecision(decisionMode)}>
-                            {busy ? 'Saving…' : decisionMode === 'approve' ? 'Approve & update estimate' : 'Reject request'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {selectedRequest.decisions?.length ? (
-                      <details className="estimate-history">
-                        <summary>Decision history ({selectedRequest.decisions.length})</summary>
-                        {selectedRequest.decisions.map((decision) => <div key={decision.id}><strong>{decision.source === 'ai' ? 'AI project manager' : decision.source === 'human_override' ? 'Human override' : decision.source === 'system' ? 'System' : displayName(decision.decider)}</strong><span>{decision.action}{decision.action === 'approve' ? ` · ${decision.approvedAdditionalMinutes ?? decision.approved_additional_minutes ?? 0} minutes` : ''}</span><p>{decision.reason}</p></div>)}
-                      </details>
-                    ) : null}
-                  </section>
-                )}
               </div>
+            )) : (
+              <div className="p-6">
+                <EmptyState
+                  icon={Inbox}
+                  title={view === 'needs-reply' ? 'You’re all caught up' : 'Nothing in this view'}
+                  description={view === 'needs-reply' ? 'New replies and estimate requests land here.' : 'Try another view, or start a conversation.'}
+                  action={can('tasks.comment') ? <Button variant="outline" onClick={() => setComposerOpen(true)}><Plus /> Start a conversation</Button> : undefined}
+                />
+              </div>
+            )}
+          </ScrollArea>
+          {(meta.lastPage ?? 1) > 1 && (
+            <div className="flex items-center justify-between border-t p-2 text-sm">
+              <Button size="sm" variant="outline" disabled={meta.page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+              <span className="text-muted-foreground">Page {meta.page} of {meta.lastPage ?? 1}</span>
+              <Button size="sm" variant="outline" disabled={meta.page >= (meta.lastPage ?? 1)} onClick={() => setPage((value) => value + 1)}>Next</Button>
+            </div>
+          )}
+        </Card>
+
+        <Card className="flex min-h-0 flex-col gap-0 py-0">
+          {oliverOpen ? <OliverChat /> : detailLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Skeleton className="size-4 rounded-full" /> Opening conversation…
+            </div>
+          ) : selected ? (
+            <>
+              <header className="flex items-center gap-3 border-b p-3">
+                <Avatar user={partner} className="size-9" />
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate">{displayName(partner)}</strong>
+                  <span className="flex items-center gap-1.5 truncate text-sm text-muted-foreground">
+                    {selectedRequest ? <Badge variant="outline">Estimate</Badge> : null}
+                    {selected.task && can('tasks.view')
+                      ? <Link to={`/tasks/${selected.task.id}`} className="truncate hover:underline">{selected.task.title}</Link>
+                      : <span className="truncate">{selected.task?.title || selected.subject || 'Task conversation'}</span>}
+                  </span>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => replyRef.current?.focus()}>Reply <kbd className="font-mono text-xs">R</kbd></Button>
+                <Button variant="outline" size="sm" onClick={() => void toggleUnread()}>{isUnread(selected) ? 'Mark read' : 'Mark unread'}</Button>
+              </header>
+
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="space-y-3 p-4" ref={threadRef}>
+                  {threadMessages.map((message, index) => {
+                    const mine = String(message.author?.id ?? message.createdBy ?? message.created_by) === String(user?.id)
+                    const actor = message.actorName ?? message.actor_name ?? displayName(message.author)
+                    const isAi = (message.actorType ?? message.actor_type) === 'ai'
+                    const isSystem = (message.actorType ?? message.actor_type) === 'system'
+                    const previous = threadMessages[index - 1]
+                    const newDay = dayLabel(message) !== dayLabel(previous)
+                    // Consecutive lines from the same person read as one turn, so the
+                    // name and avatar only repeat when the speaker or the day changes.
+                    const sameSpeaker = !newDay && previous && String(previous.author?.id ?? previous.createdBy ?? previous.created_by) === String(message.author?.id ?? message.createdBy ?? message.created_by)
+                      && (previous.actorType ?? previous.actor_type) === (message.actorType ?? message.actor_type)
+                    return (
+                      <div key={message.id}>
+                        {newDay && (
+                          <div className="my-3 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="h-px flex-1 bg-border" /><span>{dayLabel(message)}</span><span className="h-px flex-1 bg-border" />
+                          </div>
+                        )}
+                        {isSystem ? (
+                          <p className="text-center text-xs text-muted-foreground">{message.body}</p>
+                        ) : (
+                          <div className={cn('flex flex-col gap-1', mine && 'items-end')}>
+                            {!sameSpeaker && (
+                              <div className={cn('flex items-center gap-2', mine && 'flex-row-reverse')}>
+                                <Avatar user={message.author} className="size-6" />
+                                <strong className="text-xs">{actor}</strong>
+                                {isAi && <Badge variant="outline" className="text-[0.65rem]">AI</Badge>}
+                                <time className="text-xs text-muted-foreground">{noteTime(message)}</time>
+                              </div>
+                            )}
+                            <div
+                              title={noteTime(message)}
+                              className={cn(
+                                'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+                                mine ? 'bg-primary text-primary-foreground' : isAi ? 'border border-dashed bg-muted' : 'bg-muted',
+                              )}
+                            >
+                              {message.body.split('\n').map((line, lineIndex) => <p key={lineIndex}>{line || <br />}</p>)}
+                            </div>
+                            {(message.attachments?.length ?? 0) > 0 && attachmentList(message.attachments ?? [])}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* The estimate decision happens in the thread, where the ask was made. */}
+                  {selectedRequest && (
+                    <Card className="gap-3 py-4">
+                      <div className="flex flex-wrap items-center gap-4 px-4 text-sm">
+                        <div><span className="text-xs text-muted-foreground">Requested</span><br /><strong><Minutes value={requestedMinutes(selectedRequest)} /></strong></div>
+                        <div><span className="text-xs text-muted-foreground">Estimate then</span><br /><strong><Minutes value={selectedRequest.baseEstimatedMinutes ?? selectedRequest.base_estimated_minutes ?? 0} /></strong></div>
+                        {selectedRequest.status === 'approved' && <div><span className="text-xs text-muted-foreground">Approved</span><br /><strong><Minutes value={approvedMinutes(selectedRequest)} /></strong></div>}
+                        <StatusBadge value={selectedRequest.status} />
+                      </div>
+                      {aiReview && <p className="px-4 text-sm text-muted-foreground"><strong className="text-foreground">AI project manager:</strong> {aiStatusLine}</p>}
+                      {selectedRequest.status === 'replaced' && <p className="px-4 text-sm text-muted-foreground">This request was replaced by a newer request.</p>}
+                      {decisionKind && !decisionMode && (
+                        <div className="flex flex-wrap gap-2 px-4">
+                          <Button onClick={() => { setDecisionMode('approve'); setDecisionMinutes(requestedMinutes(selectedRequest)) }}>
+                            <Check /> {decisionKind === 'override' ? 'Override as approved' : 'Approve'} <Minutes value={requestedMinutes(selectedRequest)} />
+                          </Button>
+                          <Button variant="outline" onClick={() => setDecisionMode('reject')}>{decisionKind === 'override' ? 'Override as rejected' : 'Reject'}</Button>
+                        </div>
+                      )}
+                      {decisionKind && decisionMode && (
+                        <div className="space-y-3 px-4">
+                          {decisionMode === 'approve' && (
+                            <div className="space-y-1.5">
+                              <Label htmlFor="decision-minutes">Approved additional minutes</Label>
+                              <Input
+                                id="decision-minutes"
+                                type="number"
+                                min="1"
+                                max={decisionKind === 'override' ? requestedMinutes(selectedRequest) : undefined}
+                                value={decisionMinutes}
+                                onChange={(event) => setDecisionMinutes(Number(event.target.value))}
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1.5">
+                            <Label htmlFor="decision-reason">{decisionKind === 'override' ? 'Reason for override' : `Why are you ${decisionMode === 'approve' ? 'approving' : 'rejecting'} it?`}</Label>
+                            <Textarea id="decision-reason" value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} placeholder="This is kept in the decision history…" />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => { setDecisionMode(null); setDecisionReason('') }}>Cancel</Button>
+                            <Button disabled={busy || !decisionReason.trim() || (decisionMode === 'approve' && decisionMinutes < 1)} onClick={() => void runDecision(decisionMode)}>
+                              {busy ? 'Saving…' : decisionMode === 'approve' ? 'Approve & update estimate' : 'Reject request'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {selectedRequest.decisions?.length ? (
+                        <details className="px-4 text-sm">
+                          <summary className="cursor-pointer text-muted-foreground">Decision history ({selectedRequest.decisions.length})</summary>
+                          <div className="mt-2 space-y-2">
+                            {selectedRequest.decisions.map((decision) => (
+                              <div key={decision.id}>
+                                <strong>{decision.source === 'ai' ? 'AI project manager' : decision.source === 'human_override' ? 'Human override' : decision.source === 'system' ? 'System' : displayName(decision.decider)}</strong>
+                                <span className="ml-1 text-muted-foreground">{decision.action}{decision.action === 'approve' ? ` · ${decision.approvedAdditionalMinutes ?? decision.approved_additional_minutes ?? 0} minutes` : ''}</span>
+                                <p className="text-muted-foreground">{decision.reason}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </Card>
+                  )}
+                </div>
+              </ScrollArea>
 
               {can('tasks.comment') ? (
-                <section className="conversation-reply">
-                  <textarea
+                <div className="flex items-end gap-2 border-t p-3">
+                  <Textarea
                     ref={replyRef}
                     value={replyBody}
                     disabled={busy}
@@ -655,55 +851,65 @@ export function MessagesPage() {
                     placeholder={`Reply to ${displayName(partner)}…  (Enter to send)`}
                     onChange={(event) => setReplyBody(event.target.value)}
                     onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendReply() } }}
+                    className="min-h-9"
                   />
-                  <button className="btn btn-primary" disabled={busy || !replyBody.trim()} onClick={() => void sendReply()}><Icon name="send" size={15} /> {busy ? 'Sending…' : 'Send'}</button>
-                </section>
-              ) : <p className="read-only-note">Your role can read this conversation but cannot reply.</p>}
+                  <Button disabled={busy || !replyBody.trim()} onClick={() => void sendReply()}><Send /> {busy ? 'Sending…' : 'Send'}</Button>
+                </div>
+              ) : <p className="border-t p-3 text-sm text-muted-foreground">Your role can read this conversation but cannot reply.</p>}
             </>
           ) : (
-            <div className="message-placeholder">
-              <span><Icon name="inbox" size={34} /></span>
-              <h2>Select a conversation</h2>
-              <p>Pick one on the left, ask Oliver, or start a new conversation with someone.</p>
-              {can('tasks.comment') && <button className="btn btn-primary" onClick={() => setComposerOpen(true)}><Icon name="plus" size={15} /> Start a conversation</button>}
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+              <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground"><Inbox className="size-6" /></span>
+              <h2 className="text-lg font-medium">Select a conversation</h2>
+              <p className="max-w-sm text-sm text-muted-foreground">Pick one on the left, ask Oliver, or start a new conversation with someone.</p>
+              {can('tasks.comment') && <Button onClick={() => setComposerOpen(true)}><Plus /> Start a conversation</Button>}
             </div>
           )}
-        </article>
+        </Card>
 
         {/* Task context, pinned instead of hidden behind "Open task". */}
         {selected && !oliverOpen && task && (
-          <aside className="triage-context" aria-label="Task context">
-            <section>
-              <span className="triage-view-kicker">Task</span>
-              <strong>{task.title}</strong>
-              <div className="triage-context-line">
-                {task.status_value && <StatusBadge value={task.status_value.label} />}
-                {task.due_date && <span className={isOverdue(task) ? 'is-overdue' : ''}>Due {new Date(task.due_date).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span>}
-              </div>
-              {task.project?.name && <p className="triage-context-line"><Icon name="briefcase" size={14} /> {task.project.name}</p>}
-              {can('tasks.view') && <Link className="btn btn-quiet" to={`/tasks/${task.id}`}>Open task</Link>}
-            </section>
-            <section>
-              <span className="triage-view-kicker">Time</span>
-              <p className="triage-time"><strong><Minutes value={loggedMinutes} /></strong> {estimateMinutes > 0 && <small>of <Minutes value={estimateMinutes} /> estimate</small>}</p>
-              {estimateMinutes > 0 && (
-                <div className="triage-meter" role="img" aria-label={`${Math.round((loggedMinutes / estimateMinutes) * 100)} percent of the estimate used`}>
-                  <i className={loggedMinutes > estimateMinutes ? 'over' : ''} style={{ width: `${Math.min(100, Math.round((loggedMinutes / estimateMinutes) * 100))}%` }} />
+          <aside aria-label="Task context" className="hidden min-h-0 flex-col gap-4 xl:flex xl:overflow-y-auto">
+            <Card className="gap-2 py-4">
+              <div className="space-y-2 px-4">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Task</p>
+                <strong className="block">{task.title}</strong>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  {task.status_value && <StatusBadge value={task.status_value.label} />}
+                  {task.due_date && (
+                    <span className={cn(isOverdue(task) && 'text-destructive')}>
+                      Due {new Date(task.due_date).toLocaleDateString([], { day: 'numeric', month: 'short' })}
+                    </span>
+                  )}
                 </div>
-              )}
-              {task.assignee && <p className="triage-context-line"><Icon name="profile" size={14} /> {displayName(task.assignee)}</p>}
-            </section>
+                {task.project?.name && <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Briefcase className="size-3.5" /> {task.project.name}</p>}
+                {can('tasks.view') && <Button variant="outline" size="sm" asChild><Link to={`/tasks/${task.id}`}>Open task</Link></Button>}
+              </div>
+            </Card>
+            <Card className="gap-2 py-4">
+              <div className="space-y-2 px-4">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Time</p>
+                <p className="text-sm"><strong><Minutes value={loggedMinutes} /></strong> {estimateMinutes > 0 && <span className="text-muted-foreground">of <Minutes value={estimateMinutes} /> estimate</span>}</p>
+                {estimateMinutes > 0 && (
+                  <Progress
+                    value={Math.min(100, Math.round((loggedMinutes / estimateMinutes) * 100))}
+                    aria-label={`${Math.round((loggedMinutes / estimateMinutes) * 100)} percent of the estimate used`}
+                  />
+                )}
+                {task.assignee && <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><UserRound className="size-3.5" /> {displayName(task.assignee)}</p>}
+              </div>
+            </Card>
             {threadFiles.length > 0 && (
-              <section>
-                <span className="triage-view-kicker">Files in thread</span>
-                <ul className="triage-files">
-                  {threadFiles.map((file) => <li key={file.id}><Icon name="paperclip" size={13} />{file.url ? <a href={file.url} target="_blank" rel="noreferrer">{attachmentName(file)}</a> : <span>{attachmentName(file)}</span>}</li>)}
-                </ul>
-              </section>
+              <Card className="gap-2 py-4">
+                <div className="space-y-2 px-4">
+                  <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Files in thread</p>
+                  {attachmentList(threadFiles)}
+                </div>
+              </Card>
             )}
           </aside>
         )}
-      </section>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,12 @@
 import { useId } from 'react'
-import { ApiError } from '../lib/api'
-import { useWorkspace } from '../auth/WorkspaceProvider'
-import { Icon } from './Icon'
+import { CircleHelp, Clock, Play } from 'lucide-react'
+import { useWorkspace } from '@/auth/WorkspaceProvider'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+import { ApiError } from '@/lib/api'
 
 export function isClockGate(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 409) return false
@@ -20,36 +25,47 @@ export function ClockGate({ compact = false, showOverride = true }: { compact?: 
   const tooltipId = useId()
 
   return (
-    <div className={`clock-gate ${compact ? 'compact' : ''} ${adminOverride ? 'is-overridden' : ''}`.replace(/\s+/g, ' ').trim()}>
-      <span className="clock-gate-icon"><Icon name="clock" /></span>
-      <div>
-        <strong>{isOnBreak ? 'End your break to make task changes' : 'Clock in to make task changes'}</strong>
-        <p>{isOnBreak ? 'Task activity is paused while your break is active.' : 'Task updates and logged note time are tied to an active work session.'}</p>
-      </div>
-      <button className="btn btn-primary" disabled={timeBusy} onClick={() => void timeAction(isOnBreak ? 'break-end' : 'clock-in')}>
-        <Icon name="play" size={16} /> {isOnBreak ? 'End break' : 'Clock in'}
-      </button>
-      {/* The only place the override is offered; it then applies workspace-wide. */}
-      {canAdminOverride && showOverride && (
-        <div className="clock-gate-override">
-          <label>
-            <input
-              type="checkbox"
+    <Card className={cn('gap-3', adminOverride && 'border-warning', !compact && 'py-4')}>
+      <CardContent className="flex flex-wrap items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><Clock className="size-4" /></span>
+        <div className="min-w-0 flex-1">
+          <strong className="block text-sm">{isOnBreak ? 'End your break to make task changes' : 'Clock in to make task changes'}</strong>
+          <p className="text-sm text-muted-foreground">{isOnBreak ? 'Task activity is paused while your break is active.' : 'Task updates and logged note time are tied to an active work session.'}</p>
+        </div>
+        <Button disabled={timeBusy} onClick={() => void timeAction(isOnBreak ? 'break-end' : 'clock-in')}>
+          <Play /> {isOnBreak ? 'End break' : 'Clock in'}
+        </Button>
+        {/* The only place the override is offered; it then applies workspace-wide. */}
+        {canAdminOverride && showOverride && (
+          <div className="flex w-full flex-wrap items-center gap-2 border-t pt-3">
+            <Checkbox
+              id="admin-override"
               aria-describedby={tooltipId}
               checked={adminOverride}
-              onChange={(event) => setAdminOverride(event.target.checked)}
+              onCheckedChange={(checked) => setAdminOverride(checked === true)}
             />
-            Work with administrator override
-          </label>
-          <span className="override-tooltip">
-            <button className="override-tooltip-trigger" type="button" aria-label="About administrator override" aria-describedby={tooltipId}>?</button>
-            <span className="override-tooltip-content" id={tooltipId} role="tooltip">Lets you make task changes without clocking in to an active work session. It stays on across the workspace until you switch it off or sign out. Use it for administrative corrections or exceptional changes.</span>
-          </span>
-        </div>
-      )}
-      {canAdminOverride && !showOverride && adminOverride && (
-        <span className="admin-override-note">Administrator override is on for this session.</span>
-      )}
-    </div>
+            <Label htmlFor="admin-override" className="font-normal">Work with administrator override</Label>
+            <span className="relative inline-flex">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="rounded-full"
+                aria-label="About administrator override"
+                aria-describedby={tooltipId}
+              >
+                <CircleHelp />
+              </Button>
+              <span id={tooltipId} role="tooltip" className="sr-only">
+                Lets you make task changes without clocking in to an active work session. It stays on across the workspace until you switch it off or sign out. Use it for administrative corrections or exceptional changes.
+              </span>
+            </span>
+          </div>
+        )}
+        {canAdminOverride && !showOverride && adminOverride && (
+          <p className="w-full text-xs text-warning">Administrator override is on for this session.</p>
+        )}
+      </CardContent>
+    </Card>
   )
 }

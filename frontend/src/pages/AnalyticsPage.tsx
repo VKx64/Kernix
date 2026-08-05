@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ErrorBanner, Minutes, PageHeader, Panel } from '../components/ui'
-import { api, ApiError, displayName, unwrap } from '../lib/api'
-import type { AnalyticsData, ApiEnvelope, EntityId, UserSummary } from '../types/api'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { ErrorBanner, Minutes, PageHeader, Panel } from '@/components/shared'
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { api, ApiError, displayName, unwrap } from '@/lib/api'
+import type { AnalyticsData, ApiEnvelope, EntityId, UserSummary } from '@/types/api'
 
 interface AnalyticsRow {
   id?: EntityId
@@ -29,10 +35,23 @@ function dateInput(date: Date) {
   return new Intl.DateTimeFormat('en-CA').format(date)
 }
 
-function BarList({ rows }: { rows: Array<{ name: string; minutes: number; count?: number }> }) {
-  const max = Math.max(1, ...rows.map((row) => Number(row.minutes || 0)))
-  if (!rows.length) return <div className="chart-empty">No time has been logged in this range.</div>
-  return <div className="bar-list">{rows.slice(0, 10).map((row) => <div key={row.name}><div className="bar-label"><strong>{row.name}</strong><Minutes value={row.minutes} /></div><div className="bar-track"><span style={{ width: `${Math.max(2, Number(row.minutes || 0) / max * 100)}%` }} /></div></div>)}</div>
+const chartConfig = { minutes: { label: 'Minutes', color: 'var(--chart-1)' } } satisfies ChartConfig
+
+/** Horizontal bars, matching the timesheet-style breakdowns this page used before. */
+function TimeBarChart({ rows, label }: { rows: Array<{ name: string; minutes: number; count?: number }>; label: string }) {
+  if (!rows.length) return <p className="py-8 text-center text-sm text-muted-foreground">No time has been logged in this range.</p>
+  const top = rows.slice(0, 10).map((row) => ({ name: row.name, minutes: Number(row.minutes || 0) }))
+  return (
+    <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full" aria-label={label}>
+      <BarChart data={top} layout="vertical" margin={{ left: 8, right: 12 }}>
+        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+        <XAxis type="number" tickLine={false} axisLine={false} />
+        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={140} tick={{ fontSize: 12 }} />
+        <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value) => `${value} min`} />} />
+        <Bar dataKey="minutes" fill="var(--color-minutes)" radius={4} />
+      </BarChart>
+    </ChartContainer>
+  )
 }
 
 export function AnalyticsPage() {
@@ -72,20 +91,82 @@ export function AnalyticsPage() {
   const average = entryCount ? Math.round(total / entryCount) : 0
 
   return (
-    <div>
-      <PageHeader eyebrow="Reporting" title="Analytics" description="Understand where work time is going without counting task totals twice." actions={<div className="date-range"><label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><span>→</span><label>To<input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label></div>} />
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Reporting"
+        title="Analytics"
+        description="Understand where work time is going without counting task totals twice."
+        actions={(
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="analytics-from" className="text-xs text-muted-foreground">From</Label>
+              <Input id="analytics-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8" />
+            </div>
+            <span className="pb-2 text-muted-foreground">→</span>
+            <div className="space-y-1">
+              <Label htmlFor="analytics-to" className="text-xs text-muted-foreground">To</Label>
+              <Input id="analytics-to" type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} className="h-8" />
+            </div>
+          </div>
+        )}
+      />
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
-      <div className="analytics-summary">
-        <Panel><span className="eyebrow">Total logged</span><strong>{loading ? '—' : <Minutes value={total} />}</strong><p>One sum of time-entry or session records.</p></Panel>
-        <Panel><span className="eyebrow">Entries</span><strong>{loading ? '—' : entryCount}</strong><p>Records inside the selected range.</p></Panel>
-        <Panel><span className="eyebrow">Average entry</span><strong>{loading ? '—' : <Minutes value={average} />}</strong><p>Average duration per record.</p></Panel>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Panel>
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">Total logged</span>
+          <strong className="block text-2xl">{loading ? '—' : <Minutes value={total} />}</strong>
+          <p className="text-sm text-muted-foreground">One sum of time-entry or session records.</p>
+        </Panel>
+        <Panel>
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">Entries</span>
+          <strong className="block text-2xl">{loading ? '—' : entryCount}</strong>
+          <p className="text-sm text-muted-foreground">Records inside the selected range.</p>
+        </Panel>
+        <Panel>
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">Average entry</span>
+          <strong className="block text-2xl">{loading ? '—' : <Minutes value={average} />}</strong>
+          <p className="text-sm text-muted-foreground">Average duration per record.</p>
+        </Panel>
       </div>
-      <div className="chart-grid">
-        <Panel title="Time by project"><BarList rows={byProject} /></Panel>
-        <Panel title="Time by person"><BarList rows={byUser} /></Panel>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel title="Time by project"><TimeBarChart rows={byProject} label="Time by project" /></Panel>
+        <Panel title="Time by person"><TimeBarChart rows={byUser} label="Time by person" /></Panel>
       </div>
+
       <Panel title="Time records">
-        {loading ? <div className="panel-loading"><span className="spinner" /> Loading report…</div> : records.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Work</th><th>Person</th><th>Date</th><th className="numeric-cell">Time</th></tr></thead><tbody>{records.map((row, index) => <tr key={String(row.id ?? index)}><td><div className="primary-cell"><strong>{row.task_title ?? row.name ?? 'Work session'}</strong><span>{[row.project_name, row.client_name].filter(Boolean).join(' · ') || 'General time'}</span></div></td><td>{row.user ? displayName(row.user) : 'All visible users'}</td><td>{row.created_at ?? row.clock_in_at ? new Date((row.created_at ?? row.clock_in_at)!).toLocaleDateString() : '—'}</td><td className="numeric-cell"><Minutes value={row.minutes ?? row.time_minutes ?? row.worked_minutes} /></td></tr>)}</tbody></table></div> : <div className="empty-inline">No records were returned for this date range.</div>}
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-10" />)}
+          </div>
+        ) : records.length ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Work</TableHead>
+                <TableHead>Person</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Time</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {records.map((row, index) => (
+                <TableRow key={String(row.id ?? index)}>
+                  <TableCell>
+                    <div className="max-w-64">
+                      <strong className="block truncate">{row.task_title ?? row.name ?? 'Work session'}</strong>
+                      <span className="block truncate text-xs text-muted-foreground">{[row.project_name, row.client_name].filter(Boolean).join(' · ') || 'General time'}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{row.user ? displayName(row.user) : 'All visible users'}</TableCell>
+                  <TableCell>{row.created_at ?? row.clock_in_at ? new Date((row.created_at ?? row.clock_in_at)!).toLocaleDateString() : '—'}</TableCell>
+                  <TableCell className="text-right"><Minutes value={row.minutes ?? row.time_minutes ?? row.worked_minutes} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : <p className="text-sm text-muted-foreground">No records were returned for this date range.</p>}
       </Panel>
     </div>
   )
