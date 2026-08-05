@@ -227,7 +227,7 @@ function handle_shelf(): void
     ) : null;
 
     if (!$project) {
-        echo '<div style="padding:40px;text-align:center;color:var(--text-muted)">Project not found.</div>';
+        echo '<div class="empty-state">Project not found.</div>';
         exit;
     }
 

@@ -7,7 +7,7 @@
 ?>
 
 <?php if (empty($subtasks)): ?>
-  <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:14px 0">
+  <div class="empty-state">
     No subtasks yet.
   </div>
 <?php else: foreach ($subtasks as $s):

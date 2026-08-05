@@ -2,7 +2,7 @@
 /** Emails partial — task email thread (newest first). */
 
 if (empty($emails)): ?>
-  <div style="text-align:center;color:var(--text-muted);padding:24px 0;font-size:12px">
+  <div class="empty-state">
     No emails sent yet. Use the <strong>New Email</strong> button above to send one.
   </div>
 <?php else: foreach ($emails as $em):
@@ -14,7 +14,7 @@ if (empty($emails)): ?>
         else                                   $others[] = $a;
     }
     $statusColor = match($em['status']) {
-        'sent'   => 'rgb(34,197,94)',
+        'sent'   => 'var(--success)',
         'failed' => 'var(--danger)',
         default  => 'var(--text-muted)',
     };

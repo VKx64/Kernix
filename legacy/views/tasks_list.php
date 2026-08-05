@@ -243,10 +243,10 @@ $inlineProjectId = $fProject !== '' ? (int)$fProject : 0;
     <div style="font-family:monospace;font-size:11px;line-height:1.6">
       <div><strong>Total count:</strong> <?= e($debug['count']) ?> · <strong>Returned rows:</strong> <?= e($debug['rows_count']) ?></div>
       <div style="margin-top:8px"><strong>WHERE:</strong></div>
-      <pre style="white-space:pre-wrap;background:rgba(0,0,0,.3);padding:8px;border-radius:6px;margin:4px 0"><?= e($debug['where_sql']) ?></pre>
+      <pre style="white-space:pre-wrap;background:var(--popover-input-bg);padding:8px;border-radius:6px;margin:4px 0"><?= e($debug['where_sql']) ?></pre>
       <div><strong>ORDER BY:</strong> <code><?= e($debug['sort_expr']) ?></code></div>
       <div style="margin-top:8px"><strong>Params:</strong></div>
-      <pre style="white-space:pre-wrap;background:rgba(0,0,0,.3);padding:8px;border-radius:6px;margin:4px 0"><?= e(json_encode($debug['params'], JSON_PRETTY_PRINT)) ?></pre>
+      <pre style="white-space:pre-wrap;background:var(--popover-input-bg);padding:8px;border-radius:6px;margin:4px 0"><?= e(json_encode($debug['params'], JSON_PRETTY_PRINT)) ?></pre>
     </div>
   </div>
 <?php endif; ?>

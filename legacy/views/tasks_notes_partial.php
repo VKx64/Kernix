@@ -9,7 +9,7 @@ $uid     = Auth::id();
 $isAdmin = Perm::isAdmin();
 
 if (empty($notes)): ?>
-  <div style="text-align:center;color:var(--text-muted);padding:24px 0;font-size:12px">No notes yet. Add the first one below.</div>
+  <div class="empty-state">No notes yet. Add the first one below.</div>
 <?php else: foreach ($notes as $n):
     $unread = empty($n['read_at']) && $n['assigned_user_id'] == $uid;
     $isMine = $n['created_by'] == $uid;
