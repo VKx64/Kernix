@@ -158,7 +158,7 @@ $delTpl    = delete_url_template('fields', 'delete_value');
   margin-bottom: 2px; transition: background .12s;
 }
 .fields-nav-item:hover { background: var(--glass-bg-2); text-decoration: none; }
-.fields-nav-item.active { background: rgba(139,92,246,.15); color: var(--primary-hover); }
+.fields-nav-item.active { background: var(--primary-glow); color: var(--primary-hover); }
 .fields-nav-name { font-size: 13px; font-weight: 500; }
 .fields-nav-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 .fields-nav-item.active .fields-nav-meta { color: var(--primary-hover); opacity: .8; }

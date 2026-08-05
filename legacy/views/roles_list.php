@@ -40,6 +40,9 @@ $delTpl = delete_url_template('roles');
         </tr>
       </thead>
       <tbody>
+        <?php if (empty($rows)): ?>
+          <tr><td colspan="5" class="empty">No roles found.</td></tr>
+        <?php endif; ?>
         <?php foreach ($rows as $r):
             $perms  = $permsByRole[$r['id']] ?? [];
             $pCount = count($perms);

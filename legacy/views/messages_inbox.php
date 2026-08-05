@@ -39,7 +39,7 @@
   </div>
 
   <div class="msg-list-v2" id="msg-list">
-    <div class="muted" style="text-align:center;padding:40px 16px;font-size:12px">Loading…</div>
+    <div class="msg-empty-list muted">Loading…</div>
   </div>
 
 </div>
@@ -84,21 +84,21 @@
   }
 
   async function loadList() {
-    listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px 16px;font-size:12px">Loading…</div>';
+    listEl.innerHTML = '<div class="msg-empty-list muted">Loading…</div>';
     try {
       const res = await fetch(`${BASE}/index.php?p=messages&action=list&f=${encodeURIComponent(currentFilter)}`, {
         headers: {'X-Requested-With':'XMLHttpRequest'}
       });
       const j = await res.json();
       if (!j.ok) {
-        listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px 16px;font-size:12px">Failed to load.</div>';
+        listEl.innerHTML = '<div class="msg-empty-list muted">Failed to load.</div>';
         return;
       }
       currentList = j.rows;
       renderList();
       updateUnreadBadges(j.unread);
     } catch {
-      listEl.innerHTML = '<div class="muted" style="text-align:center;padding:40px 16px;font-size:12px">Network error.</div>';
+      listEl.innerHTML = '<div class="msg-empty-list muted">Network error.</div>';
     }
   }
 
