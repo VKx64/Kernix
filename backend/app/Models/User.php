@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Support\PermissionCatalog;
 use Database\Factories\UserFactory;
+use App\Services\AvatarStorage;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -35,6 +37,27 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return ['start_date' => 'date', 'birthdate' => 'date', 'last_login_at' => 'datetime', 'archived_at' => 'datetime'];
+    }
+
+    /**
+     * The column holds a storage path for uploaded pictures, but the clients
+     * need something they can put in a src attribute. Reads resolve to the
+     * route that serves the file; writes still store the path. Values that were
+     * already external URLs pass through untouched.
+     */
+    protected function profileImage(): Attribute
+    {
+        return Attribute::get(function (?string $value): ?string {
+            if (! AvatarStorage::isStoredPath($value)) {
+                return $value;
+            }
+
+            // The filename changes on every upload, so carrying it as a version
+            // lets the response stay cacheable without pinning a stale picture.
+            $version = pathinfo($value, PATHINFO_FILENAME);
+
+            return url("/api/users/{$this->getKey()}/avatar").'?v='.$version;
+        });
     }
 
     /**

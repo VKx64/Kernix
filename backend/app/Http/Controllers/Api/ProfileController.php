@@ -27,7 +27,8 @@ class ProfileController extends ApiController
             'phone_1' => ['sometimes', 'nullable', 'string', 'max:64'],
             'timezone' => ['sometimes', 'nullable', 'timezone'],
             'theme_preset' => ['sometimes', 'string', 'max:64'],
-            'profile_image' => ['sometimes', 'nullable', 'string', 'max:500'],
+            // profile_image is written only by the avatar endpoints. Accepting it
+            // here would let an account point its picture at any stored path.
             'current_password' => ['required_with:password', 'nullable', 'string'],
             'password' => ['sometimes', 'nullable', 'string', 'min:8', 'max:255', 'confirmed'],
         ]);

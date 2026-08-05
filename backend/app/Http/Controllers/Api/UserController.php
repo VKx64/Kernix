@@ -142,7 +142,8 @@ class UserController extends ApiController
             'home_address' => ['sometimes', 'nullable', 'string'], 'barangay' => ['sometimes', 'nullable', 'string', 'max:128'],
             'city' => ['sometimes', 'nullable', 'string', 'max:128'], 'province' => ['sometimes', 'nullable', 'string', 'max:128'],
             'zip_code' => ['sometimes', 'nullable', 'string', 'max:32'], 'timezone' => ['sometimes', 'nullable', 'timezone'],
-            'profile_image' => ['sometimes', 'nullable', 'string', 'max:500'], 'theme_preset' => ['sometimes', 'string', 'max:64'],
+            // profile_image is written only by the avatar endpoints.
+            'theme_preset' => ['sometimes', 'string', 'max:64'],
             'password_hash' => ['prohibited'], 'remember_token' => ['prohibited'],
         ]);
     }

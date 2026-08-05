@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AiTaskGenerationController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AvatarController;
 use App\Http\Controllers\Api\BootstrapController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ContactController;
@@ -52,6 +53,8 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::patch('/user', [ProfileController::class, 'update']);
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::patch('/profile', [ProfileController::class, 'update']);
+    Route::post('/profile/avatar', [AvatarController::class, 'storeOwn']);
+    Route::delete('/profile/avatar', [AvatarController::class, 'destroyOwn']);
     Route::get('/bootstrap', BootstrapController::class);
     Route::get('/dashboard', DashboardController::class);
     Route::get('/analytics', AnalyticsController::class);
@@ -149,6 +152,11 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::delete('/tasks/{task}/emails/{email}', [TaskEmailController::class, 'destroy']);
     Route::apiResource('tasks', TaskController::class);
 
+    // Any signed-in person may read a colleague's picture; changing someone
+    // else's is gated on users.edit inside the controller.
+    Route::get('/users/{user}/avatar', [AvatarController::class, 'show']);
+    Route::post('/users/{user}/avatar', [AvatarController::class, 'store']);
+    Route::delete('/users/{user}/avatar', [AvatarController::class, 'destroy']);
     Route::post('/users/{user}/archive', [UserController::class, 'archive']);
     Route::post('/users/{user}/restore', [UserController::class, 'restore']);
     Route::apiResource('users', UserController::class)->except(['destroy']);

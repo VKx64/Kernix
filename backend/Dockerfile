@@ -2,7 +2,9 @@ FROM php:8.4-cli-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl git unzip libicu-dev libonig-dev libsqlite3-dev libzip-dev \
-    && docker-php-ext-install -j$(nproc) bcmath intl mbstring opcache pdo_mysql pdo_sqlite \
+        libfreetype6-dev libjpeg62-turbo-dev libpng-dev libwebp-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j$(nproc) bcmath gd intl mbstring opcache pdo_mysql pdo_sqlite \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
