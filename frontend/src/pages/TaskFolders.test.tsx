@@ -217,6 +217,7 @@ describe('TasksPage project folders', () => {
     expect(project).toHaveTextContent('Launch')
     expect(project).toBeDisabled()
     await actor.type(screen.getByLabelText('Task title'), 'Schedule review')
+    await actor.click(screen.getByRole('button', { name: 'More details' }))
     await choose(actor, 'Folder', 'Delivery')
     await actor.click(screen.getByRole('button', { name: 'Create task' }))
 
@@ -233,6 +234,7 @@ describe('TasksPage project folders', () => {
 
     await actor.click(screen.getByRole('button', { name: 'New task' }))
     await screen.findByRole('combobox', { name: 'Project' })
+    await actor.click(screen.getByRole('button', { name: 'More details' }))
     const folder = screen.getByRole('combobox', { name: 'Folder' })
     expect(folder).toBeDisabled()
 

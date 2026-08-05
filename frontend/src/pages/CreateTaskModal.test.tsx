@@ -67,43 +67,80 @@ async function pickDueDate(actor: Actor) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
 }
 
-/** Opens the "More" menu, clicks the named item, and waits for the menu to close. */
-async function chooseMore(actor: Actor, item: string) {
-  await actor.click(screen.getByLabelText('More task properties'))
-  await actor.click(await screen.findByRole('menuitem', { name: item }))
-  await waitFor(() => expect(screen.queryByRole('menuitem', { name: item })).not.toBeInTheDocument())
+/** Opens the "More details" section, once. */
+async function openMore(actor: Actor) {
+  await actor.click(screen.getByRole('button', { name: 'More details' }))
 }
 
 describe('CreateTaskModal', () => {
-  it('focuses the title and keeps permitted core properties compact', async () => {
+  it('focuses the title and keeps a compact property row of Project, Due, Assignee and Priority', async () => {
     const view = renderModal()
 
     await waitFor(() => expect(screen.getByLabelText('Task title')).toHaveFocus())
     expect(screen.getByLabelText('Project')).toBeInTheDocument()
-    expect(screen.getByLabelText('Folder')).toBeInTheDocument()
-    expect(screen.getByLabelText('Type')).toBeInTheDocument()
-    expect(screen.getByLabelText('Status')).toBeInTheDocument()
-    expect(screen.getByLabelText('Assignee')).toBeInTheDocument()
     expect(screen.getByLabelText('Due date')).toBeInTheDocument()
+    expect(screen.getByLabelText('Assignee')).toBeInTheDocument()
     expect(screen.getByLabelText('Priority')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Folder')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Estimated minutes')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Subtask 1 title')).not.toBeInTheDocument()
 
     view.rerender(<CreateTaskModal {...view.props} canAssign={false} canChangeStatus={false} />)
-    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Assignee')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Due date')).toBeInTheDocument()
     expect(screen.getByLabelText('Priority')).toBeInTheDocument()
   })
 
-  it('reveals subtasks from More and Enter adds a stable row without submitting', async () => {
+  it('lifts @assignee, !priority and a due date out of the title as it is typed', async () => {
+    const actor = userEvent.setup()
+    renderModal()
+
+    await actor.type(screen.getByLabelText('Task title'), 'Ship copy tomorrow @casey !high')
+
+    // The last token is still being typed, so it stays in the field until the
+    // user moves on — otherwise a longer name could never be finished.
+    expect(screen.getByLabelText('Task title')).toHaveValue('Ship copy !high')
+    expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Casey Worker')
+
+    await actor.tab()
+
+    expect(screen.getByLabelText('Task title')).toHaveValue('Ship copy')
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('High')
+  })
+
+  it('leaves unmatched tokens in the title untouched', async () => {
+    const actor = userEvent.setup()
+    renderModal()
+
+    await actor.type(screen.getByLabelText('Task title'), 'Ping @nobody about the deck')
+
+    expect(screen.getByLabelText('Task title')).toHaveValue('Ping @nobody about the deck')
+    expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Unassigned')
+  })
+
+  it('reveals Folder, Type and Status behind More details', async () => {
+    const actor = userEvent.setup()
+    renderModal()
+
+    expect(screen.queryByLabelText('Folder')).not.toBeInTheDocument()
+    await openMore(actor)
+
+    expect(screen.getByLabelText('Folder')).toBeInTheDocument()
+    expect(screen.getByLabelText('Type')).toBeInTheDocument()
+    expect(screen.getByLabelText('Status')).toBeInTheDocument()
+    expect(screen.getByLabelText('Description')).toBeInTheDocument()
+  })
+
+  it('reveals subtasks from More details and Enter adds a stable row without submitting', async () => {
     const actor = userEvent.setup()
     const { onSubmit } = renderModal()
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    expect(await screen.findByRole('menuitem', { name: 'Time estimate' })).toBeInTheDocument()
-    await actor.click(screen.getByRole('menuitem', { name: 'Subtasks' }))
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Subtasks' })).not.toBeInTheDocument())
+    await openMore(actor)
+    expect(screen.getByRole('button', { name: 'Time estimate' })).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
 
     const firstSubtask = screen.getByLabelText('Subtask 1 title')
     await actor.type(firstSubtask, 'Draft the brief{Enter}')
@@ -118,17 +155,19 @@ describe('CreateTaskModal', () => {
     const { onSubmit } = renderModal()
 
     await actor.type(screen.getByLabelText('Task title'), '  Ship campaign  ')
-    await actor.type(screen.getByLabelText('Description'), '  Helpful context  ')
-    await choose(actor, 'Folder', 'Pre-production')
-    await choose(actor, 'Type', 'Milestone')
-    await choose(actor, 'Status', 'In progress')
     await choose(actor, 'Assignee', 'Casey Worker')
     const due = await pickDueDate(actor)
     await choose(actor, 'Priority', 'High')
 
-    await chooseMore(actor, 'Time estimate')
+    await openMore(actor)
+    await actor.type(screen.getByLabelText('Description'), '  Helpful context  ')
+    await choose(actor, 'Folder', 'Pre-production')
+    await choose(actor, 'Type', 'Milestone')
+    await choose(actor, 'Status', 'In progress')
+
+    await actor.click(screen.getByRole('button', { name: 'Time estimate' }))
     await actor.type(screen.getByLabelText('Estimated minutes'), '90')
-    await chooseMore(actor, 'Subtasks')
+    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
 
     await actor.type(screen.getByLabelText('Subtask 1 title'), '  Draft brief  {Enter}')
     await actor.type(await screen.findByLabelText('Subtask 2 title'), '  Review copy  ')
@@ -151,12 +190,13 @@ describe('CreateTaskModal', () => {
     }, [])
   })
 
-  it('does not expose More options the user lacks permission to add', () => {
+  it('does not expose More details options the user lacks permission to add', async () => {
+    const actor = userEvent.setup()
     renderModal({ canEstimate: false, canCreateSubtasks: false })
 
-    expect(screen.queryByLabelText('More task properties')).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Time estimate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Subtasks' })).not.toBeInTheDocument()
+    await openMore(actor)
+    expect(screen.queryByRole('button', { name: 'Time estimate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Subtasks' })).not.toBeInTheDocument()
   })
 
   it('uses configured default labels without duplicating their options', async () => {
@@ -167,9 +207,10 @@ describe('CreateTaskModal', () => {
       urgencyOptions: [{ id: 40, key: 'normal', label: 'Standard' }, { id: 41, label: 'High' }],
     })
 
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Standard')
+    await openMore(actor)
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Ready')
     expect(screen.getByRole('combobox', { name: 'Type' })).toHaveTextContent('Work item')
-    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Standard')
 
     for (const [field, label] of [['Status', 'Ready'], ['Type', 'Work item'], ['Priority', 'Standard']]) {
       await actor.click(screen.getByRole('combobox', { name: field }))
@@ -183,7 +224,7 @@ describe('CreateTaskModal', () => {
     }
   })
 
-  it('undoes an optional choice from the same menu', async () => {
+  it('undoes an optional choice from the same control', async () => {
     const actor = userEvent.setup()
     renderModal()
 
@@ -198,7 +239,8 @@ describe('CreateTaskModal', () => {
     const actor = userEvent.setup()
     const { onSubmit } = renderModal({ canAttach: true })
 
-    await chooseMore(actor, 'Attachments')
+    await openMore(actor)
+    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
 
     const storyboard = new File(['frame'], 'storyboard.png', { type: 'image/png' })
     await actor.upload(screen.getByLabelText('Attach files'), storyboard)
@@ -218,7 +260,8 @@ describe('CreateTaskModal', () => {
     const actor = userEvent.setup()
     renderModal({ canAttach: true })
 
-    await chooseMore(actor, 'Attachments')
+    await openMore(actor)
+    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
     await actor.upload(screen.getByLabelText('Attach files'), new File(['<?php'], 'payload.php', { type: 'text/x-php' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('payload.php is an executable or script file.')
@@ -229,15 +272,16 @@ describe('CreateTaskModal', () => {
     const actor = userEvent.setup()
     renderModal({ canAttach: false })
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    expect(screen.queryByRole('menuitem', { name: 'Attachments' })).not.toBeInTheDocument()
+    await openMore(actor)
+    expect(screen.queryByRole('button', { name: 'Attachments' })).not.toBeInTheDocument()
   })
 
   it('stops inline drafting at the backend subtask limit', async () => {
     const actor = userEvent.setup()
     renderModal()
 
-    await chooseMore(actor, 'Subtasks')
+    await openMore(actor)
+    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
     const add = screen.getByRole('button', { name: 'Add subtask' })
     for (let index = 1; index < 50; index += 1) fireEvent.click(add)
 

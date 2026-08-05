@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { Clock, File, FileImage, FileVideo, ListChecks, MoreHorizontal, Music, Paperclip, Plus, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, Clock, File, FileImage, FileVideo, ListChecks, Music, Paperclip, Plus, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -22,6 +17,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { DatePicker } from '@/components/date-picker'
 import { displayName } from '../lib/api'
 import { MAX_ATTACHMENTS_PER_UPLOAD, MAX_ATTACHMENT_BYTES, fileKind, formatBytes, rejectionReason } from '../lib/attachments'
+import { parseTaskDraftTitle } from '../lib/taskDraft'
 import type { EntityId, FieldValue, Project, TaskFolder, UserSummary } from '../types/api'
 
 interface TaskDraft {
@@ -43,6 +39,23 @@ interface DraftSubtask {
 }
 
 const MAX_SUBTASKS = 50
+const LAST_PROJECT_STORAGE_KEY = 'kernix.create-task.last-project-id'
+
+function rememberedProjectId(): string {
+  try {
+    return window.localStorage?.getItem(LAST_PROJECT_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function rememberProjectId(projectId: string) {
+  try {
+    if (projectId) window.localStorage?.setItem(LAST_PROJECT_STORAGE_KEY, projectId)
+  } catch {
+    // Storage may be unavailable (private browsing); the default just resets to blank next time.
+  }
+}
 
 export type CreateTaskPayload = Record<string, unknown> & {
   project_id: EntityId
@@ -80,10 +93,10 @@ interface CreateTaskModalProps {
   onSubmit: (payload: CreateTaskPayload, files: File[]) => void | Promise<void>
 }
 
-function emptyDraft(initialProjectId?: string): TaskDraft {
+function emptyDraft(projectId: string): TaskDraft {
   return {
     title: '',
-    project_id: initialProjectId ?? '',
+    project_id: projectId,
     task_folder_id: '',
     description: '',
     status_value_id: '',
@@ -131,6 +144,7 @@ function DraftSelect({
   options,
   placeholder,
   disabled,
+  compact,
   onChange,
 }: {
   id: string
@@ -139,11 +153,18 @@ function DraftSelect({
   options: SelectOption[]
   placeholder: string
   disabled?: boolean
+  compact?: boolean
   onChange: (value: string) => void
 }) {
+  // The sentinel only stands in when the list actually carries an empty option.
+  // Sending it otherwise leaves the trigger matching nothing, and Radix renders
+  // an empty control rather than the placeholder.
+  const hasEmptyOption = options.some((option) => option.value === '')
+  const selected = value || (hasEmptyOption ? '__unset__' : '')
+
   return (
-    <Select value={value || '__unset__'} disabled={disabled} onValueChange={(next) => onChange(next === '__unset__' ? '' : next)}>
-      <SelectTrigger id={id} className="w-full">
+    <Select value={selected} disabled={disabled} onValueChange={(next) => onChange(next === '__unset__' ? '' : next)}>
+      <SelectTrigger id={id} size={compact ? 'sm' : 'default'} className={compact ? 'w-fit rounded-full' : 'w-full'}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent aria-label={label}>
@@ -181,9 +202,11 @@ export function CreateTaskModal({
 }: CreateTaskModalProps) {
   const formId = useId()
   const titleRef = useRef<HTMLInputElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
   const subtaskSequence = useRef(0)
   const subtaskInputs = useRef(new Map<string, HTMLInputElement>())
-  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(initialProjectId))
+  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(initialProjectId ?? rememberedProjectId()))
+  const [moreOpen, setMoreOpen] = useState(false)
   const [showEstimate, setShowEstimate] = useState(false)
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([])
@@ -196,7 +219,8 @@ export function CreateTaskModal({
 
   useEffect(() => {
     if (!open) return
-    setDraft(emptyDraft(initialProjectId))
+    setDraft(emptyDraft(initialProjectId ?? rememberedProjectId()))
+    setMoreOpen(false)
     setShowEstimate(false)
     setShowSubtasks(false)
     setSubtasks([])
@@ -223,6 +247,28 @@ export function CreateTaskModal({
   const setField = (field: keyof TaskDraft, value: string) => {
     dismissErrors()
     setDraft((current) => ({ ...current, [field]: value === '__unset__' ? '' : value }))
+  }
+
+  const setProject = (next: string) => {
+    setDraft((current) => ({ ...current, project_id: next, task_folder_id: '' }))
+    onProjectChange?.(next)
+    rememberProjectId(next)
+    dismissErrors()
+  }
+
+  // Recognises @assignee / !priority / due-date tokens as the title is typed and
+  // lifts anything understood into its real field, leaving unmatched text alone.
+  const setTitle = (value: string, settled = false) => {
+    dismissErrors()
+    const parsed = parseTaskDraftTitle(value, { users, urgencyOptions, now: new Date(), settled })
+    setDraft((current) => ({
+      ...current,
+      title: parsed.title,
+      assignee_user_id: parsed.assigneeUserId ?? current.assignee_user_id,
+      urgency_value_id: parsed.urgencyValueId ?? current.urgency_value_id,
+      due_date: parsed.dueDate ?? current.due_date,
+    }))
+    return parsed
   }
 
   const focusSubtask = (id: string) => {
@@ -334,7 +380,10 @@ export function CreateTaskModal({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const title = draft.title.trim()
+    // Submitting settles a trailing token, so "call Ana tomorrow" sets the due
+    // date even when the field was never left.
+    const settled = parseTaskDraftTitle(draft.title, { users, urgencyOptions, now: new Date(), settled: true })
+    const title = settled.title.trim()
     if (!title || !draft.project_id) {
       setValidationError(!title ? 'Give the task a clear title before creating it.' : 'Choose the project this task belongs to.')
       return
@@ -344,16 +393,21 @@ export function CreateTaskModal({
     optional(payload, 'task_folder_id', draft.task_folder_id)
     optional(payload, 'status_value_id', draft.status_value_id)
     optional(payload, 'type_value_id', draft.type_value_id)
-    optional(payload, 'urgency_value_id', draft.urgency_value_id)
-    optional(payload, 'assignee_user_id', draft.assignee_user_id)
-    optional(payload, 'due_date', draft.due_date)
+    optional(payload, 'urgency_value_id', settled.urgencyValueId ?? draft.urgency_value_id)
+    optional(payload, 'assignee_user_id', settled.assigneeUserId ?? draft.assignee_user_id)
+    optional(payload, 'due_date', settled.dueDate ?? draft.due_date)
     if (draft.description.trim()) payload.description = draft.description.trim()
     if (draft.estimated_minutes !== '') payload.estimated_minutes = Number(draft.estimated_minutes)
     if (subtaskTitles.length) payload.subtasks = subtaskTitles.map((subtaskTitle) => ({ title: subtaskTitle }))
     void onSubmit(payload, canAttach ? files : [])
   }
 
-  const canRevealMore = (canEstimate && !showEstimate) || (canCreateSubtasks && !showSubtasks) || (canAttach && !showAttachments)
+  const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault()
+      formRef.current?.requestSubmit()
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose() }}>
@@ -366,63 +420,12 @@ export function CreateTaskModal({
       >
         <DialogHeader>
           <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>Start with the essentials, then add only the detail the team needs.</DialogDescription>
+          <DialogDescription>Start with a title — assignee, priority and due date can be typed right in it, e.g. "Call client tomorrow @casey !high".</DialogDescription>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={submit} noValidate>
+        <form ref={formRef} className="space-y-4" onSubmit={submit} onKeyDown={onFormKeyDown} noValidate>
           <fieldset className="space-y-4" disabled={busy}>
             <legend className="sr-only">New task details</legend>
             {notice}
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor={`${formId}-project`}>Project</Label>
-                <DraftSelect
-                  id={`${formId}-project`}
-                  label="Project"
-                  value={draft.project_id}
-                  options={projectChoices}
-                  placeholder="Choose project…"
-                  disabled={Boolean(initialProjectId)}
-                  onChange={(next) => {
-                    setDraft((current) => ({ ...current, project_id: next, task_folder_id: '' }))
-                    onProjectChange?.(next)
-                    dismissErrors()
-                  }}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor={`${formId}-folder`}>Folder</Label>
-                <DraftSelect
-                  id={`${formId}-folder`}
-                  label="Folder"
-                  value={draft.task_folder_id}
-                  options={folderChoices}
-                  placeholder={!draft.project_id ? 'Choose project first…' : foldersLoading ? 'Loading folders…' : 'Ungrouped'}
-                  disabled={!draft.project_id || foldersLoading}
-                  onChange={(next) => setField('task_folder_id', next)}
-                />
-              </div>
-
-              {typeOptions.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label htmlFor={`${formId}-type`}>Type</Label>
-                  <DraftSelect
-                    id={`${formId}-type`}
-                    label="Type"
-                    value={draft.type_value_id}
-                    options={typeChoices}
-                    placeholder={defaultType?.label ?? 'Task'}
-                    onChange={(next) => setField('type_value_id', next)}
-                  />
-                </div>
-              )}
-            </div>
-            {folderError && (
-              <Alert variant="destructive">
-                <AlertDescription>{folderError}</AlertDescription>
-              </Alert>
-            )}
 
             <div className="space-y-1.5">
               <Label htmlFor={`${formId}-title`} className="sr-only">Task title</Label>
@@ -435,210 +438,274 @@ export function CreateTaskModal({
                 className="h-11 text-base font-medium"
                 value={draft.title}
                 placeholder="What needs to be done?"
-                onChange={(event) => setField('title', event.target.value)}
+                onChange={(event) => setTitle(event.target.value)}
+                // Leaving the field settles whatever token was still being typed.
+                onBlur={(event) => setTitle(event.target.value, true)}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor={`${formId}-description`} className="sr-only">Description</Label>
-              <Textarea
-                id={`${formId}-description`}
-                aria-label="Description"
-                value={draft.description}
-                placeholder="Add a description or helpful context…"
-                onChange={(event) => setField('description', event.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-end gap-3">
-              {canChangeStatus && statusOptions.length > 0 && (
-                <div className="w-40 space-y-1.5">
-                  <Label htmlFor={`${formId}-status`}>Status</Label>
-                  <DraftSelect id={`${formId}-status`} label="Status" value={draft.status_value_id} options={statusChoices} placeholder={defaultStatus?.label ?? 'Pending'} onChange={(next) => setField('status_value_id', next)} />
-                </div>
-              )}
-
-              {canAssign && (
-                <div className="w-44 space-y-1.5">
-                  <Label htmlFor={`${formId}-assignee`}>Assignee</Label>
-                  <DraftSelect id={`${formId}-assignee`} label="Assignee" value={draft.assignee_user_id} options={userChoices} placeholder="Unassigned" onChange={(next) => setField('assignee_user_id', next)} />
-                </div>
-              )}
-
-              <div className="w-44 space-y-1.5">
-                <Label htmlFor={`${formId}-due-date`}>Due date</Label>
-                <DatePicker id={`${formId}-due-date`} value={draft.due_date} placeholder="Due date" onChange={(next) => setField('due_date', next)} />
+            <div className="flex flex-wrap items-center gap-2">
+              <div>
+                <Label htmlFor={`${formId}-project`} className="sr-only">Project</Label>
+                <DraftSelect
+                  id={`${formId}-project`}
+                  label="Project"
+                  compact
+                  value={draft.project_id}
+                  options={projectChoices}
+                  placeholder="Choose project…"
+                  disabled={Boolean(initialProjectId)}
+                  onChange={setProject}
+                />
               </div>
 
+              <div>
+                <Label htmlFor={`${formId}-due-date`} className="sr-only">Due date</Label>
+                <DatePicker id={`${formId}-due-date`} className="w-fit" value={draft.due_date} placeholder="Due date" onChange={(next) => setField('due_date', next)} />
+              </div>
+
+              {canAssign && (
+                <div>
+                  <Label htmlFor={`${formId}-assignee`} className="sr-only">Assignee</Label>
+                  <DraftSelect id={`${formId}-assignee`} label="Assignee" compact value={draft.assignee_user_id} options={userChoices} placeholder="Unassigned" onChange={(next) => setField('assignee_user_id', next)} />
+                </div>
+              )}
+
               {urgencyOptions.length > 0 && (
-                <div className="w-36 space-y-1.5">
-                  <Label htmlFor={`${formId}-urgency`}>Priority</Label>
-                  <DraftSelect id={`${formId}-urgency`} label="Priority" value={draft.urgency_value_id} options={urgencyChoices} placeholder={defaultUrgency?.label ?? 'Priority'} onChange={(next) => setField('urgency_value_id', next)} />
+                <div>
+                  <Label htmlFor={`${formId}-urgency`} className="sr-only">Priority</Label>
+                  <DraftSelect id={`${formId}-urgency`} label="Priority" compact value={draft.urgency_value_id} options={urgencyChoices} placeholder={defaultUrgency?.label ?? 'Priority'} onChange={(next) => setField('urgency_value_id', next)} />
                 </div>
-              )}
-
-              {showEstimate && canEstimate && (
-                <div className="w-32 space-y-1.5">
-                  <Label htmlFor={`${formId}-estimate`}>Estimated minutes</Label>
-                  <div className="relative">
-                    <Clock className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id={`${formId}-estimate`}
-                      aria-label="Estimated minutes"
-                      type="number"
-                      min={0}
-                      max={1000000}
-                      inputMode="numeric"
-                      className="pl-8"
-                      value={draft.estimated_minutes}
-                      placeholder="Estimate"
-                      onChange={(event) => setField('estimated_minutes', event.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {canRevealMore && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" aria-label="More task properties">
-                      <MoreHorizontal /> More
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {canEstimate && !showEstimate && <DropdownMenuItem onSelect={revealEstimate}><Clock /> Time estimate</DropdownMenuItem>}
-                    {canCreateSubtasks && !showSubtasks && <DropdownMenuItem onSelect={revealSubtasks}><ListChecks /> Subtasks</DropdownMenuItem>}
-                    {canAttach && !showAttachments && <DropdownMenuItem onSelect={revealAttachments}><Paperclip /> Attachments</DropdownMenuItem>}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
-              {showSubtasks && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => focusSubtask(subtasks[0]?.id)}>
-                  <ListChecks /> {displayedSubtaskCount} {displayedSubtaskCount === 1 ? 'subtask' : 'subtasks'}
-                </Button>
-              )}
-
-              {showAttachments && canAttach && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                  <Paperclip /> {files.length} {files.length === 1 ? 'file' : 'files'}
-                </Button>
               )}
             </div>
 
-            {showSubtasks && canCreateSubtasks && (
-              <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-subtasks-title`}>
-                <header className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <ListChecks className="size-4 text-muted-foreground" />
-                    <div>
-                      <strong id={`${formId}-subtasks-title`} className="block text-sm">Subtasks</strong>
-                      <small className="text-xs text-muted-foreground">Break the work into quick, actionable steps.</small>
-                    </div>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" disabled={subtasks.length >= MAX_SUBTASKS} onClick={() => addSubtask()}>
-                    <Plus /> Add subtask
-                  </Button>
-                </header>
-                <ol className="space-y-2">
-                  {subtasks.map((subtask, index) => (
-                    <li key={subtask.id} className="flex items-center gap-2">
-                      <span aria-hidden="true" className="w-5 shrink-0 text-right text-sm text-muted-foreground">{index + 1}</span>
-                      <Input
-                        ref={(node) => {
-                          if (node) subtaskInputs.current.set(subtask.id, node)
-                          else subtaskInputs.current.delete(subtask.id)
-                        }}
-                        aria-label={`Subtask ${index + 1} title`}
-                        maxLength={255}
-                        value={subtask.title}
-                        placeholder="Add a subtask"
-                        onKeyDown={(event) => onSubtaskKeyDown(event, index)}
-                        onChange={(event) => {
-                          dismissErrors()
-                          setSubtasks((current) => current.map((row) => row.id === subtask.id ? { ...row, title: event.target.value } : row))
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-destructive hover:text-destructive"
-                        aria-label={`Remove subtask ${index + 1}`}
-                        onClick={() => removeSubtask(subtask.id, subtasks[index - 1]?.id ?? subtasks[index + 1]?.id)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </li>
-                  ))}
-                </ol>
-                {!subtasks.length && (
-                  <Button type="button" variant="outline" className="w-full" onClick={() => addSubtask()}>
-                    <Plus /> Add the first subtask
-                  </Button>
-                )}
-                <p aria-live="polite" className="text-xs text-muted-foreground">
-                  {subtasks.length >= MAX_SUBTASKS ? `${MAX_SUBTASKS}-subtask limit reached.` : 'Press Enter to add the next subtask. Empty rows are ignored when the task is created.'}
-                </p>
-              </section>
+            {folderError && (
+              <Alert variant="destructive">
+                <AlertDescription>{folderError}</AlertDescription>
+              </Alert>
             )}
 
-            {showAttachments && canAttach && (
-              <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-files-title`}>
-                <header className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Paperclip className="size-4 text-muted-foreground" />
-                    <div>
-                      <strong id={`${formId}-files-title`} className="block text-sm">Attachments</strong>
-                      <small className="text-xs text-muted-foreground">Pictures, video, or documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small>
-                    </div>
+            <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
+                  <ChevronDown className={moreOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                  {moreOpen ? 'Hide details' : 'More details'}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${formId}-description`} className="sr-only">Description</Label>
+                  <Textarea
+                    id={`${formId}-description`}
+                    aria-label="Description"
+                    value={draft.description}
+                    placeholder="Add a description or helpful context…"
+                    onChange={(event) => setField('description', event.target.value)}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`${formId}-folder`}>Folder</Label>
+                    <DraftSelect
+                      id={`${formId}-folder`}
+                      label="Folder"
+                      value={draft.task_folder_id}
+                      options={folderChoices}
+                      placeholder={!draft.project_id ? 'Choose project first…' : foldersLoading ? 'Loading folders…' : 'Ungrouped'}
+                      disabled={!draft.project_id || foldersLoading}
+                      onChange={(next) => setField('task_folder_id', next)}
+                    />
                   </div>
-                  <Button type="button" variant="outline" size="sm" disabled={files.length >= MAX_ATTACHMENTS_PER_UPLOAD} onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                    <Plus /> Add files
-                  </Button>
-                </header>
-                <input
-                  id={`${formId}-files`}
-                  className="sr-only"
-                  type="file"
-                  multiple
-                  aria-label="Attach files"
-                  onChange={(event) => {
-                    addFiles(event.target.files)
-                    event.target.value = ''
-                  }}
-                />
-                {files.length > 0 && (
-                  <ul className="space-y-2">
-                    {files.map((file) => {
-                      const KindIcon = KIND_ICONS[fileKind(file.type)]
-                      return (
-                        <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 rounded-md border p-2">
-                          <KindIcon className="size-4 text-muted-foreground" />
-                          <span className="min-w-0 flex-1">
-                            <strong className="block truncate text-sm">{file.name}</strong>
-                            <small className="block text-xs text-muted-foreground">{formatBytes(file.size)}</small>
-                          </span>
-                          <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Remove ${file.name}`} onClick={() => removeFile(file)}>
+
+                  {typeOptions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`${formId}-type`}>Type</Label>
+                      <DraftSelect
+                        id={`${formId}-type`}
+                        label="Type"
+                        value={draft.type_value_id}
+                        options={typeChoices}
+                        placeholder={defaultType?.label ?? 'Task'}
+                        onChange={(next) => setField('type_value_id', next)}
+                      />
+                    </div>
+                  )}
+
+                  {canChangeStatus && statusOptions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`${formId}-status`}>Status</Label>
+                      <DraftSelect id={`${formId}-status`} label="Status" value={draft.status_value_id} options={statusChoices} placeholder={defaultStatus?.label ?? 'Pending'} onChange={(next) => setField('status_value_id', next)} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {showEstimate && canEstimate && (
+                    <div className="w-32 space-y-1.5">
+                      <Label htmlFor={`${formId}-estimate`}>Estimated minutes</Label>
+                      <div className="relative">
+                        <Clock className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id={`${formId}-estimate`}
+                          aria-label="Estimated minutes"
+                          type="number"
+                          min={0}
+                          max={1000000}
+                          inputMode="numeric"
+                          className="pl-8"
+                          value={draft.estimated_minutes}
+                          placeholder="Estimate"
+                          onChange={(event) => setField('estimated_minutes', event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {canEstimate && !showEstimate && (
+                    <Button type="button" variant="outline" size="sm" onClick={revealEstimate}>
+                      <Clock /> Time estimate
+                    </Button>
+                  )}
+
+                  {canCreateSubtasks && !showSubtasks && (
+                    <Button type="button" variant="outline" size="sm" onClick={revealSubtasks}>
+                      <ListChecks /> Subtasks
+                    </Button>
+                  )}
+                  {showSubtasks && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => focusSubtask(subtasks[0]?.id)}>
+                      <ListChecks /> {displayedSubtaskCount} {displayedSubtaskCount === 1 ? 'subtask' : 'subtasks'}
+                    </Button>
+                  )}
+
+                  {canAttach && !showAttachments && (
+                    <Button type="button" variant="outline" size="sm" onClick={revealAttachments}>
+                      <Paperclip /> Attachments
+                    </Button>
+                  )}
+                  {showAttachments && canAttach && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                      <Paperclip /> {files.length} {files.length === 1 ? 'file' : 'files'}
+                    </Button>
+                  )}
+                </div>
+
+                {showSubtasks && canCreateSubtasks && (
+                  <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-subtasks-title`}>
+                    <header className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ListChecks className="size-4 text-muted-foreground" />
+                        <div>
+                          <strong id={`${formId}-subtasks-title`} className="block text-sm">Subtasks</strong>
+                          <small className="text-xs text-muted-foreground">Break the work into quick, actionable steps.</small>
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" disabled={subtasks.length >= MAX_SUBTASKS} onClick={() => addSubtask()}>
+                        <Plus /> Add subtask
+                      </Button>
+                    </header>
+                    <ol className="space-y-2">
+                      {subtasks.map((subtask, index) => (
+                        <li key={subtask.id} className="flex items-center gap-2">
+                          <span aria-hidden="true" className="w-5 shrink-0 text-right text-sm text-muted-foreground">{index + 1}</span>
+                          <Input
+                            ref={(node) => {
+                              if (node) subtaskInputs.current.set(subtask.id, node)
+                              else subtaskInputs.current.delete(subtask.id)
+                            }}
+                            aria-label={`Subtask ${index + 1} title`}
+                            maxLength={255}
+                            value={subtask.title}
+                            placeholder="Add a subtask"
+                            onKeyDown={(event) => onSubtaskKeyDown(event, index)}
+                            onChange={(event) => {
+                              dismissErrors()
+                              setSubtasks((current) => current.map((row) => row.id === subtask.id ? { ...row, title: event.target.value } : row))
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
+                            aria-label={`Remove subtask ${index + 1}`}
+                            onClick={() => removeSubtask(subtask.id, subtasks[index - 1]?.id ?? subtasks[index + 1]?.id)}
+                          >
                             <Trash2 />
                           </Button>
                         </li>
-                      )
-                    })}
-                  </ul>
+                      ))}
+                    </ol>
+                    {!subtasks.length && (
+                      <Button type="button" variant="outline" className="w-full" onClick={() => addSubtask()}>
+                        <Plus /> Add the first subtask
+                      </Button>
+                    )}
+                    <p aria-live="polite" className="text-xs text-muted-foreground">
+                      {subtasks.length >= MAX_SUBTASKS ? `${MAX_SUBTASKS}-subtask limit reached.` : 'Press Enter to add the next subtask. Empty rows are ignored when the task is created.'}
+                    </p>
+                  </section>
                 )}
-                {!files.length && (
-                  <Button type="button" variant="outline" className="w-full" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                    <Upload /> Choose files to attach
-                  </Button>
+
+                {showAttachments && canAttach && (
+                  <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-files-title`}>
+                    <header className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="size-4 text-muted-foreground" />
+                        <div>
+                          <strong id={`${formId}-files-title`} className="block text-sm">Attachments</strong>
+                          <small className="text-xs text-muted-foreground">Pictures, video, or documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small>
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" disabled={files.length >= MAX_ATTACHMENTS_PER_UPLOAD} onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                        <Plus /> Add files
+                      </Button>
+                    </header>
+                    <input
+                      id={`${formId}-files`}
+                      className="sr-only"
+                      type="file"
+                      multiple
+                      aria-label="Attach files"
+                      onChange={(event) => {
+                        addFiles(event.target.files)
+                        event.target.value = ''
+                      }}
+                    />
+                    {files.length > 0 && (
+                      <ul className="space-y-2">
+                        {files.map((file) => {
+                          const KindIcon = KIND_ICONS[fileKind(file.type)]
+                          return (
+                            <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 rounded-md border p-2">
+                              <KindIcon className="size-4 text-muted-foreground" />
+                              <span className="min-w-0 flex-1">
+                                <strong className="block truncate text-sm">{file.name}</strong>
+                                <small className="block text-xs text-muted-foreground">{formatBytes(file.size)}</small>
+                              </span>
+                              <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Remove ${file.name}`} onClick={() => removeFile(file)}>
+                                <Trash2 />
+                              </Button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                    {!files.length && (
+                      <Button type="button" variant="outline" className="w-full" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                        <Upload /> Choose files to attach
+                      </Button>
+                    )}
+                    <p aria-live="polite" className="text-xs text-muted-foreground">
+                      {files.length >= MAX_ATTACHMENTS_PER_UPLOAD
+                        ? `${MAX_ATTACHMENTS_PER_UPLOAD}-file limit reached.`
+                        : 'Files upload once the task is created.'}
+                    </p>
+                  </section>
                 )}
-                <p aria-live="polite" className="text-xs text-muted-foreground">
-                  {files.length >= MAX_ATTACHMENTS_PER_UPLOAD
-                    ? `${MAX_ATTACHMENTS_PER_UPLOAD}-file limit reached.`
-                    : 'Files upload once the task is created.'}
-                </p>
-              </section>
-            )}
+              </CollapsibleContent>
+            </Collapsible>
 
             {(validationError || error) && (
               <Alert variant="destructive">
