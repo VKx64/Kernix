@@ -171,7 +171,12 @@ describe('TasksPage project folders', () => {
     render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
 
     expect(await screen.findByRole('heading', { name: 'Tasks' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Project filter' })).toHaveTextContent('Launch')
+
+    // Filters and sorting are behind one header control now.
+    await actor.click(screen.getByRole('button', { name: /Filters/ }))
+    expect(await screen.findByRole('combobox', { name: 'Project filter' })).toHaveTextContent('Launch')
+    await actor.keyboard('{Escape}')
+
     expect(screen.queryByRole('button', { name: /Collapse/ })).not.toBeInTheDocument()
 
     await actor.click(screen.getByText('Folders'))

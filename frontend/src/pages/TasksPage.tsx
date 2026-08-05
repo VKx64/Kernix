@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   Send,
+  SlidersHorizontal,
   Sparkles,
   SquareCheck,
   Trash2,
@@ -405,6 +406,17 @@ export function TasksPage() {
     setParams(next, { replace: true })
   }
 
+  // Sorting counts as narrowing here only when it is not the default, so the
+  // badge means "this view is not showing you everything, in default order".
+  const activeFilterCount = [mine, urgent, archived, Boolean(projectId), sort !== 'due_date']
+    .filter(Boolean).length
+
+  const clearFilters = () => {
+    const next = new URLSearchParams(params)
+    for (const key of ['mine', 'urgent', 'archived', 'project_id', 'sort']) next.delete(key)
+    setParams(next, { replace: true })
+  }
+
   const columnRenderers: Record<TaskColumnKey, (task: Task) => React.ReactNode> = {
     title: (task) => {
       const projectName = task.project?.name ?? 'No project'
@@ -591,31 +603,62 @@ export function TasksPage() {
               </PopoverContent>
             </Popover>
           )}
-          <div className="flex items-center gap-1">
-            <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
-            <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
-            <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
-          </div>
-          <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
-            <SelectTrigger size="sm" aria-label="Project filter" className="w-40">
-              <SelectValue placeholder="All projects" />
-            </SelectTrigger>
-            <SelectContent aria-label="Project filter">
-              <SelectItem value="__unset__">All projects</SelectItem>
-              {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
-            <SelectTrigger size="sm" aria-label="Sort tasks" className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent aria-label="Sort tasks">
-              <SelectItem value="due_date">Due date</SelectItem>
-              <SelectItem value="-created_at">Newest</SelectItem>
-              <SelectItem value="urgency">Urgency</SelectItem>
-              <SelectItem value="title">Title</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Filters and sorting live behind one control so the header stays a
+              single row whatever the viewport. The count keeps a narrowed view
+              from looking like an empty one. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                <SlidersHorizontal />
+                Filters
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="ml-0.5 rounded-sm px-1 font-mono">{activeFilterCount}</Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-sm">Filters</strong>
+                {activeFilterCount > 0 && (
+                  <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Reset</Button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1">
+                <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
+                <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
+                <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Project</span>
+                <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
+                  <SelectTrigger size="sm" aria-label="Project filter" className="w-full">
+                    <SelectValue placeholder="All projects" />
+                  </SelectTrigger>
+                  <SelectContent aria-label="Project filter">
+                    <SelectItem value="__unset__">All projects</SelectItem>
+                    {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Sort by</span>
+                <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
+                  <SelectTrigger size="sm" aria-label="Sort tasks" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent aria-label="Sort tasks">
+                    <SelectItem value="due_date">Due date</SelectItem>
+                    <SelectItem value="-created_at">Newest</SelectItem>
+                    <SelectItem value="urgency">Urgency</SelectItem>
+                    <SelectItem value="title">Title</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Popover>
             <PopoverTrigger asChild>
               <Button type="button" variant="outline" size="sm"><SquareCheck /> Table columns</Button>
@@ -640,8 +683,12 @@ export function TasksPage() {
               </div>
             </PopoverContent>
           </Popover>
-          {can('tasks.create_with_ai') && <Button type="button" variant="outline" size="sm" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
-          {can('tasks.create') && <Button type="button" size="sm" onClick={openTaskCreator}><Plus /> New task</Button>}
+          {/* Creation sits apart from the view controls, hard against the end
+              of the header, so the primary action is always in the same place. */}
+          <div className="ml-auto flex items-center gap-2">
+            {can('tasks.create_with_ai') && <Button type="button" variant="outline" size="sm" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
+            {can('tasks.create') && <Button type="button" size="sm" onClick={openTaskCreator}><Plus /> New task</Button>}
+          </div>
         </>
       </PageActions>
       {error && <ErrorBanner message={error} onRetry={() => void reload()} />}
