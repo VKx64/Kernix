@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Separator } from '@/components/ui/separator'
 import {
   Sidebar,
   SidebarContent,
@@ -293,8 +292,9 @@ export function AppShell() {
 
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+          {/* Below md the sidebar is a sheet and this is the only way to open
+              it, so the trigger stays there and only the desktop one goes. */}
+          <SidebarTrigger className="-ml-1 md:hidden" />
 
           {can('tasks.view') && (
             <form
@@ -304,8 +304,12 @@ export function AppShell() {
                 if (!onTaskList && query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
               }}
             >
-              {/* Names what the input searches, which is only ever tasks. */}
-              <span className="text-sm font-medium">Tasks</span>
+              {/* Names what the input searches, which is only ever tasks. On
+                  the task list it is also that page's heading — the page itself
+                  no longer renders one. */}
+              {onTaskList
+                ? <h1 className="text-sm font-medium">Tasks</h1>
+                : <span className="text-sm font-medium">Tasks</span>}
               <div className="relative w-56 lg:w-72">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input

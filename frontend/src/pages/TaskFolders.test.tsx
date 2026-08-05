@@ -170,7 +170,10 @@ describe('TasksPage project folders', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
 
-    expect(await screen.findByRole('heading', { name: 'Tasks' })).toBeInTheDocument()
+    // The heading lives in the app header, which this page is rendered without,
+    // so the filter control standing in for the toolbar is what proves the
+    // page mounted.
+    expect(await screen.findByRole('button', { name: /Filters/ })).toBeInTheDocument()
 
     // Filters and sorting are behind one header control now.
     await actor.click(screen.getByRole('button', { name: /Filters/ }))

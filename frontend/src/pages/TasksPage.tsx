@@ -23,7 +23,7 @@ import { useWorkspace } from '../auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '../components/ClockGate'
 import { CompletionProofCard, CompletionProofModal } from '../components/CompletionProof'
 import { TaskAttachments } from '../components/TaskAttachments'
-import { Avatar, EmptyState, ErrorBanner, Minutes, PageHeader, StatusBadge } from '@/components/shared'
+import { Avatar, EmptyState, ErrorBanner, Minutes, StatusBadge } from '@/components/shared'
 import { PageActions } from '@/layout/page-actions'
 import { DataTable } from '@/components/data-table'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
@@ -364,7 +364,7 @@ export function TasksPage() {
   const statusOptions = lookupValues(lookups.fields, 'task_status')
   const typeOptions = lookupValues(lookups.fields, 'task_type')
   const urgencyOptions = lookupValues(lookups.fields, 'task_urgency')
-  const { data, meta, loading, error, reload } = useCollection<Task>('/api/tasks', {
+  const { data, loading, error, reload } = useCollection<Task>('/api/tasks', {
     search,
     all: true,
     filters: {
@@ -567,11 +567,8 @@ export function TasksPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Work queue"
-        title="Tasks"
-        description={projectId ? `${meta.total} tasks in ${selectedProject?.name ?? 'the selected project'}.` : `${meta.total} tasks across your visible projects.`}
-      />
+      {/* No page heading: the header already names the view, and the table
+          carries its own count. */}
       <PageActions>
         <>
           {projectId && can('projects.edit') && (
@@ -625,9 +622,9 @@ export function TasksPage() {
               </div>
 
               <div className="flex flex-wrap gap-1">
-                <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
-                <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
-                <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
+                <Button type="button" variant={mine ? 'default' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
+                <Button type="button" variant={urgent ? 'default' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
+                <Button type="button" variant={archived ? 'default' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
               </div>
 
               <div className="space-y-1.5">
@@ -695,22 +692,18 @@ export function TasksPage() {
       {folderCatalog.error && <ErrorBanner message={folderCatalog.error} onRetry={() => void folderCatalog.reload()} />}
       {folderActionError && !folderOpen && <ErrorBanner message={folderActionError} />}
       {clockBlocked && !createOpen && <ClockGate compact />}
-      <Card>
-        <CardContent className="space-y-4">
-          <TaskQueueTable
-            tasks={data}
-            columns={columns}
-            foldersByProject={folderCatalog.foldersByProject}
-            folderErrorsByProject={folderCatalog.errorsByProject}
-            loading={loading}
-            foldersLoading={folderCatalog.loading}
-            canMove={!archived && can('tasks.edit')}
-            movingTaskId={movingTaskId}
-            onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
-            onMoveTask={(task, folderId) => void moveTask(task, folderId)}
-          />
-        </CardContent>
-      </Card>
+      <TaskQueueTable
+        tasks={data}
+        columns={columns}
+        foldersByProject={folderCatalog.foldersByProject}
+        folderErrorsByProject={folderCatalog.errorsByProject}
+        loading={loading}
+        foldersLoading={folderCatalog.loading}
+        canMove={!archived && can('tasks.edit')}
+        movingTaskId={movingTaskId}
+        onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
+        onMoveTask={(task, folderId) => void moveTask(task, folderId)}
+      />
       <CreateTaskModal
         open={createOpen}
         busy={formBusy}
