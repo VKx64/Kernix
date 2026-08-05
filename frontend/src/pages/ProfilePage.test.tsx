@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfilePage } from './ProfilePage'
 
@@ -32,7 +32,6 @@ describe('Profile browser extension management', () => {
     }] })
     apiMocks.post.mockResolvedValue({ data: { code: 'ABCDE-FGHIJ', expires_at: '2026-07-14T10:10:00Z' } })
     apiMocks.delete.mockResolvedValue(null)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   it('generates a one-time code and lists and revokes paired devices', async () => {
@@ -47,6 +46,10 @@ describe('Profile browser extension management', () => {
     expect(writeText).toHaveBeenCalledWith('ABCDE-FGHIJ')
 
     await actor.click(screen.getByRole('button', { name: 'Revoke' }))
+    const confirmation = await screen.findByRole('alertdialog')
+    expect(confirmation).toHaveTextContent('Chrome on Windows')
+    await actor.click(within(confirmation).getByRole('button', { name: 'Revoke' }))
+
     await waitFor(() => expect(apiMocks.delete).toHaveBeenCalledWith('/api/extension/devices/9'))
     expect(screen.queryByText('Chrome on Windows')).not.toBeInTheDocument()
   })

@@ -1,24 +1,37 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { useAnchoredPopup } from './fields'
-import { Icon } from './Icon'
-import { Modal } from './ui'
-import { api, unwrap } from '../lib/api'
-import { BRAND_MARK, BRAND_NAME } from '../lib/brand'
-import { useCan } from '../lib/permissions'
-import type { ApiEnvelope, Workspace } from '../types/api'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Check, ChevronsUpDown, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
+import { api, unwrap } from '@/lib/api'
+import { BRAND_MARK, BRAND_NAME } from '@/lib/brand'
+import { useCan } from '@/lib/permissions'
+import type { ApiEnvelope, Workspace } from '@/types/api'
 
 export function WorkspaceSwitcher({ onSwitched }: { onSwitched: () => void | Promise<void> }) {
   const can = useCan()
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(false)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
-  const close = useCallback(() => setOpen(false), [])
-  const position = useAnchoredPopup(open, triggerRef, menuRef, close)
 
   const load = useCallback(async () => {
     try {
@@ -35,11 +48,10 @@ export function WorkspaceSwitcher({ onSwitched }: { onSwitched: () => void | Pro
   const active = workspaces.find((workspace) => workspace.active) ?? workspaces[0] ?? null
 
   const activate = async (workspace: Workspace) => {
-    if (workspace.active) { setOpen(false); return }
+    if (workspace.active) return
     setBusy(true)
     try {
       await api.post(`/api/workspaces/${workspace.id}/activate`)
-      setOpen(false)
       await load()
       await onSwitched()
     } catch (reason) {
@@ -69,67 +81,104 @@ export function WorkspaceSwitcher({ onSwitched }: { onSwitched: () => void | Pro
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        className="workspace-switcher"
-        aria-expanded={open}
-        aria-label={`Workspace: ${active?.name ?? 'none'}. Switch workspace`}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="brand-mark">{(active?.name ?? BRAND_MARK).charAt(0).toUpperCase()}</span>
-        <span className="brand-copy">
-          <strong>{active?.name ?? BRAND_NAME}</strong>
-          <small>{workspaces.length > 1 ? `${workspaces.length} workspaces` : 'Workspace'}</small>
-        </span>
-        <Icon name="chevron-down" size={15} />
-      </button>
-
-      {open && position && (
-        <div className="field-popup workspace-menu" ref={menuRef} style={{ top: position.top, left: position.left }}>
-          <span className="workspace-menu-label">Switch workspace</span>
-          <ul>
-            {workspaces.map((workspace) => (
-              <li key={workspace.id}>
-                <button type="button" className={workspace.active ? 'is-active' : ''} disabled={busy} onClick={() => void activate(workspace)}>
-                  <span className="workspace-dot">{workspace.name.charAt(0).toUpperCase()}</span>
-                  <span>
-                    <strong>{workspace.name}</strong>
-                    {typeof workspace.member_count === 'number' && <small>{workspace.member_count} member{workspace.member_count === 1 ? '' : 's'}</small>}
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuButton
+                size="lg"
+                aria-label={`Workspace: ${active?.name ?? 'none'}. Switch workspace`}
+                className="data-[state=open]:bg-sidebar-accent"
+              >
+                <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary font-semibold text-sidebar-primary-foreground">
+                  {(active?.name ?? BRAND_MARK).charAt(0).toUpperCase()}
+                </span>
+                <span className="grid flex-1 text-left leading-tight">
+                  <span className="truncate font-medium">{active?.name ?? BRAND_NAME}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {workspaces.length > 1 ? `${workspaces.length} workspaces` : 'Workspace'}
                   </span>
-                  {workspace.active && <Icon name="check" size={15} />}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {can('workspaces.manage') && (
-            <button type="button" className="workspace-menu-create" onClick={() => { setOpen(false); setCreateOpen(true) }}>
-              <Icon name="plus" size={15} /> New workspace
-            </button>
-          )}
-          {error && <p className="workspace-menu-error" role="alert">{error}</p>}
-        </div>
-      )}
+                </span>
+                <ChevronsUpDown className="ml-auto" />
+              </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-60" sideOffset={4}>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Switch workspace</DropdownMenuLabel>
+              {workspaces.map((workspace) => (
+                <DropdownMenuItem
+                  key={workspace.id}
+                  disabled={busy}
+                  onSelect={() => void activate(workspace)}
+                  className="gap-2"
+                >
+                  <span className="flex size-6 items-center justify-center rounded-sm border text-xs">
+                    {workspace.name.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="grid min-w-0 flex-1 leading-tight">
+                    <span className="truncate">{workspace.name}</span>
+                    {typeof workspace.member_count === 'number' && (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {workspace.member_count} member{workspace.member_count === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </span>
+                  {workspace.active && <Check className="ml-auto size-4" />}
+                </DropdownMenuItem>
+              ))}
+              {can('workspaces.manage') && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
+                    <Plus />
+                    New workspace
+                  </DropdownMenuItem>
+                </>
+              )}
+              {error && (
+                <p className="px-2 py-1.5 text-xs text-destructive" role="alert">{error}</p>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
 
-      <Modal
+      <Dialog
         open={createOpen}
-        onClose={() => { if (!busy) { setCreateOpen(false); setError('') } }}
-        title="Create workspace"
-        description="A workspace keeps its own clients, projects, and tasks. Nothing is shared with the others."
-        size="sm"
-        closeDisabled={busy}
+        onOpenChange={(open) => { if (!busy) { setCreateOpen(open); if (!open) setError('') } }}
       >
-        <form className="entity-form" onSubmit={create}>
-          <label className="form-field wide">
-            <span className="field-label">Workspace name <b aria-hidden="true">*</b></span>
-            <input data-autofocus value={name} disabled={busy} placeholder="Second studio" onChange={(event) => setName(event.target.value)} />
-          </label>
-          {error && <div className="form-error" role="alert">{error}</div>}
-          <footer className="form-footer">
-            <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setCreateOpen(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create and open'}</button>
-          </footer>
-        </form>
-      </Modal>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create workspace</DialogTitle>
+            <DialogDescription>
+              A workspace keeps its own clients, projects, and tasks. Nothing is shared with the others.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={create}>
+            <div className="space-y-2">
+              <Label htmlFor="workspace-name">
+                Workspace name<span aria-hidden="true" className="text-destructive"> *</span>
+              </Label>
+              <Input
+                id="workspace-name"
+                autoFocus
+                value={name}
+                disabled={busy}
+                placeholder="Second studio"
+                onChange={(event) => setName(event.target.value)}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy || !name.trim()}>
+                {busy ? 'Creating…' : 'Create and open'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

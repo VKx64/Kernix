@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { useAuth } from './auth/AuthProvider'
 import { WorkspaceProvider } from './auth/WorkspaceProvider'
 import { AppShell } from './layout/AppShell'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { BRAND_MARK } from './lib/brand'
 import { useCan } from './lib/permissions'
 import { AnalyticsPage } from './pages/AnalyticsPage'
@@ -21,7 +23,15 @@ function ProtectedApp() {
   const location = useLocation()
 
   if (status === 'loading') {
-    return <main className="boot-screen"><span className="brand-mark">{BRAND_MARK}</span><span className="spinner" /><p>Opening your workspace…</p></main>
+    return (
+      <main className="flex min-h-svh flex-col items-center justify-center gap-4">
+        <span className="flex size-10 items-center justify-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground">
+          {BRAND_MARK}
+        </span>
+        <Skeleton className="h-2 w-40" />
+        <p className="text-sm text-muted-foreground">Opening your workspace…</p>
+      </main>
+    )
   }
   if (status === 'guest') return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
 
@@ -41,11 +51,21 @@ function AccessDenied() {
   const can = useCan()
   const hasDashboard = can('dashboard.view')
   return (
-    <section className="standalone-state">
-      <span className="state-code">403</span>
-      <h1>{hasDashboard ? 'This area is not in your role.' : 'Your role has no workspace access.'}</h1>
-      <p>{hasDashboard ? 'Ask an administrator if you need access to this part of the workspace.' : 'Your profile and sign out remain available while an administrator repairs your role.'}</p>
-      <a className="btn btn-primary" href={hasDashboard ? '/' : '/profile'}>{hasDashboard ? 'Return to dashboard' : 'Open profile'}</a>
+    <section className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-center">
+      <span className="font-mono text-5xl font-semibold tabular-nums text-muted-foreground">403</span>
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance">
+          {hasDashboard ? 'This area is not in your role.' : 'Your role has no workspace access.'}
+        </h1>
+        <p className="text-muted-foreground text-pretty">
+          {hasDashboard
+            ? 'Ask an administrator if you need access to this part of the workspace.'
+            : 'Your profile and sign out remain available while an administrator repairs your role.'}
+        </p>
+      </div>
+      <Button asChild>
+        <a href={hasDashboard ? '/' : '/profile'}>{hasDashboard ? 'Return to dashboard' : 'Open profile'}</a>
+      </Button>
     </section>
   )
 }

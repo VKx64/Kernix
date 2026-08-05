@@ -1,9 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useAuth } from '../auth/AuthProvider'
-import { Avatar, EntityForm, ErrorBanner, PageHeader, Panel, type FormFieldSpec } from '../components/ui'
-import { api, ApiError, unwrap } from '../lib/api'
-import { BROWSER_EXTENSION_NAME } from '../lib/brand'
-import type { ApiEnvelope, FormPayload } from '../types/api'
+import { useAuth } from '@/auth/AuthProvider'
+import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
+import { Avatar, ErrorBanner, PageHeader, Panel } from '@/components/shared'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { api, ApiError, unwrap } from '@/lib/api'
+import { BROWSER_EXTENSION_NAME } from '@/lib/brand'
+import type { ApiEnvelope, FormPayload } from '@/types/api'
 
 interface ExtensionDevice {
   id: number
@@ -29,6 +46,7 @@ export function ProfilePage() {
   const [extensionError, setExtensionError] = useState('')
   const [extensionSaved, setExtensionSaved] = useState('')
   const [pairing, setPairing] = useState<PairingCode | null>(null)
+  const [pendingRevoke, setPendingRevoke] = useState<ExtensionDevice | null>(null)
 
   const loadDevices = useCallback(async () => {
     setDevicesLoading(true)
@@ -113,7 +131,6 @@ export function ProfilePage() {
   }
 
   const revokeDevice = async (device: ExtensionDevice) => {
-    if (!window.confirm(`Revoke “${device.name}”? The extension will need to pair again.`)) return
     setExtensionBusy(true)
     setExtensionError('')
     setExtensionSaved('')
@@ -129,72 +146,153 @@ export function ProfilePage() {
   }
 
   return (
-    <div>
-      <PageHeader eyebrow="Your account" title="Profile" description="Keep your personal details and connected devices current." />
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Your account"
+        title="Profile"
+        description="Keep your personal details and connected devices current."
+      />
+
       {error && <ErrorBanner message={error} />}
-      {saved && <div className="success-banner">{saved}</div>}
-      <div className="profile-layout">
-        <Panel className="profile-card">
-          <Avatar user={user} size={82} />
-          <h2>{user?.name || `${user?.firstName ?? user?.first_name ?? ''} ${user?.lastName ?? user?.last_name ?? ''}`.trim()}</h2>
-          <p>@{user?.username}</p>
-          <span className="status-badge"><span />{user?.status ?? 'Active'}</span>
-        </Panel>
-        <div className="profile-main">
-          <Panel className="profile-form" title="Personal details">
-            <EntityForm fields={fields} initialValues={initial} busy={busy} submitLabel="Update profile" onSubmit={save} />
+      {saved && (
+        <Alert role="status">
+          <AlertDescription>{saved}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <Card className="h-fit">
+          <CardContent className="flex flex-col items-center gap-2 text-center">
+            <Avatar user={user} className="size-20" />
+            <h2 className="text-lg font-semibold tracking-tight">
+              {user?.name || `${user?.firstName ?? user?.first_name ?? ''} ${user?.lastName ?? user?.last_name ?? ''}`.trim()}
+            </h2>
+            <p className="text-sm text-muted-foreground">@{user?.username}</p>
+            <Badge variant="outline" className="rounded-full font-normal capitalize">
+              {user?.status ?? 'Active'}
+            </Badge>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Panel title="Personal details">
+            <EntityForm
+              fields={fields}
+              initialValues={initial}
+              busy={busy}
+              submitLabel="Update profile"
+              onSubmit={save}
+            />
           </Panel>
-          <Panel className="profile-form extension-devices" title="Browser extension">
-            <div className="extension-device-body">
-              <div className="extension-device-intro">
-                <div>
-                  <strong>{BROWSER_EXTENSION_NAME}</strong>
-                  <p>Generate a short-lived code, then enter it with this workspace URL in the Chrome or Edge extension.</p>
-                </div>
-                <button className="btn btn-primary" disabled={extensionBusy} onClick={() => void generatePairingCode()}>
-                  {extensionBusy ? 'Generating…' : 'Generate pairing code'}
-                </button>
+
+          <Panel title="Browser extension" contentClassName="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="font-medium">{BROWSER_EXTENSION_NAME}</p>
+                <p className="text-sm text-muted-foreground text-pretty">
+                  Generate a short-lived code, then enter it with this workspace URL in the Chrome or Edge extension.
+                </p>
               </div>
-              {extensionError && <ErrorBanner message={extensionError} />}
-              {extensionSaved && <div className="success-banner">{extensionSaved}</div>}
-              {pairing && (
-                <div className="pairing-code-card">
-                  <div>
-                    <small>Workspace URL</small>
-                    <code>{window.location.origin}</code>
-                  </div>
-                  <div>
-                    <small>One-time code</small>
-                    <button className="pairing-code" title="Copy pairing code" onClick={() => void copyPairingCode()}>{pairing.code}</button>
-                  </div>
-                  <p>Expires {new Date(pairing.expires_at).toLocaleString()} and can be used once.</p>
-                </div>
-              )}
-              <div className="device-list-heading">
-                <strong>Paired devices</strong>
-                <button className="btn btn-quiet" disabled={devicesLoading} onClick={() => void loadDevices()}>Refresh</button>
-              </div>
-              {devicesLoading ? <div className="device-empty">Loading paired devices…</div> : devices.length === 0 ? (
-                <div className="device-empty">No browser extensions are paired with this account.</div>
-              ) : (
-                <div className="extension-device-list">
-                  {devices.map((device) => (
-                    <div key={device.id} className="extension-device-row">
-                      <div>
-                        <strong>{device.name}</strong>
-                        <span>
-                          Last used {device.last_used_at ? new Date(device.last_used_at).toLocaleString() : 'never'} · Expires {new Date(device.expires_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <button className="btn btn-danger-quiet" disabled={extensionBusy} onClick={() => void revokeDevice(device)}>Revoke</button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <Button disabled={extensionBusy} onClick={() => void generatePairingCode()}>
+                {extensionBusy ? 'Generating…' : 'Generate pairing code'}
+              </Button>
             </div>
+
+            {extensionError && <ErrorBanner message={extensionError} />}
+            {extensionSaved && (
+              <Alert role="status">
+                <AlertDescription>{extensionSaved}</AlertDescription>
+              </Alert>
+            )}
+
+            {pairing && (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Workspace URL</p>
+                  <code className="font-mono text-sm">{window.location.origin}</code>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">One-time code</p>
+                  <Button
+                    variant="outline"
+                    className="font-mono text-lg tracking-[0.3em]"
+                    title="Copy pairing code"
+                    onClick={() => void copyPairingCode()}
+                  >
+                    {pairing.code}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Expires {new Date(pairing.expires_at).toLocaleString()} and can be used once.
+                </p>
+              </div>
+            )}
+
+            <Separator />
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium">Paired devices</p>
+              <Button variant="outline" size="sm" disabled={devicesLoading} onClick={() => void loadDevices()}>
+                Refresh
+              </Button>
+            </div>
+
+            {devicesLoading ? (
+              <div className="space-y-2" role="status">
+                <p className="sr-only">Loading paired devices…</p>
+                {Array.from({ length: 2 }, (_, row) => <Skeleton className="h-14" key={row} />)}
+              </div>
+            ) : devices.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                No browser extensions are paired with this account.
+              </p>
+            ) : (
+              <ul className="divide-y rounded-lg border">
+                {devices.map((device) => (
+                  <li key={device.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate font-medium">{device.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Last used {device.last_used_at ? new Date(device.last_used_at).toLocaleString() : 'never'} · Expires {new Date(device.expires_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={extensionBusy}
+                      onClick={() => setPendingRevoke(device)}
+                    >
+                      Revoke
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Panel>
         </div>
       </div>
+
+      <AlertDialog open={Boolean(pendingRevoke)} onOpenChange={(open) => { if (!open) setPendingRevoke(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke “{pendingRevoke?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>The extension will need to pair again.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const device = pendingRevoke
+                setPendingRevoke(null)
+                if (device) void revokeDevice(device)
+              }}
+            >
+              Revoke
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

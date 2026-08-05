@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import type { ReactNode } from 'react'
 import App from './App'
+import { ThemeProvider } from './lib/theme'
 import type { User } from './types/api'
 
 const authState = vi.hoisted(() => ({ user: null as User | null }))
@@ -36,16 +37,18 @@ afterEach(() => vi.unstubAllGlobals())
 describe('permission routes and navigation', () => {
   it('blocks a direct task URL without tasks.view', async () => {
     authState.user = { id: 1, username: 'viewer', permissions: ['dashboard.view'] }
-    render(<MemoryRouter initialEntries={['/tasks']}><App /></MemoryRouter>)
+    render(<ThemeProvider><MemoryRouter initialEntries={['/tasks']}><App /></MemoryRouter></ThemeProvider>)
     expect(await screen.findByRole('heading', { name: 'This area is not in your role.' })).toBeInTheDocument()
   })
 
   it('links Settings from the profile menu to the first allowed tab and hides task/time controls', async () => {
     authState.user = { id: 2, username: 'user-manager', permissions: ['dashboard.view', 'users.view'] }
-    render(<MemoryRouter initialEntries={['/not-a-route']}><App /></MemoryRouter>)
-    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
+    render(<ThemeProvider><MemoryRouter initialEntries={['/not-a-route']}><App /></MemoryRouter></ThemeProvider>)
+    expect(screen.queryByRole('menuitem', { name: 'Settings' })).not.toBeInTheDocument()
     await userEvent.click(await screen.findByRole('button', { name: 'Account menu' }))
-    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/users')
+    // The account menu renders its entries as menu items, so the settings entry
+    // is matched by that role even though it is still an anchor underneath.
+    expect(await screen.findByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings/users')
     expect(screen.getByText('Kernix')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(/Search tasks/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Clock in' })).not.toBeInTheDocument()
@@ -53,7 +56,7 @@ describe('permission routes and navigation', () => {
 
   it('leaves only profile access when the server returns no valid grants', async () => {
     authState.user = { id: 3, username: 'corrupt-role', permissions: [] }
-    render(<MemoryRouter initialEntries={['/settings/users']}><App /></MemoryRouter>)
+    render(<ThemeProvider><MemoryRouter initialEntries={['/settings/users']}><App /></MemoryRouter></ThemeProvider>)
     expect(await screen.findByRole('heading', { name: 'Your role has no workspace access.' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open profile' })).toHaveAttribute('href', '/profile')
     await userEvent.click(screen.getByRole('button', { name: 'Account menu' }))

@@ -1,10 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useAuth } from '../auth/AuthProvider'
-import { Icon } from '../components/Icon'
-import { api, unwrap } from '../lib/api'
-import { BRAND_MARK, BRAND_NAME } from '../lib/brand'
-import type { ApiEnvelope, InvitationPreview } from '../types/api'
+import { ArrowRight, Briefcase, ShieldCheck } from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { api, unwrap } from '@/lib/api'
+import { BRAND_MARK, BRAND_NAME } from '@/lib/brand'
+import type { ApiEnvelope, InvitationPreview } from '@/types/api'
 
 function invitationRole(preview: InvitationPreview): string {
   return preview.role?.name ?? preview.roleName ?? preview.role_name ?? 'Workspace member'
@@ -16,6 +24,11 @@ function invitationExpiry(preview: InvitationPreview): string | null {
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
+
+const highlights = [
+  { icon: ShieldCheck, title: 'Your access is ready', copy: 'Your administrator has already chosen your role.' },
+  { icon: Briefcase, title: 'Start with context', copy: 'Your assigned projects will be waiting in the workspace.' },
+]
 
 export function InviteAcceptPage() {
   const { token = '' } = useParams<{ token: string }>()
@@ -90,69 +103,180 @@ export function InviteAcceptPage() {
   const projects = preview?.projects ?? []
 
   return (
-    <main className="login-page invite-accept-page">
-      <section className="login-story">
-        <div className="login-brand"><span className="brand-mark">{BRAND_MARK}</span><strong>{BRAND_NAME}</strong></div>
-        <div className="story-copy">
-          <span className="eyebrow">You’re invited</span>
-          <h1>Join the work already in motion.</h1>
-          <p>Create your account and your assigned role and projects will be ready when you arrive.</p>
-          <div className="story-metrics">
-            <div><span className="metric-icon"><Icon name="role" /></span><strong>Your access is ready</strong><small>Your administrator has already chosen your role.</small></div>
-            <div><span className="metric-icon"><Icon name="briefcase" /></span><strong>Start with context</strong><small>Your assigned projects will be waiting in the workspace.</small></div>
-          </div>
+    <main className="grid min-h-svh lg:grid-cols-2">
+      <section className="hidden flex-col justify-between border-r bg-muted/40 p-10 lg:flex">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-md bg-primary font-semibold text-primary-foreground">
+            {BRAND_MARK}
+          </span>
+          <strong className="text-lg tracking-tight">{BRAND_NAME}</strong>
         </div>
-        <div className="login-orbit orbit-one" /><div className="login-orbit orbit-two" />
+
+        <div className="max-w-md space-y-4">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">You’re invited</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-balance">Join the work already in motion.</h1>
+          <p className="text-muted-foreground text-pretty">
+            Create your account and your assigned role and projects will be ready when you arrive.
+          </p>
+          <dl className="grid gap-4 pt-4 sm:grid-cols-2">
+            {highlights.map((item) => (
+              <div key={item.title} className="space-y-1.5">
+                <span className="flex size-9 items-center justify-center rounded-md border bg-background">
+                  <item.icon className="size-4" />
+                </span>
+                <dt className="font-medium">{item.title}</dt>
+                <dd className="text-sm text-muted-foreground text-pretty">{item.copy}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <span />
       </section>
-      <section className="login-form-side">
-        <div className="login-card invite-accept-card">
+
+      <section className="flex items-center justify-center p-6">
+        <Card className="w-full max-w-md">
           {loading ? (
-            <div className="invite-loading" role="status"><span className="spinner" /><p>Checking your invitation…</p></div>
+            <CardContent className="space-y-3" role="status">
+              <p className="text-sm text-muted-foreground">Checking your invitation…</p>
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8" />
+              <Skeleton className="h-8 w-2/3" />
+            </CardContent>
           ) : previewError || !preview ? (
-            <div className="invite-unavailable">
-              <span className="eyebrow">Invitation unavailable</span>
-              <h2>This link can’t be used.</h2>
-              <p>{previewError || 'This invitation is invalid, expired, or has already been used.'}</p>
-              <Link className="btn btn-quiet" to="/login">Back to sign in</Link>
-            </div>
+            <>
+              <CardHeader>
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Invitation unavailable
+                </p>
+                <CardTitle asChild className="text-xl">
+                  <h2>This link can’t be used.</h2>
+                </CardTitle>
+                <CardDescription>
+                  {previewError || 'This invitation is invalid, expired, or has already been used.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild variant="outline">
+                  <Link to="/login">Back to sign in</Link>
+                </Button>
+              </CardContent>
+            </>
           ) : (
             <>
-              <header><span className="eyebrow">Create your account</span><h2>Welcome to {BRAND_NAME}</h2><p>Finish your profile to accept the invitation for <strong>{preview.email}</strong>.</p></header>
-              <section className="invite-preview" aria-label="Invitation details">
-                <div><small>Role</small><strong>{invitationRole(preview)}</strong></div>
-                <div><small>Projects</small><strong>{projects.length ? `${projects.length} assigned` : 'No projects assigned'}</strong></div>
-                {projects.length > 0 && <ul>{projects.map((project) => <li key={project.id}>{project.name}</li>)}</ul>}
-                {expires && <p>Invitation expires {expires}.</p>}
-              </section>
-              <form onSubmit={submit}>
-                <div className="invite-name-grid">
-                  <label className="form-field">
-                    <span className="field-label">First name</span>
-                    <input autoComplete="given-name" autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
-                  </label>
-                  <label className="form-field">
-                    <span className="field-label">Last name</span>
-                    <input autoComplete="family-name" value={lastName} onChange={(event) => setLastName(event.target.value)} />
-                  </label>
-                </div>
-                <label className="form-field wide">
-                  <span className="field-label">Username</span>
-                  <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required />
-                </label>
-                <label className="form-field wide">
-                  <span className="field-label">Password</span>
-                  <input autoComplete="new-password" type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required />
-                </label>
-                <label className="form-field wide">
-                  <span className="field-label">Confirm password</span>
-                  <input autoComplete="new-password" type="password" minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} required />
-                </label>
-                {formError && <div className="form-error" role="alert">{formError}</div>}
-                <button className="btn btn-primary btn-large btn-block" disabled={busy}>{busy ? 'Creating account…' : 'Create account'} <span>→</span></button>
-              </form>
+              <CardHeader>
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Create your account
+                </p>
+                <CardTitle asChild className="text-xl">
+                  <h2>Welcome to {BRAND_NAME}</h2>
+                </CardTitle>
+                <CardDescription>
+                  Finish your profile to accept the invitation for <strong>{preview.email}</strong>.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-5">
+                <section className="space-y-2 rounded-lg border p-4" aria-label="Invitation details">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-muted-foreground">Role</span>
+                    <Badge variant="secondary">{invitationRole(preview)}</Badge>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-muted-foreground">Projects</span>
+                    <span className="text-sm font-medium">
+                      {projects.length ? `${projects.length} assigned` : 'No projects assigned'}
+                    </span>
+                  </div>
+                  {projects.length > 0 && (
+                    <ul className="flex flex-wrap gap-1.5 pt-1">
+                      {projects.map((project) => (
+                        <li key={project.id}>
+                          <Badge variant="outline" className="font-normal">{project.name}</Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {expires && <p className="pt-1 text-xs text-muted-foreground">Invitation expires {expires}.</p>}
+                </section>
+
+                <form className="space-y-4" onSubmit={submit}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="first-name">First name</Label>
+                      <Input
+                        id="first-name"
+                        autoComplete="given-name"
+                        autoFocus
+                        value={firstName}
+                        onChange={(event) => setFirstName(event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="last-name">Last name</Label>
+                      <Input
+                        id="last-name"
+                        autoComplete="family-name"
+                        value={lastName}
+                        onChange={(event) => setLastName(event.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      id="username"
+                      autoComplete="username"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      autoComplete="new-password"
+                      type="password"
+                      minLength={8}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password-confirmation">Confirm password</Label>
+                    <Input
+                      id="password-confirmation"
+                      autoComplete="new-password"
+                      type="password"
+                      minLength={8}
+                      value={passwordConfirmation}
+                      onChange={(event) => setPasswordConfirmation(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {formError && (
+                    <Alert variant="destructive" role="alert">
+                      <AlertDescription>{formError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={busy}>
+                    {busy ? 'Creating account…' : 'Create account'}
+                    <ArrowRight />
+                  </Button>
+                </form>
+              </CardContent>
             </>
           )}
-        </div>
+        </Card>
       </section>
     </main>
   )
