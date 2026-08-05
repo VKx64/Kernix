@@ -25,6 +25,7 @@ import { CompletionProofCard, CompletionProofModal } from '../components/Complet
 import { TaskAttachments } from '../components/TaskAttachments'
 import { Avatar, EmptyState, ErrorBanner, Minutes, StatusBadge } from '@/components/shared'
 import { PageActions } from '@/layout/page-actions'
+import { usePageFill } from '@/layout/page-fill'
 import { DataTable } from '@/components/data-table'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -338,6 +339,9 @@ export function TaskQueueTable({
 }
 
 export function TasksPage() {
+  // The queue fills the viewport and scrolls its own rows, so the table keeps
+  // its column header and pagination in view.
+  usePageFill()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const search = params.get('search') ?? ''
@@ -566,7 +570,7 @@ export function TasksPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
       {/* No page heading: the header already names the view, and the table
           carries its own count. */}
       <PageActions>

@@ -219,9 +219,7 @@ export function DataTablePagination<TData>({ table }: { table: TableInstance<TDa
   const last = Math.min(total, (pageIndex + 1) * pageSize)
 
   return (
-    // Sticks to the bottom of whatever scrolls, so the row count and the page
-    // controls stay reachable without scrolling to the end of a long table.
-    <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t bg-background px-1 py-2">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pt-1">
       <p className="text-sm text-muted-foreground" aria-live="polite">
         {total === 0 ? 'No rows' : `${first}–${last} of ${total}`}
       </p>
@@ -356,7 +354,7 @@ export function DataTable<TData, TValue>({
   const filtered = columnFilters.length > 0
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {onSearch && (
           <div className="min-w-56 flex-1">
@@ -387,10 +385,13 @@ export function DataTable<TData, TValue>({
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg border">
-            <div className="overflow-x-auto">
+          {/* Only the rows scroll. The column header sticks to the top of this
+              box and the pagination sits outside it, so both stay in view
+              however long the list is. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+            <div className="min-h-0 flex-1 overflow-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-background [&_tr]:border-b">
                   {table.getHeaderGroups().map((headerGroup) => (
                     <TableRow key={headerGroup.id}>
                       {headerGroup.headers.map((header) => (

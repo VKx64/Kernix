@@ -54,6 +54,7 @@ import { useCan } from '@/lib/permissions'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { PageActionsSlotContext } from '@/layout/page-actions'
+import { PageFillProvider } from '@/layout/page-fill'
 import type { ApiEnvelope } from '@/types/api'
 
 interface NavigationItem {
@@ -382,11 +383,20 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 md:p-6">
-          <PageActionsSlotContext.Provider value={actionSlot}>
-            <Outlet />
-          </PageActionsSlotContext.Provider>
-        </main>
+        <PageFillProvider>
+          {(fill) => (
+            <main
+              className={cn(
+                'flex min-h-0 flex-1 flex-col gap-6 p-4 md:p-6',
+                fill ? 'overflow-hidden' : 'overflow-y-auto',
+              )}
+            >
+              <PageActionsSlotContext.Provider value={actionSlot}>
+                <Outlet />
+              </PageActionsSlotContext.Provider>
+            </main>
+          )}
+        </PageFillProvider>
       </SidebarInset>
       <Toaster />
     </SidebarProvider>
