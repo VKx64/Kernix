@@ -1,9 +1,30 @@
 import { useId, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Icon } from '../components/Icon'
-import { DatePicker, Select } from '../components/fields'
-import { Modal } from '../components/ui'
-import { displayName } from '../lib/api'
-import type { Client, EntityId, FieldValue, FormPayload, Project, UserSummary } from '../types/api'
+import { Building2, Calendar as CalendarIcon, Check, Plus, X } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+import { displayName } from '@/lib/api'
+import type { Client, EntityId, FieldValue, FormPayload, Project, UserSummary } from '@/types/api'
 
 interface ProjectDraft {
   name: string
@@ -38,6 +59,9 @@ interface ProjectOnboardingProps {
   onOpenClients?: () => void
 }
 
+// Sentinel for "no selection" — Radix Select forbids an empty-string item value.
+const UNSET = '__unset__'
+
 function initialDraft(singleClientId?: EntityId | null): ProjectDraft {
   return {
     name: '',
@@ -48,6 +72,77 @@ function initialDraft(singleClientId?: EntityId | null): ProjectDraft {
     due_date: '',
     description: '',
   }
+}
+
+function toIsoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function fromIsoDate(value: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+/**
+ * Same job as `@/components/date-picker`'s `DatePicker`, but composed from the
+ * lower-level Popover/Calendar primitives directly so the due-date field can
+ * disable days before the chosen start date — a constraint the shared
+ * component does not expose.
+ */
+function ComposeDateField({
+  id,
+  value,
+  onChange,
+  disabledBefore,
+  invalid,
+  describedBy,
+  placeholder,
+  disabled,
+}: {
+  id: string
+  value: string
+  onChange: (value: string) => void
+  disabledBefore?: Date
+  invalid?: boolean
+  describedBy?: string
+  placeholder: string
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const selected = fromIsoDate(value)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          id={id}
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
+          className={cn('w-full justify-start font-normal', !selected && 'text-muted-foreground')}
+        >
+          <CalendarIcon />
+          {selected ? selected.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : placeholder}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-0">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected ?? disabledBefore}
+          disabled={disabledBefore ? { before: disabledBefore } : undefined}
+          autoFocus
+          onSelect={(date) => {
+            onChange(date ? toIsoDate(date) : '')
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 export function ProjectOnboarding({
@@ -76,6 +171,7 @@ export function ProjectOnboarding({
   const [created, setCreated] = useState<Project | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const createdHeadingRef = useRef<HTMLHeadingElement>(null)
+  const prerequisiteHeadingRef = useRef<HTMLHeadingElement>(null)
 
   const selectedClient = useMemo(() => {
     if (singleClientMode) return singleClient ?? clients.find((client) => String(client.id) === String(singleClientId)) ?? null
@@ -83,17 +179,6 @@ export function ProjectOnboarding({
   }, [clients, draft.client_id, singleClient, singleClientId, singleClientMode])
   const selectedManager = managers.find((manager) => String(manager.id) === draft.manager_user_id)
   const needsClient = !singleClientMode && !lookupsLoading && !lookupError && clients.length === 0
-
-  const clientOptions = useMemo(() => clients.map((client) => ({ value: String(client.id), label: client.name })), [clients])
-  // Optional selects keep an explicit "unset" row so a choice can be undone.
-  const managerOptions = useMemo(
-    () => [{ value: '', label: 'Unassigned' }, ...managers.map((manager) => ({ value: String(manager.id), label: displayName(manager) }))],
-    [managers],
-  )
-  const statusOptions = useMemo(
-    () => [{ value: '', label: 'Choose later' }, ...statuses.map((status) => ({ value: String(status.id), label: status.label }))],
-    [statuses],
-  )
 
   const setField = (name: keyof ProjectDraft, value: string) => {
     setDraft((current) => ({ ...current, [name]: value }))
@@ -173,65 +258,74 @@ export function ProjectOnboarding({
   }
 
   return (
-    <Modal
-      open
-      onClose={requestClose}
-      closeDisabled={busy}
-      title={created ? 'Project created' : 'New project'}
-      description={created ? undefined : 'Name the work and pick its client. Everything else can change later.'}
-      className="project-compose-modal"
-    >
-      {created ? (
-        <section className="project-created">
-          <span className="project-created-icon"><Icon name="check" size={24} /></span>
-          <h3 ref={createdHeadingRef} tabIndex={-1}>{created.name}</h3>
-          <p>{canOpenTasks ? 'Ready for its first tasks.' : 'Added to your project list.'}</p>
-          <dl className="project-created-meta">
-            <div>
-              <dt>Client</dt>
-              <dd>{created.client?.name ?? selectedClient?.name ?? 'Workspace client'}</dd>
-            </div>
-            <div>
-              <dt>Project manager</dt>
-              <dd>{created.manager ? displayName(created.manager) : selectedManager ? displayName(selectedManager) : 'Unassigned'}</dd>
-            </div>
-          </dl>
-          {error && <div className="project-created-notice" role="status">{error}</div>}
-          <footer className="project-created-actions">
-            <button type="button" className="btn btn-quiet" onClick={onClose}>Back to projects</button>
-            {canOpenTasks && onOpenTasks && (
-              <button type="button" className="btn btn-primary" onClick={() => onOpenTasks(created)}><Icon name="task" size={16} /> Open project tasks</button>
-            )}
-          </footer>
-        </section>
-      ) : needsClient ? (
-        <section className="project-prerequisite">
-          <span className="project-prerequisite-icon"><Icon name="building" size={24} /></span>
-          <h3 data-autofocus tabIndex={-1}>A client comes first</h3>
-          <p>{canCreateClients ? 'Projects belong to a client. Add one, then come back to set this up.' : 'Ask an administrator to add a client before setting up this project.'}</p>
-          <footer className="project-prerequisite-actions">
-            <button type="button" className="btn btn-quiet" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-primary" disabled={!canCreateClients || !onOpenClients} onClick={openClientSetup}>
-              {canCreateClients && onOpenClients ? <><Icon name="plus" size={16} /> Add first client</> : 'Client required'}
-            </button>
-          </footer>
-        </section>
-      ) : (
-        <form className="project-compose" onSubmit={(event) => void submit(event)} noValidate>
-          <fieldset className="project-compose-fields" disabled={busy}>
-            <legend className="sr-only">Project details</legend>
-            <div className="project-compose-body">
+    <Dialog open onOpenChange={(next) => { if (!next) requestClose() }}>
+      <DialogContent
+        className="sm:max-w-xl"
+        showCloseButton={false}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          if (created) createdHeadingRef.current?.focus()
+          else if (needsClient) prerequisiteHeadingRef.current?.focus()
+          else nameRef.current?.focus()
+        }}
+      >
+        <DialogClose asChild>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close" disabled={busy} className="absolute top-4 right-4">
+            <X />
+          </Button>
+        </DialogClose>
+        <DialogHeader>
+          <DialogTitle>{created ? 'Project created' : 'New project'}</DialogTitle>
+          {!created && <DialogDescription>Name the work and pick its client. Everything else can change later.</DialogDescription>}
+        </DialogHeader>
+
+        {created ? (
+          <section className="flex flex-col items-center gap-3 text-center">
+            <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground"><Check className="size-5" /></span>
+            <h3 className="text-lg font-semibold" ref={createdHeadingRef} tabIndex={-1}>{created.name}</h3>
+            <p className="text-sm text-muted-foreground">{canOpenTasks ? 'Ready for its first tasks.' : 'Added to your project list.'}</p>
+            <dl className="grid w-full grid-cols-2 gap-3 rounded-lg border p-4 text-left text-sm">
+              <div><dt className="text-xs text-muted-foreground">Client</dt><dd>{created.client?.name ?? selectedClient?.name ?? 'Workspace client'}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Project manager</dt><dd>{created.manager ? displayName(created.manager) : selectedManager ? displayName(selectedManager) : 'Unassigned'}</dd></div>
+            </dl>
+            {error && <Alert role="status"><AlertDescription>{error}</AlertDescription></Alert>}
+            <footer className="flex w-full flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>Back to projects</Button>
+              {canOpenTasks && onOpenTasks && (
+                <Button type="button" onClick={() => onOpenTasks(created)}><Check className="size-4" /> Open project tasks</Button>
+              )}
+            </footer>
+          </section>
+        ) : needsClient ? (
+          <section className="flex flex-col items-center gap-3 text-center">
+            <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground"><Building2 className="size-5" /></span>
+            <h3 className="text-lg font-semibold" ref={prerequisiteHeadingRef} tabIndex={-1}>A client comes first</h3>
+            <p className="text-sm text-muted-foreground">{canCreateClients ? 'Projects belong to a client. Add one, then come back to set this up.' : 'Ask an administrator to add a client before setting up this project.'}</p>
+            <footer className="flex w-full flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="button" disabled={!canCreateClients || !onOpenClients} onClick={openClientSetup}>
+                {canCreateClients && onOpenClients ? <><Plus /> Add first client</> : 'Client required'}
+              </Button>
+            </footer>
+          </section>
+        ) : (
+          <form className="space-y-5" onSubmit={(event) => void submit(event)} noValidate>
+            <fieldset className="space-y-5" disabled={busy}>
+              <legend className="sr-only">Project details</legend>
+
               {lookupError && (
-                <div className="project-compose-lookup-error" role="alert">
-                  <span>{lookupError}</span>
-                  {onRetryLookups && <button type="button" className="text-link" disabled={lookupsLoading} onClick={onRetryLookups}>{lookupsLoading ? 'Retrying…' : 'Try again'}</button>}
-                </div>
+                <Alert variant="destructive" role="alert">
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                    <span>{lookupError}</span>
+                    {onRetryLookups && <Button type="button" variant="link" size="sm" disabled={lookupsLoading} onClick={onRetryLookups}>{lookupsLoading ? 'Retrying…' : 'Try again'}</Button>}
+                  </AlertDescription>
+                </Alert>
               )}
 
-              <div className="form-grid">
-                <label className="form-field wide" htmlFor={`${formId}-name`}>
-                  <span className="field-label">Project name <b aria-hidden="true">*</b></span>
-                  <input
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor={`${formId}-name`}>Project name <span aria-hidden="true" className="text-destructive">*</span></Label>
+                  <Input
                     id={`${formId}-name`}
                     ref={nameRef}
                     data-autofocus
@@ -243,113 +337,125 @@ export function ProjectOnboarding({
                     placeholder="Website launch"
                     onChange={(event) => setField('name', event.target.value)}
                   />
-                  {errors.name && <span className="field-error" id={`${formId}-name-error`}>{errors.name}</span>}
-                </label>
+                  {errors.name && <p className="text-sm text-destructive" id={`${formId}-name-error`}>{errors.name}</p>}
+                </div>
 
                 {singleClientMode ? (
-                  <div className="form-field wide">
-                    <span className="field-label">Client</span>
-                    <p className="project-static-field"><Icon name="building" size={15} />{selectedClient?.name ?? 'No client configured'}</p>
-                    {errors.client_id && <span className="field-error">{errors.client_id}</span>}
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Client</Label>
+                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Building2 className="size-4" />{selectedClient?.name ?? 'No client configured'}</p>
+                    {errors.client_id && <p className="text-sm text-destructive">{errors.client_id}</p>}
                   </div>
                 ) : (
-                  <div className="form-field wide">
-                    <label className="field-label" htmlFor={`${formId}-client`}>Client <b aria-hidden="true">*</b></label>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor={`${formId}-client`}>Client <span aria-hidden="true" className="text-destructive">*</span></Label>
                     <Select
-                      id={`${formId}-client`}
-                      label="Client"
-                      required
                       value={draft.client_id}
-                      options={clientOptions}
-                      placeholder={lookupsLoading && clients.length === 0 ? 'Loading clients…' : 'Select a client…'}
+                      required
                       disabled={lookupsLoading && clients.length === 0}
-                      invalid={Boolean(errors.client_id)}
-                      describedBy={errors.client_id ? `${formId}-client-error` : undefined}
-                      onChange={(next) => setField('client_id', next)}
-                    />
-                    {errors.client_id && <span className="field-error" id={`${formId}-client-error`}>{errors.client_id}</span>}
+                      onValueChange={(next) => setField('client_id', next)}
+                    >
+                      <SelectTrigger
+                        id={`${formId}-client`}
+                        className="w-full"
+                        aria-invalid={Boolean(errors.client_id)}
+                        aria-describedby={errors.client_id ? `${formId}-client-error` : undefined}
+                      >
+                        <SelectValue placeholder={lookupsLoading && clients.length === 0 ? 'Loading clients…' : 'Select a client…'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clients.map((client) => <SelectItem key={client.id} value={String(client.id)}>{client.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {errors.client_id && <p className="text-sm text-destructive" id={`${formId}-client-error`}>{errors.client_id}</p>}
                   </div>
                 )}
 
-                <label className="form-field wide" htmlFor={`${formId}-description`}>
-                  <span className="field-label">Description <small>Optional</small></span>
-                  <textarea
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor={`${formId}-description`}>Description <span className="text-xs text-muted-foreground">Optional</span></Label>
+                  <Textarea
                     id={`${formId}-description`}
                     value={draft.description}
                     placeholder="What is the team delivering?"
                     onChange={(event) => setField('description', event.target.value)}
                   />
-                </label>
+                </div>
               </div>
 
-              <p className="project-compose-divider"><span>Planning · all optional</span></p>
+              <p className="flex items-center gap-2 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">Planning · all optional</p>
 
-              <div className="form-grid">
-                <div className="form-field">
-                  <label className="field-label" htmlFor={`${formId}-manager`}>Project manager</label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-manager`}>Project manager</Label>
                   <Select
-                    id={`${formId}-manager`}
-                    label="Project manager"
-                    value={draft.manager_user_id}
-                    options={managerOptions}
-                    placeholder={lookupsLoading && managers.length === 0 ? 'Loading team…' : 'Unassigned'}
+                    value={draft.manager_user_id || UNSET}
                     disabled={lookupsLoading && managers.length === 0}
-                    onChange={(next) => setField('manager_user_id', next)}
-                  />
+                    onValueChange={(next) => setField('manager_user_id', next === UNSET ? '' : next)}
+                  >
+                    <SelectTrigger id={`${formId}-manager`} className="w-full">
+                      <SelectValue placeholder={lookupsLoading && managers.length === 0 ? 'Loading team…' : 'Unassigned'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNSET}>Unassigned</SelectItem>
+                      {managers.map((manager) => <SelectItem key={manager.id} value={String(manager.id)}>{displayName(manager)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="form-field">
-                  <label className="field-label" htmlFor={`${formId}-status`}>Starting status</label>
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-status`}>Starting status</Label>
                   <Select
-                    id={`${formId}-status`}
-                    label="Starting status"
-                    value={draft.status_value_id}
-                    options={statusOptions}
-                    placeholder={lookupsLoading && statuses.length === 0 ? 'Loading statuses…' : 'Choose later'}
+                    value={draft.status_value_id || UNSET}
                     disabled={lookupsLoading && statuses.length === 0}
-                    onChange={(next) => setField('status_value_id', next)}
-                  />
+                    onValueChange={(next) => setField('status_value_id', next === UNSET ? '' : next)}
+                  >
+                    <SelectTrigger id={`${formId}-status`} className="w-full">
+                      <SelectValue placeholder={lookupsLoading && statuses.length === 0 ? 'Loading statuses…' : 'Choose later'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNSET}>Choose later</SelectItem>
+                      {statuses.map((status) => <SelectItem key={status.id} value={String(status.id)}>{status.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="form-field">
-                  <label className="field-label" htmlFor={`${formId}-start-date`}>Start date</label>
-                  <DatePicker
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-start-date`}>Start date</Label>
+                  <ComposeDateField
                     id={`${formId}-start-date`}
-                    label="Start date"
                     value={draft.start_date}
                     placeholder="No start date"
                     onChange={(next) => setField('start_date', next)}
                   />
                 </div>
 
-                <div className="form-field">
-                  <label className="field-label" htmlFor={`${formId}-due-date`}>Due date</label>
-                  <DatePicker
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-due-date`}>Due date</Label>
+                  <ComposeDateField
                     id={`${formId}-due-date`}
-                    label="Due date"
                     value={draft.due_date}
-                    min={draft.start_date || undefined}
+                    disabledBefore={fromIsoDate(draft.start_date)}
                     placeholder="No due date"
                     invalid={Boolean(errors.due_date)}
                     describedBy={errors.due_date ? `${formId}-due-date-error` : undefined}
                     onChange={(next) => setField('due_date', next)}
                   />
-                  {errors.due_date && <span className="field-error" id={`${formId}-due-date-error`}>{errors.due_date}</span>}
+                  {errors.due_date && <p className="text-sm text-destructive" id={`${formId}-due-date-error`}>{errors.due_date}</p>}
                 </div>
               </div>
 
-              {error && <div className="form-error" role="alert">{error}</div>}
-            </div>
-          </fieldset>
+              {error && <Alert variant="destructive" role="alert"><AlertDescription>{error}</AlertDescription></Alert>}
+            </fieldset>
 
-          <footer className="project-compose-footer">
-            <button type="button" className="btn btn-quiet" disabled={busy} onClick={requestClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={busy || (lookupsLoading && clients.length === 0 && !singleClientMode)}>
-              {busy ? 'Creating…' : 'Create project'}
-            </button>
-          </footer>
-        </form>
-      )}
-    </Modal>
+            <footer className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" disabled={busy} onClick={requestClose}>Cancel</Button>
+              <Button type="submit" disabled={busy || (lookupsLoading && clients.length === 0 && !singleClientMode)}>
+                {busy ? 'Creating…' : 'Create project'}
+              </Button>
+            </footer>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

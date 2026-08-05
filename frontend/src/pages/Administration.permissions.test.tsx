@@ -131,7 +131,10 @@ describe('administration permission controls', () => {
     expect(await screen.findByRole('heading', { name: 'Invite a user' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByLabelText('Role')).not.toBeDisabled())
     await actor.type(screen.getByLabelText(/Email/), 'new.person@example.com')
-    await actor.selectOptions(screen.getByLabelText('Role'), '4')
+    // The role picker is a listbox that mounts its options on open, so the
+    // choice is made by clicking rather than by setting a native select value.
+    await actor.click(screen.getByLabelText('Role'))
+    await actor.click(await screen.findByRole('option', { name: 'Producer' }))
     await actor.click(screen.getByRole('checkbox', { name: /Launch campaign/i }))
     await actor.click(screen.getByRole('button', { name: 'Create invitation' }))
 

@@ -34,12 +34,12 @@ async function choose(actor: Actor, field: string, option: string) {
 /** Clicks a selectable day in whichever month the picker opens on, returning its ISO value. */
 async function pickDay(actor: Actor, field: string, day: number) {
   await actor.click(screen.getByRole('button', { name: field }))
-  const popup = await screen.findByRole('dialog', { name: field })
-  const cell = within(popup)
-    .getAllByRole('button')
-    .find((button) => button.dataset.day && !button.className.includes('is-outside') && button.textContent === String(day))
+  const grid = await screen.findByRole('grid')
+  const cell = within(grid)
+    .getAllByRole('gridcell')
+    .find((node) => node.dataset.outside === undefined && within(node).queryByRole('button')?.textContent === String(day))
   if (!cell) throw new Error(`No selectable day ${day} in the ${field} picker.`)
-  await actor.click(cell)
+  await actor.click(within(cell).getByRole('button'))
   return cell.dataset.day as string
 }
 
@@ -90,9 +90,9 @@ describe('ProjectOnboarding', () => {
     const start = await pickDay(actor, 'Start date', 20)
 
     await actor.click(screen.getByRole('button', { name: 'Due date' }))
-    const popup = await screen.findByRole('dialog', { name: 'Due date' })
-    const earlier = within(popup).getAllByRole('button').find((button) => button.dataset.day && button.dataset.day < start)
-    expect(earlier).toBeDisabled()
+    const grid = await screen.findByRole('grid')
+    const earlierCell = within(grid).getAllByRole('gridcell').find((node) => node.dataset.day && node.dataset.day < start)
+    expect(earlierCell ? within(earlierCell).getByRole('button') : null).toBeDisabled()
   })
 
   it('creates the project from one pass and offers the next task action', async () => {

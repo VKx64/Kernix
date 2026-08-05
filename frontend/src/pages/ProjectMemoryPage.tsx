@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { Icon } from '../components/Icon'
-import { EmptyState, ErrorBanner, LoadingRows, PageHeader, Panel, StatusBadge } from '../components/ui'
-import { api, unwrap } from '../lib/api'
-import type { ApiEnvelope, ProjectMemoryData, ProjectMemoryEntry } from '../types/api'
+import { ArrowLeft, Check, Inbox, MoreHorizontal, Pause, Sparkles, SquareCheck } from 'lucide-react'
+import { EmptyState, ErrorBanner, LoadingRows, PageHeader, Panel, StatusBadge } from '@/components/shared'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { api, unwrap } from '@/lib/api'
+import type { ApiEnvelope, ProjectMemoryData, ProjectMemoryEntry } from '@/types/api'
 
 const MEMORY_DESCRIPTION = 'Reviewed context the AI can use when planning tasks and checking time requests.'
+
+type MemoryView = 'pending' | 'approved' | 'history'
 
 export function ProjectMemoryPage() {
   const { projectId } = useParams()
@@ -14,7 +23,7 @@ export function ProjectMemoryPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [view, setView] = useState<'pending' | 'approved' | 'history'>('pending')
+  const [view, setView] = useState<MemoryView>('pending')
 
   const load = useCallback(async () => {
     if (!projectId) return
@@ -50,74 +59,233 @@ export function ProjectMemoryPage() {
     finally { setBusy(false) }
   }
 
-  if (loading) return <div className="memory-page">
-    <Link className="back-link" to="/projects"><Icon name="arrow-left" size={15} /> Projects</Link>
-    <PageHeader eyebrow="Project knowledge" title="Project memory" description={MEMORY_DESCRIPTION} />
-    <Panel><LoadingRows rows={3} columns={2} /></Panel>
-  </div>
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <BackLink />
+        <PageHeader eyebrow="Project knowledge" title="Project memory" description={MEMORY_DESCRIPTION} />
+        <Panel><LoadingRows rows={3} columns={2} /></Panel>
+      </div>
+    )
+  }
   if (!data) return <ErrorBanner message={error || 'Project memory could not be loaded.'} onRetry={() => void load()} />
+
   const pending = data.entries.filter((entry) => entry.status === 'pending')
   const approved = data.entries.filter((entry) => entry.status === 'approved')
   const history = data.entries.filter((entry) => !['pending', 'approved'].includes(entry.status))
   const visibleEntries = view === 'pending' ? pending : view === 'approved' ? approved : history
-  return <div className="memory-page">
-    <Link className="back-link" to="/projects"><Icon name="arrow-left" size={15} /> Projects</Link>
-    <PageHeader
-      eyebrow="Project knowledge"
-      title={data.project.name}
-      description={MEMORY_DESCRIPTION}
-      actions={<Link className="btn btn-quiet" to={`/tasks?project_id=${data.project.id}`}><Icon name="task" size={16} /> View tasks</Link>}
-    />
-    {error && <ErrorBanner message={error} />}
-    {!data.project.ai_memory_enabled && <div className="memory-disabled-banner"><Icon name="pause" size={17} /><div><strong>Learning is paused</strong><span>Approved knowledge still works, but completed tasks will not suggest new lessons.</span></div></div>}
 
-    <div className="memory-overview">
-      <Panel className="memory-brief-panel">
-        <header>
-          <div><span className="eyebrow">Project brief</span><h2>Give the AI the big picture</h2><p>Purpose, scope, workflow, and the rules that should apply across this project.</p></div>
-          <StatusBadge value={data.profile.brief_status} />
-        </header>
-        {data.can_manage ? <>
-          <label className="memory-brief-field">
-            <span>Brief</span>
-            <textarea rows={5} value={brief} onChange={(event) => setBrief(event.target.value)} placeholder="Example: What are we delivering, who is it for, and what should the team always keep in mind?" />
-          </label>
-          <div className="panel-actions"><button className="btn btn-quiet" disabled={busy || !data.project.ai_memory_enabled} onClick={() => void draft()}><Icon name="sparkles" size={16} /> Draft with AI</button><button className="btn btn-quiet" disabled={busy || !brief.trim()} onClick={() => void saveBrief(false)}>Save draft</button><button className="btn btn-primary" disabled={busy || !brief.trim()} onClick={() => void saveBrief(true)}><Icon name="check" size={16} /> Approve</button></div>
-        </> : <div className={`memory-brief-copy${data.profile.approved_brief ? '' : ' empty'}`}>{data.profile.approved_brief || 'No approved project brief yet.'}</div>}
-      </Panel>
+  return (
+    <div className="space-y-6">
+      <BackLink />
+      <PageHeader
+        eyebrow="Project knowledge"
+        title={data.project.name}
+        description={MEMORY_DESCRIPTION}
+        actions={(
+          <Button asChild variant="outline">
+            <Link to={`/tasks?project_id=${data.project.id}`}>
+              <SquareCheck />
+              View tasks
+            </Link>
+          </Button>
+        )}
+      />
 
-      <Panel className="memory-summary-panel">
-        <div className="memory-summary-heading"><span className="memory-summary-icon"><Icon name="sparkles" size={17} /></span><div><strong>AI context</strong><small>Manager controlled</small></div></div>
-        <dl>
-          <div><dt>Approved</dt><dd>{approved.length}</dd></div>
-          <div><dt>To review</dt><dd>{pending.length}</dd></div>
-          <div><dt>Learning</dt><dd className={data.project.ai_memory_enabled ? 'is-on' : ''}>{data.project.ai_memory_enabled ? 'On' : 'Off'}</dd></div>
-        </dl>
-        <p>The AI can suggest knowledge, but only manager-approved items are used in future decisions.</p>
+      {error && <ErrorBanner message={error} />}
+
+      {!data.project.ai_memory_enabled && (
+        <Alert>
+          <Pause />
+          <AlertTitle>Learning is paused</AlertTitle>
+          <AlertDescription>
+            Approved knowledge still works, but completed tasks will not suggest new lessons.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        <Panel contentClassName="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Project brief</p>
+              <h2 className="text-lg font-semibold tracking-tight">Give the AI the big picture</h2>
+              <p className="text-sm text-muted-foreground text-pretty">
+                Purpose, scope, workflow, and the rules that should apply across this project.
+              </p>
+            </div>
+            <StatusBadge value={data.profile.brief_status} />
+          </div>
+
+          {data.can_manage ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="project-brief">Brief</Label>
+                <Textarea
+                  id="project-brief"
+                  rows={5}
+                  value={brief}
+                  onChange={(event) => setBrief(event.target.value)}
+                  placeholder="Example: What are we delivering, who is it for, and what should the team always keep in mind?"
+                />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" disabled={busy || !data.project.ai_memory_enabled} onClick={() => void draft()}>
+                  <Sparkles />
+                  Draft with AI
+                </Button>
+                <Button variant="outline" disabled={busy || !brief.trim()} onClick={() => void saveBrief(false)}>
+                  Save draft
+                </Button>
+                <Button disabled={busy || !brief.trim()} onClick={() => void saveBrief(true)}>
+                  <Check />
+                  Approve
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className={data.profile.approved_brief ? 'text-sm text-pretty' : 'text-sm text-muted-foreground'}>
+              {data.profile.approved_brief || 'No approved project brief yet.'}
+            </p>
+          )}
+        </Panel>
+
+        <Panel contentClassName="space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="flex size-8 items-center justify-center rounded-md border">
+              <Sparkles className="size-4" />
+            </span>
+            <div className="leading-tight">
+              <p className="font-medium">AI context</p>
+              <p className="text-xs text-muted-foreground">Manager controlled</p>
+            </div>
+          </div>
+          <dl className="space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">Approved</dt>
+              <dd className="font-mono tabular-nums">{approved.length}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">To review</dt>
+              <dd className="font-mono tabular-nums">{pending.length}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">Learning</dt>
+              <dd>
+                <Badge variant={data.project.ai_memory_enabled ? 'default' : 'outline'}>
+                  {data.project.ai_memory_enabled ? 'On' : 'Off'}
+                </Badge>
+              </dd>
+            </div>
+          </dl>
+          <p className="text-sm text-muted-foreground text-pretty">
+            The AI can suggest knowledge, but only manager-approved items are used in future decisions.
+          </p>
+        </Panel>
+      </div>
+
+      <Panel contentClassName="space-y-4">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Knowledge library</p>
+          <h2 className="text-lg font-semibold tracking-tight">Reusable project lessons</h2>
+        </div>
+
+        <Tabs value={view} onValueChange={(next) => setView(next as MemoryView)}>
+          <TabsList aria-label="Project memory views">
+            <TabsTrigger value="pending">
+              <Inbox />
+              Review
+              <Badge variant="secondary" className="ml-1">{pending.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="approved">
+              <Check />
+              Approved
+              <Badge variant="secondary" className="ml-1">{approved.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <MoreHorizontal />
+              History
+              <Badge variant="secondary" className="ml-1">{history.length}</Badge>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {visibleEntries.length ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {visibleEntries.map((entry) => (
+              <MemoryCard
+                key={entry.id}
+                entry={entry}
+                actions={view === 'pending' && data.can_manage ? (
+                  <>
+                    <Button size="sm" disabled={busy} onClick={() => void act(entry, 'approve')}>Approve</Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(entry, 'edit')}>Edit &amp; approve</Button>
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void act(entry, 'reject')}>Reject</Button>
+                  </>
+                ) : view === 'approved' && data.can_manage ? (
+                  <>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(entry, 'edit')}>Edit</Button>
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void act(entry, 'archive')}>Archive</Button>
+                  </>
+                ) : undefined}
+              />
+            ))}
+          </div>
+        ) : (
+          <MemoryEmpty view={view} />
+        )}
       </Panel>
     </div>
-
-    <Panel className="memory-library">
-      <header className="memory-library-heading"><div><span className="eyebrow">Knowledge library</span><h2>Reusable project lessons</h2></div></header>
-      <nav className="memory-tabs" aria-label="Project memory views">
-        <button className={view === 'pending' ? 'active' : ''} onClick={() => setView('pending')}><Icon name="inbox" size={15} /> Review <b>{pending.length}</b></button>
-        <button className={view === 'approved' ? 'active' : ''} onClick={() => setView('approved')}><Icon name="check" size={15} /> Approved <b>{approved.length}</b></button>
-        <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Icon name="more-horizontal" size={15} /> History <b>{history.length}</b></button>
-      </nav>
-      {visibleEntries.length ? <div className="memory-card-grid">{visibleEntries.map((entry) => <MemoryCard key={entry.id} entry={entry} actions={view === 'pending' && data.can_manage ? <><button className="btn btn-primary" disabled={busy} onClick={() => void act(entry, 'approve')}>Approve</button><button className="btn btn-quiet" disabled={busy} onClick={() => void act(entry, 'edit')}>Edit & approve</button><button className="btn btn-quiet danger" disabled={busy} onClick={() => void act(entry, 'reject')}>Reject</button></> : view === 'approved' && data.can_manage ? <><button className="btn btn-quiet" disabled={busy} onClick={() => void act(entry, 'edit')}>Edit</button><button className="btn btn-quiet danger" disabled={busy} onClick={() => void act(entry, 'archive')}>Archive</button></> : undefined} />)}</div> : <MemoryEmpty view={view} />}
-    </Panel>
-  </div>
+  )
 }
 
-function MemoryEmpty({ view }: { view: 'pending' | 'approved' | 'history' }) {
+function BackLink() {
+  return (
+    <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit">
+      <Link to="/projects">
+        <ArrowLeft />
+        Projects
+      </Link>
+    </Button>
+  )
+}
+
+function MemoryEmpty({ view }: { view: MemoryView }) {
   const copy = view === 'pending'
-    ? { icon: 'inbox' as const, title: 'Nothing to review', description: 'New lessons from completed tasks will appear here for manager approval.' }
+    ? { icon: Inbox, title: 'Nothing to review', description: 'New lessons from completed tasks will appear here for manager approval.' }
     : view === 'approved'
-      ? { icon: 'check' as const, title: 'No approved lessons yet', description: 'Approved lessons become trusted context for future AI work.' }
-      : { icon: 'more-horizontal' as const, title: 'No history yet', description: 'Archived, rejected, and replaced lessons will be kept here.' }
+      ? { icon: Check, title: 'No approved lessons yet', description: 'Approved lessons become trusted context for future AI work.' }
+      : { icon: MoreHorizontal, title: 'No history yet', description: 'Archived, rejected, and replaced lessons will be kept here.' }
   return <EmptyState icon={copy.icon} title={copy.title} description={copy.description} />
 }
 
 function MemoryCard({ entry, actions }: { entry: ProjectMemoryEntry; actions?: React.ReactNode }) {
-  return <article className="memory-card"><header><StatusBadge value={entry.category.replace('_', ' ')} /><small>Importance {entry.importance}/5</small></header><p>{entry.content}</p>{entry.evidence && <blockquote><strong>Evidence</strong>{entry.evidence}</blockquote>}<footer>{entry.source_task ? <Link to={`/tasks/${entry.source_task.id}`}>Source: {entry.source_task.title}</Link> : <span>Project brief</span>}<StatusBadge value={entry.status} /></footer>{actions && <div className="memory-card-actions">{actions}</div>}</article>
+  return (
+    <Card className="gap-4">
+      <CardHeader className="flex-row items-center justify-between gap-2">
+        <StatusBadge value={entry.category.replace('_', ' ')} />
+        <span className="text-xs text-muted-foreground">Importance {entry.importance}/5</span>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-pretty">{entry.content}</p>
+        {entry.evidence && (
+          <blockquote className="space-y-1 border-l-2 pl-3 text-sm text-muted-foreground">
+            <strong className="block text-xs uppercase tracking-widest">Evidence</strong>
+            {entry.evidence}
+          </blockquote>
+        )}
+      </CardContent>
+      <CardFooter className="flex-wrap items-center justify-between gap-2 text-sm">
+        {entry.source_task ? (
+          <Link className="underline underline-offset-4" to={`/tasks/${entry.source_task.id}`}>
+            Source: {entry.source_task.title}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">Project brief</span>
+        )}
+        <StatusBadge value={entry.status} />
+      </CardFooter>
+      {actions && <CardFooter className="flex-wrap gap-2">{actions}</CardFooter>}
+    </Card>
+  )
 }

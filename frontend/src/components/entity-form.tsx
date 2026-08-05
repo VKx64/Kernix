@@ -156,50 +156,56 @@ export function EntityForm({
                         {spec.label}
                         {spec.required && <span aria-hidden="true" className="text-destructive"> *</span>}
                       </FormLabel>
-                      <FormControl>
-                        {spec.type === 'textarea' ? (
-                          <Textarea
-                            {...field}
-                            value={String(field.value ?? '')}
-                            disabled={spec.disabled}
-                            placeholder={spec.placeholder}
-                            onChange={(event) => handleChange(spec.name, event.target.value, spec.clearOnChange)}
-                          />
-                        ) : spec.type === 'select' ? (
-                          <Select
-                            value={String(field.value ?? '')}
-                            disabled={spec.disabled}
-                            onValueChange={(value) => handleChange(spec.name, value, spec.clearOnChange)}
-                          >
+                      {spec.type === 'select' ? (
+                        // The Select root renders no DOM, so FormControl has to
+                        // wrap the trigger for the label's htmlFor to resolve.
+                        <Select
+                          value={String(field.value ?? '')}
+                          disabled={spec.disabled}
+                          onValueChange={(value) => handleChange(spec.name, value, spec.clearOnChange)}
+                        >
+                          <FormControl>
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select…" />
                             </SelectTrigger>
-                            <SelectContent>
-                              {spec.options?.map((option) => (
-                                <SelectItem key={option.value} value={String(option.value)}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            {...field}
-                            type={spec.type ?? 'text'}
-                            value={String(field.value ?? '')}
-                            disabled={spec.disabled}
-                            placeholder={spec.placeholder}
-                            min={spec.min}
-                            step={spec.step}
-                            list={spec.suggestions?.length ? `${spec.name}-suggestions` : undefined}
-                            onChange={(event) => handleChange(
-                              spec.name,
-                              spec.type === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value,
-                              spec.clearOnChange,
-                            )}
-                          />
-                        )}
-                      </FormControl>
+                          </FormControl>
+                          <SelectContent>
+                            {spec.options?.map((option) => (
+                              <SelectItem key={option.value} value={String(option.value)}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <FormControl>
+                          {spec.type === 'textarea' ? (
+                            <Textarea
+                              {...field}
+                              value={String(field.value ?? '')}
+                              disabled={spec.disabled}
+                              placeholder={spec.placeholder}
+                              onChange={(event) => handleChange(spec.name, event.target.value, spec.clearOnChange)}
+                            />
+                          ) : (
+                            <Input
+                              {...field}
+                              type={spec.type ?? 'text'}
+                              value={String(field.value ?? '')}
+                              disabled={spec.disabled}
+                              placeholder={spec.placeholder}
+                              min={spec.min}
+                              step={spec.step}
+                              list={spec.suggestions?.length ? `${spec.name}-suggestions` : undefined}
+                              onChange={(event) => handleChange(
+                                spec.name,
+                                spec.type === 'number' && event.target.value !== '' ? Number(event.target.value) : event.target.value,
+                                spec.clearOnChange,
+                              )}
+                            />
+                          )}
+                        </FormControl>
+                      )}
                       {spec.suggestions?.length ? (
                         <datalist id={`${spec.name}-suggestions`}>
                           {spec.suggestions.map((option) => (

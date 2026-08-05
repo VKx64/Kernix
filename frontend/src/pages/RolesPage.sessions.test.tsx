@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { RolesPage } from './EntityPages'
@@ -48,7 +48,12 @@ describe('role permission session messaging', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MemoryRouter initialEntries={['/settings/roles']}><RolesPage /></MemoryRouter>)
 
-    await actor.click(await screen.findByRole('button', { name: 'Edit' }))
+    // The permission catalog arrives after the first paint and re-renders the
+    // table, so the row action has to be looked up again once it has settled.
+    await screen.findByRole('button', { name: 'Edit' })
+    await waitFor(() => expect(apiGet).toHaveBeenCalled())
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+
     await actor.click(await screen.findByRole('checkbox', { name: /Track own time/i }))
     await actor.click(screen.getByRole('button', { name: 'Save role' }))
 

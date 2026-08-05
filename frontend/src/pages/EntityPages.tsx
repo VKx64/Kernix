@@ -1,26 +1,43 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
-import { useAuth } from '../auth/AuthProvider'
-import { useWorkspace } from '../auth/WorkspaceProvider'
-import { Icon } from '../components/Icon'
 import {
-  DataTable,
+  Pencil,
+  Play,
+  Plus,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
+import { useWorkspace } from '@/auth/WorkspaceProvider'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { DataTable, DataTableColumnHeader, type ColumnDef } from '@/components/data-table'
+import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
+import {
+  Avatar,
   EmptyState,
-  EntityForm,
   ErrorBanner,
-  Modal,
   PageHeader,
-  Pagination,
   Panel,
-  SearchToolbar,
   StatusBadge,
-  type Column,
-  type FormFieldSpec,
-} from '../components/ui'
-import { api, displayName, normalizePage, unwrap } from '../lib/api'
-import { isAdministrator, useCan } from '../lib/permissions'
-import { lockedPermissions, normalizePermissionCatalog, withRequiredPermissions, type PermissionGroup } from '../lib/rolePermissions'
-import { useCollection } from '../lib/useCollection'
+} from '@/components/shared'
+import { api, displayName, normalizePage, unwrap } from '@/lib/api'
+import { isAdministrator, useCan } from '@/lib/permissions'
+import { lockedPermissions, normalizePermissionCatalog, withRequiredPermissions, type PermissionGroup } from '@/lib/rolePermissions'
+import { useCollection } from '@/lib/useCollection'
 import { InviteUserModal } from './InviteUserModal'
 import { ProjectOnboarding } from './ProjectOnboarding'
 import type {
@@ -36,7 +53,7 @@ import type {
   Role,
   User,
   UserSummary,
-} from '../types/api'
+} from '@/types/api'
 
 function value(record: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) if (record[key] !== undefined && record[key] !== null) return record[key]
@@ -48,13 +65,22 @@ function localDate(raw?: string | null) {
 }
 
 function RowActions({ onEdit, onDelete, onRestore, editLabel = 'Edit', removeLabel = 'Archive' }: { onEdit?: () => void; onDelete?: () => void; onRestore?: () => void; editLabel?: string; removeLabel?: string }) {
-  if (!onEdit && !onDelete && !onRestore) return <span className="muted">—</span>
+  if (!onEdit && !onDelete && !onRestore) return <span className="text-sm text-muted-foreground">—</span>
   return (
-    <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-      {onEdit && <button className="icon-button" title={editLabel} aria-label={editLabel} onClick={onEdit}><Icon name="edit" size={16} /></button>}
-      {onRestore && <button className="icon-button" title="Restore" aria-label="Restore" onClick={onRestore}><Icon name="play" size={16} /></button>}
-      {onDelete && <button className="icon-button danger" title={removeLabel} aria-label={removeLabel} onClick={onDelete}><Icon name="trash" size={16} /></button>}
+    <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+      {onEdit && <Button variant="ghost" size="icon-sm" title={editLabel} aria-label={editLabel} onClick={onEdit}><Pencil /></Button>}
+      {onRestore && <Button variant="ghost" size="icon-sm" title="Restore" aria-label="Restore" onClick={onRestore}><Play /></Button>}
+      {onDelete && <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" title={removeLabel} aria-label={removeLabel} onClick={onDelete}><Trash2 /></Button>}
     </div>
+  )
+}
+
+function ArchivedToggle({ archived, onChange }: { archived: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Switch checked={archived} onCheckedChange={onChange} />
+      Archived
+    </label>
   )
 }
 
@@ -125,9 +151,14 @@ function EntityModal({
   onSave: (values: FormPayload) => Promise<void>
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={title} size="lg" closeDisabled={busy}>
-      <EntityForm fields={fields} initialValues={initialValues} busy={busy} error={error} onCancel={onClose} onSubmit={onSave} />
-    </Modal>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <EntityForm fields={fields} initialValues={initialValues} busy={busy} error={error} onCancel={onClose} onSubmit={onSave} />
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -201,12 +232,11 @@ function useEntityMutation<T extends { id: EntityId }>(path: string, reload: () 
 
 export function ProjectsPage() {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [archived, setArchived] = useState(false)
   const navigate = useNavigate()
   const can = useCan()
   const { singleClientMode, settings } = useWorkspace()
-  const collection = useCollection<Project>('/api/projects', { search, page, filters: { archived: archived ? 'only' : undefined } })
+  const collection = useCollection<Project>('/api/projects', { search, all: true, filters: { archived: archived ? 'only' : undefined } })
   const mutation = useEntityMutation<Project>('/api/projects', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const statuses = statusValues(lookups.fields, 'project_status')
@@ -241,23 +271,72 @@ export function ProjectsPage() {
     ai_memory_enabled: mutation.selected.aiMemoryEnabled ?? mutation.selected.ai_memory_enabled ?? false,
   } : singleClientMode && singleClientId ? { client_id: singleClientId as string | number } : undefined
 
-  const columns: Column<Project>[] = [
-    { key: 'name', header: 'Project', render: (project) => <div className="primary-cell"><strong>{project.name}</strong><span>{project.client?.name ?? 'No client shown'}</span></div> },
-    { key: 'status', header: 'Status', render: (project) => <StatusBadge value={project.statusValue ?? project.status_value ?? project.status} /> },
-    { key: 'manager', header: 'Manager', render: (project) => displayName(project.manager) },
-    { key: 'ai', header: 'AI features', render: (project) => <div className="project-ai-summary">{(project.aiTaskCreationEnabled ?? project.ai_task_creation_enabled) && <span>Task creation</span>}{(project.aiMemoryEnabled ?? project.ai_memory_enabled) && <span>Memory</span>}{(project.aiEstimateReviewEnabled ?? project.ai_estimate_review_enabled) && <span>Time review</span>}{!(project.aiTaskCreationEnabled ?? project.ai_task_creation_enabled) && !(project.aiMemoryEnabled ?? project.ai_memory_enabled) && !(project.aiEstimateReviewEnabled ?? project.ai_estimate_review_enabled) && 'Off'}</div> },
-    { key: 'dates', header: 'Timeline', render: (project) => <span>{localDate(project.startDate ?? project.start_date)} → {localDate(project.dueDate ?? project.due_date)}</span> },
-    { key: 'actions', header: '', className: 'action-column', render: (project) => <div className="row-actions" onClick={(event) => event.stopPropagation()}>{!archived && <Link className="icon-button memory-action" title="Project memory" aria-label={`Open ${project.name} memory`} to={`/projects/${project.id}/memory`}><Icon name="sparkles" size={16} />{Number(project.pendingMemoryCount ?? project.pending_memory_count ?? 0) > 0 && <b>{project.pendingMemoryCount ?? project.pending_memory_count}</b>}</Link>}<RowActions onEdit={!archived && can('projects.edit') ? () => mutation.edit(project) : undefined} onDelete={!archived && can('projects.archive') ? () => void mutation.archive(project) : undefined} onRestore={archived && can('projects.archive') ? () => void mutation.restore(project) : undefined} /></div> },
+  const columns: ColumnDef<Project>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Project" />,
+      cell: ({ row }) => <div className="flex flex-col"><span className="font-medium">{row.original.name}</span><span className="text-xs text-muted-foreground">{row.original.client?.name ?? 'No client shown'}</span></div>,
+    },
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge value={row.original.statusValue ?? row.original.status_value ?? row.original.status} /> },
+    { id: 'manager', header: 'Manager', cell: ({ row }) => displayName(row.original.manager) },
+    {
+      id: 'ai',
+      header: 'AI features',
+      cell: ({ row }) => {
+        const project = row.original
+        const taskCreation = project.aiTaskCreationEnabled ?? project.ai_task_creation_enabled
+        const memory = project.aiMemoryEnabled ?? project.ai_memory_enabled
+        const timeReview = project.aiEstimateReviewEnabled ?? project.ai_estimate_review_enabled
+        if (!taskCreation && !memory && !timeReview) return <span className="text-sm text-muted-foreground">Off</span>
+        return <div className="flex flex-wrap gap-1">{taskCreation && <Badge variant="secondary">Task creation</Badge>}{memory && <Badge variant="secondary">Memory</Badge>}{timeReview && <Badge variant="secondary">Time review</Badge>}</div>
+      },
+    },
+    { id: 'dates', header: 'Timeline', cell: ({ row }) => <span className="text-sm">{localDate(row.original.startDate ?? row.original.start_date)} → {localDate(row.original.dueDate ?? row.original.due_date)}</span> },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => {
+        const project = row.original
+        return (
+          <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+            {!archived && (
+              <Button variant="ghost" size="icon-sm" className="relative" title="Project memory" aria-label={`Open ${project.name} memory`} asChild>
+                <Link to={`/projects/${project.id}/memory`}>
+                  <Sparkles />
+                  {Number(project.pendingMemoryCount ?? project.pending_memory_count ?? 0) > 0 && (
+                    <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.6rem] text-primary-foreground">{project.pendingMemoryCount ?? project.pending_memory_count}</span>
+                  )}
+                </Link>
+              </Button>
+            )}
+            <RowActions
+              onEdit={!archived && can('projects.edit') ? () => mutation.edit(project) : undefined}
+              onDelete={!archived && can('projects.archive') ? () => void mutation.archive(project) : undefined}
+              onRestore={archived && can('projects.archive') ? () => void mutation.restore(project) : undefined}
+            />
+          </div>
+        )
+      },
+    },
   ]
 
   return (
-    <div className="page-fixed">
-      <PageHeader eyebrow="Delivery" title="Projects" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} projects in your workspace.`} actions={!archived && can('projects.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New project</button> : undefined} />
+    <div className="space-y-4">
+      <PageHeader eyebrow="Delivery" title="Projects" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} projects in your workspace.`} actions={!archived && can('projects.create') ? <Button onClick={mutation.create}><Plus /> New project</Button> : undefined} />
       {(collection.error || (!mutation.open && mutation.error)) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
-      <Panel className="list-panel">
-        <SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search projects…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar>
-        <DataTable columns={columns} data={collection.data} rowKey={(project) => project.id} loading={collection.loading} emptyTitle={archived ? 'No archived projects' : 'No projects found'} emptyDescription={archived ? 'Archived projects will appear here.' : 'Create a project to organize the first stream of work.'} onRowClick={archived || !can('tasks.view') ? undefined : (project) => navigate(`/tasks?project_id=${project.id}`)} />
-        <Pagination meta={collection.meta} onPage={setPage} />
+      <Panel>
+        <DataTable
+          columns={columns}
+          data={collection.data}
+          loading={collection.loading}
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Search projects…"
+          toolbar={<ArchivedToggle archived={archived} onChange={setArchived} />}
+          emptyTitle={archived ? 'No archived projects' : 'No projects found'}
+          emptyDescription={archived ? 'Archived projects will appear here.' : 'Create a project to organize the first stream of work.'}
+          onRowClick={archived || !can('tasks.view') ? undefined : (project) => navigate(`/tasks?project_id=${project.id}`)}
+        />
       </Panel>
       {mutation.open && !mutation.selected && <ProjectOnboarding
         clients={lookups.clients}
@@ -286,17 +365,23 @@ export function ProjectsPage() {
 
 export function ClientsPage() {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [archived, setArchived] = useState(false)
   const can = useCan()
   const { singleClientMode } = useWorkspace()
-  const collection = useCollection<Client>('/api/clients', { search, page, filters: { archived: archived ? 'only' : undefined } })
+  const collection = useCollection<Client>('/api/clients', { search, all: true, filters: { archived: archived ? 'only' : undefined } })
   const mutation = useEntityMutation<Client>('/api/clients', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const statuses = statusValues(lookups.fields, 'client_status')
 
   if (singleClientMode) {
-    return <div><PageHeader eyebrow="Workspace mode" title="Client directory is hidden" description="This workspace is scoped to one client, so client switching and client administration are removed from the interface." /><Panel><EmptyState title="Single-client mode is active" description="Projects and contacts remain available in their own sections." action={can('projects.view') ? <Link className="btn btn-primary" to="/projects">Open projects</Link> : undefined} /></Panel></div>
+    return (
+      <div className="space-y-4">
+        <PageHeader eyebrow="Workspace mode" title="Client directory is hidden" description="This workspace is scoped to one client, so client switching and client administration are removed from the interface." />
+        <Panel>
+          <EmptyState title="Single-client mode is active" description="Projects and contacts remain available in their own sections." action={can('projects.view') ? <Button asChild><Link to="/projects">Open projects</Link></Button> : undefined} />
+        </Panel>
+      </div>
+    )
   }
 
   const fields: FormFieldSpec[] = [
@@ -320,23 +405,39 @@ export function ClientsPage() {
     address: mutation.selected.address ?? '', city: mutation.selected.city ?? '', province: mutation.selected.province ?? '',
     zip_code: mutation.selected.zipCode ?? mutation.selected.zip_code ?? '', country: mutation.selected.country ?? '', notes: mutation.selected.notes ?? '',
   } : undefined
-  const columns: Column<Client>[] = [
-    { key: 'name', header: 'Client', render: (client) => <div className="primary-cell"><strong>{client.name}</strong><span>{client.website || client.email || 'No contact detail'}</span></div> },
-    { key: 'status', header: 'Status', render: (client) => <StatusBadge value={client.statusValue ?? client.status_value ?? client.status} /> },
-    { key: 'location', header: 'Location', render: (client) => [client.city, client.country].filter(Boolean).join(', ') || '—' },
-    { key: 'phone', header: 'Phone', render: (client) => client.phone || '—' },
-    { key: 'actions', header: '', className: 'action-column', render: (client) => <RowActions onEdit={!archived && can('clients.edit') ? () => mutation.edit(client) : undefined} onDelete={!archived && can('clients.archive') ? () => void mutation.archive(client) : undefined} onRestore={archived && can('clients.archive') ? () => void mutation.restore(client) : undefined} /> },
+  const columns: ColumnDef<Client>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Client" />,
+      cell: ({ row }) => <div className="flex flex-col"><span className="font-medium">{row.original.name}</span><span className="text-xs text-muted-foreground">{row.original.website || row.original.email || 'No contact detail'}</span></div>,
+    },
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge value={row.original.statusValue ?? row.original.status_value ?? row.original.status} /> },
+    { id: 'location', header: 'Location', cell: ({ row }) => [row.original.city, row.original.country].filter(Boolean).join(', ') || '—' },
+    { id: 'phone', header: 'Phone', cell: ({ row }) => row.original.phone || '—' },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => <RowActions onEdit={!archived && can('clients.edit') ? () => mutation.edit(row.original) : undefined} onDelete={!archived && can('clients.archive') ? () => void mutation.archive(row.original) : undefined} onRestore={archived && can('clients.archive') ? () => void mutation.restore(row.original) : undefined} />,
+    },
   ]
-  return <div className="page-fixed"><PageHeader eyebrow="Relationships" title="Clients" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client accounts.`} actions={!archived && can('clients.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New client</button> : undefined} />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search clients…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar><DataTable columns={columns} data={collection.data} rowKey={(client) => client.id} loading={collection.loading} emptyTitle={archived ? 'No archived clients' : 'No clients yet'} emptyDescription={archived ? 'Archived clients will appear here.' : 'Add the first client account to begin.'} /><Pagination meta={collection.meta} onPage={setPage} /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit client' : 'Create client'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={mutation.save} /></div>
+  return (
+    <div className="space-y-4">
+      <PageHeader eyebrow="Relationships" title="Clients" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client accounts.`} actions={!archived && can('clients.create') ? <Button onClick={mutation.create}><Plus /> New client</Button> : undefined} />
+      {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
+      <Panel>
+        <DataTable columns={columns} data={collection.data} loading={collection.loading} search={search} onSearch={setSearch} searchPlaceholder="Search clients…" toolbar={<ArchivedToggle archived={archived} onChange={setArchived} />} emptyTitle={archived ? 'No archived clients' : 'No clients yet'} emptyDescription={archived ? 'Archived clients will appear here.' : 'Add the first client account to begin.'} />
+      </Panel>
+      <EntityModal open={mutation.open} title={mutation.selected ? 'Edit client' : 'Create client'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={mutation.save} />
+    </div>
+  )
 }
 
 export function ContactsPage() {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [archived, setArchived] = useState(false)
   const can = useCan()
   const { singleClientMode, settings } = useWorkspace()
-  const collection = useCollection<Contact>('/api/contacts', { search, page, filters: { archived: archived ? 'only' : undefined } })
+  const collection = useCollection<Contact>('/api/contacts', { search, all: true, filters: { archived: archived ? 'only' : undefined } })
   const mutation = useEntityMutation<Contact>('/api/contacts', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const singleClientId = value(settings as Record<string, unknown>, 'singleClientId', 'single_client_id')
@@ -356,15 +457,32 @@ export function ContactsPage() {
     first_name: mutation.selected.firstName ?? mutation.selected.first_name ?? '', last_name: mutation.selected.lastName ?? mutation.selected.last_name ?? '',
     title: mutation.selected.title ?? '', email: mutation.selected.email ?? '', phone_1: mutation.selected.phone1 ?? mutation.selected.phone_1 ?? '', phone_2: mutation.selected.phone2 ?? mutation.selected.phone_2 ?? '', status: mutation.selected.status ?? 'active', notes: mutation.selected.notes ?? '',
   } : singleClientMode && singleClientId ? { client_id: singleClientId as string | number, status: 'active' } : { status: 'active' }
-  const columns: Column<Contact>[] = [
-    { key: 'name', header: 'Contact', render: (contact) => <div className="primary-cell"><strong>{contact.name || [contact.firstName ?? contact.first_name, contact.lastName ?? contact.last_name].filter(Boolean).join(' ')}</strong><span>{contact.title || contact.email || 'No title'}</span></div> },
-    { key: 'client', header: 'Client', render: (contact) => contact.client?.name || '—' },
-    { key: 'email', header: 'Email', render: (contact) => contact.email ? <a href={`mailto:${contact.email}`}>{contact.email}</a> : '—' },
-    { key: 'phone', header: 'Phone', render: (contact) => contact.phone1 ?? contact.phone_1 ?? '—' },
-    { key: 'status', header: 'Status', render: (contact) => <StatusBadge value={contact.status} /> },
-    { key: 'actions', header: '', className: 'action-column', render: (contact) => <RowActions onEdit={!archived && can('contacts.edit') ? () => mutation.edit(contact) : undefined} onDelete={!archived && can('contacts.archive') ? () => void mutation.archive(contact) : undefined} onRestore={archived && can('contacts.archive') ? () => void mutation.restore(contact) : undefined} /> },
+  const columns: ColumnDef<Contact>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Contact" />,
+      cell: ({ row }) => <div className="flex flex-col"><span className="font-medium">{row.original.name || [row.original.firstName ?? row.original.first_name, row.original.lastName ?? row.original.last_name].filter(Boolean).join(' ')}</span><span className="text-xs text-muted-foreground">{row.original.title || row.original.email || 'No title'}</span></div>,
+    },
+    { id: 'client', header: 'Client', cell: ({ row }) => row.original.client?.name || '—' },
+    { id: 'email', header: 'Email', cell: ({ row }) => row.original.email ? <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${row.original.email}`}>{row.original.email}</a> : '—' },
+    { id: 'phone', header: 'Phone', cell: ({ row }) => row.original.phone1 ?? row.original.phone_1 ?? '—' },
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge value={row.original.status} /> },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => <RowActions onEdit={!archived && can('contacts.edit') ? () => mutation.edit(row.original) : undefined} onDelete={!archived && can('contacts.archive') ? () => void mutation.archive(row.original) : undefined} onRestore={archived && can('contacts.archive') ? () => void mutation.restore(row.original) : undefined} />,
+    },
   ]
-  return <div className="page-fixed"><PageHeader eyebrow="Directory" title="Contacts" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client contacts.`} actions={!archived && can('contacts.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New contact</button> : undefined} />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search people, titles, or email…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar><DataTable columns={columns} data={collection.data} rowKey={(contact) => contact.id} loading={collection.loading} emptyTitle={archived ? 'No archived contacts' : 'No contacts found'} emptyDescription={archived ? 'Archived contacts will appear here.' : 'Add the people your team collaborates with.'} /><Pagination meta={collection.meta} onPage={setPage} /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit contact' : 'Create contact'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => mutation.save(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload)} /></div>
+  return (
+    <div className="space-y-4">
+      <PageHeader eyebrow="Directory" title="Contacts" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client contacts.`} actions={!archived && can('contacts.create') ? <Button onClick={mutation.create}><Plus /> New contact</Button> : undefined} />
+      {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
+      <Panel>
+        <DataTable columns={columns} data={collection.data} loading={collection.loading} search={search} onSearch={setSearch} searchPlaceholder="Search people, titles, or email…" toolbar={<ArchivedToggle archived={archived} onChange={setArchived} />} emptyTitle={archived ? 'No archived contacts' : 'No contacts found'} emptyDescription={archived ? 'Archived contacts will appear here.' : 'Add the people your team collaborates with.'} />
+      </Panel>
+      <EntityModal open={mutation.open} title={mutation.selected ? 'Edit contact' : 'Create contact'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => mutation.save(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload)} />
+    </div>
+  )
 }
 
 function SettingsNav() {
@@ -375,7 +493,20 @@ function SettingsNav() {
     can('roles.view') ? { to: '/settings/roles', label: 'Roles' } : null,
     can('fields.view') ? { to: '/settings/fields', label: 'Fields' } : null,
   ].filter((item): item is { to: string; label: string } => Boolean(item))
-  return <nav className="settings-nav" aria-label="Settings">{links.map((item) => <NavLink end={item.to === '/settings'} className={({ isActive }) => isActive ? 'active' : ''} to={item.to} key={item.to}>{item.label}</NavLink>)}</nav>
+  return (
+    <nav className="flex flex-wrap gap-1 border-b" aria-label="Settings">
+      {links.map((item) => (
+        <NavLink
+          end={item.to === '/settings'}
+          className={({ isActive }) => `border-b-2 px-3 py-2 text-sm font-medium ${isActive ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          to={item.to}
+          key={item.to}
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  )
 }
 
 function isAdministratorAccount(user: User): boolean {
@@ -384,13 +515,12 @@ function isAdministratorAccount(user: User): boolean {
 
 export function UsersPage() {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [archived, setArchived] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const can = useCan()
   const { user: currentUser } = useAuth()
   const isAdmin = isAdministrator(currentUser)
-  const collection = useCollection<User>('/api/users', { search, page, filters: { archived: archived ? 'only' : undefined } })
+  const collection = useCollection<User>('/api/users', { search, all: true, filters: { archived: archived ? 'only' : undefined } })
   const mutation = useEntityMutation<User>('/api/users', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const departments = statusValues(lookups.fields, 'user_department')
@@ -421,15 +551,69 @@ export function UsersPage() {
     department_value_id: mutation.selected.departmentValueId ?? mutation.selected.department_value_id ?? mutation.selected.department?.id,
     timezone: mutation.selected.timezone ?? '', status: mutation.selected.status ?? 'active', password: '', password_confirmation: '',
   } : { role_id: isAdmin ? undefined : currentRoleId, status: 'active', timezone: 'Asia/Manila', password: '', password_confirmation: '' }
-  const columns: Column<User>[] = [
-    { key: 'name', header: 'User', render: (user) => <div className="primary-cell"><strong>{displayName(user)}</strong><span>@{user.username}</span></div> },
-    { key: 'role', header: 'Role', render: (user) => user.role?.name ?? user.roles?.map((role) => typeof role === 'string' ? role : role.name).join(', ') ?? '—' },
-    { key: 'department', header: 'Department', render: (user) => user.department?.label ?? '—' },
-    { key: 'email', header: 'Email', render: (user) => user.imagicEmail ?? user.imagic_email ?? user.email ?? '—' },
-    { key: 'status', header: 'Status', render: (user) => <StatusBadge value={user.status} /> },
-    { key: 'actions', header: '', className: 'action-column', render: (user) => { const protectedTarget = !isAdmin && isAdministratorAccount(user); const self = String(user.id) === String(currentUser?.id); return <RowActions onEdit={!archived && can('users.edit') && !protectedTarget ? () => mutation.edit(user) : undefined} onDelete={!archived && can('users.archive') && !protectedTarget && !self ? () => void mutation.archive(user) : undefined} onRestore={archived && can('users.archive') && !protectedTarget ? () => void mutation.restore(user) : undefined} /> } },
+  const columns: ColumnDef<User>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <Avatar user={row.original} />
+          <div className="flex flex-col"><span className="font-medium">{displayName(row.original)}</span><span className="text-xs text-muted-foreground">@{row.original.username}</span></div>
+        </div>
+      ),
+    },
+    { id: 'role', header: 'Role', cell: ({ row }) => row.original.role?.name ?? row.original.roles?.map((role) => typeof role === 'string' ? role : role.name).join(', ') ?? '—' },
+    { id: 'department', header: 'Department', cell: ({ row }) => row.original.department?.label ?? '—' },
+    { id: 'email', header: 'Email', cell: ({ row }) => row.original.imagicEmail ?? row.original.imagic_email ?? row.original.email ?? '—' },
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge value={row.original.status} /> },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => {
+        const user = row.original
+        const protectedTarget = !isAdmin && isAdministratorAccount(user)
+        const self = String(user.id) === String(currentUser?.id)
+        return <RowActions onEdit={!archived && can('users.edit') && !protectedTarget ? () => mutation.edit(user) : undefined} onDelete={!archived && can('users.archive') && !protectedTarget && !self ? () => void mutation.archive(user) : undefined} onRestore={archived && can('users.archive') && !protectedTarget ? () => void mutation.restore(user) : undefined} />
+      },
+    },
   ]
-  return <div className="page-fixed"><PageHeader eyebrow="Settings" title="Users" description={archived ? 'Archived accounts that can be restored.' : 'People who can sign in to this workspace.'} actions={!archived && (isAdmin || can('users.create')) ? <>{isAdmin && <button className="btn btn-primary" onClick={() => setInviteOpen(true)}><Icon name="send" size={16} /> Invite user</button>}{can('users.create') && <button className={`btn ${isAdmin ? 'btn-quiet' : 'btn-primary'}`} onClick={mutation.create}><Icon name="plus" size={16} /> New user</button>}</> : undefined} /><SettingsNav />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><SearchToolbar search={search} onSearch={(next) => { setSearch(next); setPage(1) }} placeholder="Search users…"><label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(1) }} />Archived</label></SearchToolbar><DataTable columns={columns} data={collection.data} rowKey={(user) => user.id} loading={collection.loading} emptyTitle={archived ? 'No archived users' : 'No users found'} /><Pagination meta={collection.meta} onPage={setPage} /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit user' : 'Create user'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => { const clean = { ...payload }; if (!isAdmin) { delete clean.personal_email; if (mutation.selected) delete clean.role_id; if (selectedIsSelf) delete clean.status } if (mutation.selected && !isAdmin) { delete clean.password; delete clean.password_confirmation } else if (!clean.password) { delete clean.password; delete clean.password_confirmation } await mutation.save(clean) }} /><InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} /></div>
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Settings"
+        title="Users"
+        description={archived ? 'Archived accounts that can be restored.' : 'People who can sign in to this workspace.'}
+        actions={!archived && (isAdmin || can('users.create')) ? (
+          <>
+            {isAdmin && <Button onClick={() => setInviteOpen(true)}><Send /> Invite user</Button>}
+            {can('users.create') && <Button variant={isAdmin ? 'outline' : 'default'} onClick={mutation.create}><Plus /> New user</Button>}
+          </>
+        ) : undefined}
+      />
+      <SettingsNav />
+      {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
+      <Panel>
+        <DataTable columns={columns} data={collection.data} loading={collection.loading} search={search} onSearch={setSearch} searchPlaceholder="Search users…" toolbar={<ArchivedToggle archived={archived} onChange={setArchived} />} emptyTitle={archived ? 'No archived users' : 'No users found'} />
+      </Panel>
+      <EntityModal
+        open={mutation.open}
+        title={mutation.selected ? 'Edit user' : 'Create user'}
+        fields={fields}
+        initialValues={initial}
+        busy={mutation.busy}
+        error={mutation.error}
+        onClose={mutation.close}
+        onSave={async (payload) => {
+          const clean = { ...payload }
+          if (!isAdmin) { delete clean.personal_email; if (mutation.selected) delete clean.role_id; if (selectedIsSelf) delete clean.status }
+          if (mutation.selected && !isAdmin) { delete clean.password; delete clean.password_confirmation }
+          else if (!clean.password) { delete clean.password; delete clean.password_confirmation }
+          await mutation.save(clean)
+        }}
+      />
+      <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
+    </div>
+  )
 }
 
 function roleIsSystem(role: Role | null): boolean {
@@ -437,6 +621,7 @@ function roleIsSystem(role: Role | null): boolean {
 }
 
 export function RoleForm({ role, groups, busy, error, readOnly, onCancel, onSave }: { role: Role | null; groups: PermissionGroup[]; busy: boolean; error: string; readOnly: boolean; onCancel: () => void; onSave: (payload: FormPayload) => Promise<void> }) {
+  const formId = useId()
   const system = roleIsSystem(role)
   const allPermissions = groups.flatMap((group) => group.permissions.map((permission) => permission.key))
   const [name, setName] = useState(role?.name ?? '')
@@ -446,14 +631,59 @@ export function RoleForm({ role, groups, busy, error, readOnly, onCancel, onSave
   const toggle = (key: string, checked: boolean) => {
     setPermissions((old) => checked ? withRequiredPermissions([...old, key], groups) : old.filter((item) => item !== key))
   }
-  return <form className="entity-form role-form" onSubmit={submit}>
-    {system && <div className="system-role-callout"><Icon name="role" size={18} /><div><strong>System role · Full access</strong><span>Administrator access is implicit and cannot be changed.</span></div></div>}
-    <label className="form-field wide"><span className="field-label">Role name *</span><input value={name} onChange={(event) => setName(event.target.value)} required disabled={readOnly || system} /></label>
-    <div className="permission-grid">{groups.map((group) => <fieldset key={group.key}><legend>{group.label}</legend>{group.permissions.map((permission) => { const dependencyLocked = locked.has(permission.key); return <label className={dependencyLocked ? 'permission-locked' : ''} key={permission.key} title={permission.description}><input type="checkbox" checked={system || permissions.includes(permission.key)} disabled={readOnly || system || dependencyLocked} onChange={(event) => toggle(permission.key, event.target.checked)} /><span><b>{permission.label}</b>{permission.description && <small>{permission.description}</small>}{dependencyLocked && !system && <em>Required</em>}</span></label> })}</fieldset>)}</div>
-    {!groups.length && <div className="empty-inline">Permission metadata is unavailable. Reload the page before editing this role.</div>}
-    {error && <div className="form-error">{error}</div>}
-    <footer className="form-footer"><button type="button" className="btn btn-quiet" onClick={onCancel}>{readOnly ? 'Close' : 'Cancel'}</button>{!readOnly && <button className="btn btn-primary" disabled={busy || !groups.length}>{busy ? 'Saving…' : 'Save role'}</button>}</footer>
-  </form>
+  return (
+    <form className="space-y-5" onSubmit={submit}>
+      {system && (
+        <Alert>
+          <ShieldCheck className="size-4" />
+          <AlertDescription>
+            <strong className="text-foreground">System role · Full access</strong>
+            <span>Administrator access is implicit and cannot be changed.</span>
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor={`${formId}-name`}>Role name *</Label>
+        <Input id={`${formId}-name`} value={name} onChange={(event) => setName(event.target.value)} required disabled={readOnly || system} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {groups.map((group) => (
+          <fieldset key={group.key} className="space-y-3 rounded-lg border p-4">
+            <legend className="px-1 text-sm font-medium">{group.label}</legend>
+            {group.permissions.map((permission) => {
+              const dependencyLocked = locked.has(permission.key)
+              const checkboxId = `${formId}-${permission.key}`
+              return (
+                <div className={`flex items-start gap-2 ${dependencyLocked ? 'opacity-80' : ''}`} key={permission.key} title={permission.description}>
+                  <Checkbox
+                    id={checkboxId}
+                    checked={system || permissions.includes(permission.key)}
+                    disabled={readOnly || system || dependencyLocked}
+                    onCheckedChange={(checked) => toggle(permission.key, checked === true)}
+                  />
+                  <Label htmlFor={checkboxId} className="flex-col items-start gap-0.5 font-normal">
+                    <span>{permission.label}</span>
+                    {permission.description && <span className="text-xs font-normal text-muted-foreground">{permission.description}</span>}
+                    {dependencyLocked && !system && <span className="text-xs font-normal text-muted-foreground">Required</span>}
+                  </Label>
+                </div>
+              )
+            })}
+          </fieldset>
+        ))}
+      </div>
+      {!groups.length && <p className="text-sm text-muted-foreground">Permission metadata is unavailable. Reload the page before editing this role.</p>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <footer className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        {!readOnly && <Button disabled={busy || !groups.length}>{busy ? 'Saving…' : 'Save role'}</Button>}
+      </footer>
+    </form>
+  )
 }
 
 export function RolesPage() {
@@ -509,13 +739,53 @@ export function RolesPage() {
     catch (reason) { setMutationError(reason instanceof Error ? reason.message : 'Unable to delete this role.') }
   }
 
-  const columns: Column<Role>[] = [
-    { key: 'name', header: 'Role', render: (role) => <div className="primary-cell"><strong>{role.name}</strong><span>{roleIsSystem(role) ? 'System role · Full access' : role.description || 'Workspace access role'}</span></div> },
-    { key: 'permissions', header: 'Permissions', render: (role) => <span>{roleIsSystem(role) ? 'Full access' : `${role.permissions?.length ?? 0} enabled`}</span> },
-    { key: 'users', header: 'Users', render: (role) => role.usersCount ?? role.users_count ?? '—' },
-    { key: 'actions', header: '', className: 'action-column', render: (role) => <div className="row-actions" onClick={(event) => event.stopPropagation()}>{isAdmin && !roleIsSystem(role) ? <><button className="icon-button" title="Edit" aria-label="Edit" onClick={() => show(role, true)}><Icon name="edit" size={16} /></button><button className="icon-button danger" title="Delete" aria-label="Delete" onClick={() => void remove(role)}><Icon name="trash" size={16} /></button></> : <button className="text-link" onClick={() => show(role)}>View</button>}</div> },
+  const columns: ColumnDef<Role>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Role" />,
+      cell: ({ row }) => <div className="flex flex-col"><span className="font-medium">{row.original.name}</span><span className="text-xs text-muted-foreground">{roleIsSystem(row.original) ? 'System role · Full access' : row.original.description || 'Workspace access role'}</span></div>,
+    },
+    { id: 'permissions', header: 'Permissions', cell: ({ row }) => <span>{roleIsSystem(row.original) ? 'Full access' : `${row.original.permissions?.length ?? 0} enabled`}</span> },
+    { id: 'users', header: 'Users', cell: ({ row }) => row.original.usersCount ?? row.original.users_count ?? '—' },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => {
+        const role = row.original
+        return (
+          <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+            {isAdmin && !roleIsSystem(role) ? (
+              <>
+                <Button variant="ghost" size="icon-sm" title="Edit" aria-label="Edit" onClick={() => show(role, true)}><Pencil /></Button>
+                <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" title="Delete" aria-label="Delete" onClick={() => void remove(role)}><Trash2 /></Button>
+              </>
+            ) : (
+              <Button variant="link" size="sm" onClick={() => show(role)}>View</Button>
+            )}
+          </div>
+        )
+      },
+    },
   ]
-  return <div className="page-fixed"><PageHeader eyebrow="Settings" title="Roles" description={isAdmin ? 'Give each team member only the access they need.' : 'Review the access assigned to each workspace role.'} actions={isAdmin ? <button className="btn btn-primary" onClick={create}><Icon name="plus" size={16} /> New role</button> : undefined} /><SettingsNav />{(collection.error || catalogError || mutationError) && <ErrorBanner message={collection.error || catalogError || mutationError} />}{success && <div className="success-banner">{success}</div>}<Panel className="list-panel"><DataTable columns={columns} data={collection.data} rowKey={(role) => role.id} loading={collection.loading} emptyTitle="No roles found" onRowClick={(role) => show(role)} /></Panel><Modal open={open} onClose={close} title={!selected ? 'Create role' : editing ? `Edit ${selected.name}` : selected.name} size="lg"><RoleForm key={`${String(selected?.id ?? 'new')}-${editing}-${groups.length}`} role={selected} groups={groups} busy={busy} error={mutationError} readOnly={!editing} onCancel={close} onSave={save} /></Modal></div>
+  return (
+    <div className="space-y-4">
+      <PageHeader eyebrow="Settings" title="Roles" description={isAdmin ? 'Give each team member only the access they need.' : 'Review the access assigned to each workspace role.'} actions={isAdmin ? <Button onClick={create}><Plus /> New role</Button> : undefined} />
+      <SettingsNav />
+      {(collection.error || catalogError || mutationError) && <ErrorBanner message={collection.error || catalogError || mutationError} />}
+      {success && <Alert><AlertDescription>{success}</AlertDescription></Alert>}
+      <Panel>
+        <DataTable columns={columns} data={collection.data} loading={collection.loading} emptyTitle="No roles found" onRowClick={(role) => show(role)} />
+      </Panel>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) close() }}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{!selected ? 'Create role' : editing ? `Edit ${selected.name}` : selected.name}</DialogTitle>
+          </DialogHeader>
+          <RoleForm key={`${String(selected?.id ?? 'new')}-${editing}-${groups.length}`} role={selected} groups={groups} busy={busy} error={mutationError} readOnly={!editing} onCancel={close} onSave={save} />
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
 }
 
 function FieldValuesEditor({ field, canAdd, canDelete, onChanged }: { field: CustomField; canAdd: boolean; canDelete: boolean; onChanged: () => Promise<void> }) {
@@ -535,7 +805,27 @@ function FieldValuesEditor({ field, canAdd, canDelete, onChanged }: { field: Cus
     try { await api.delete(`/api/fields/${field.id}/values/${item.id}`); await onChanged() }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to remove this value.') }
   }
-  return <div className="field-values-editor">{error && <ErrorBanner message={error} />}<div className="value-list">{field.values?.map((item) => <div key={item.id}><span className="value-color" style={{ background: item.color || '#64748b' }} /><strong>{item.label}</strong>{canDelete && <button className="icon-button danger" onClick={() => void remove(item)}><Icon name="trash" size={15} /></button>}</div>)}</div>{canAdd && <div className="quick-add field-value-add"><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="New value label" /><input type="color" value={color} onChange={(event) => setColor(event.target.value)} aria-label="Value color" /><button className="btn btn-primary" disabled={busy || !label.trim()} onClick={() => void add()}><Icon name="plus" size={15} /> Add value</button></div>}</div>
+  return (
+    <div className="space-y-4">
+      {error && <ErrorBanner message={error} />}
+      <ul className="space-y-2">
+        {field.values?.map((item) => (
+          <li className="flex items-center gap-2 rounded-md border px-3 py-2" key={item.id}>
+            <span aria-hidden="true" className="size-3 rounded-full" style={{ background: item.color || '#64748b' }} />
+            <span className="flex-1 font-medium">{item.label}</span>
+            {canDelete && <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Remove ${item.label}`} onClick={() => void remove(item)}><Trash2 /></Button>}
+          </li>
+        ))}
+      </ul>
+      {canAdd && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input className="flex-1" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="New value label" />
+          <Input type="color" className="w-16 p-1" value={color} onChange={(event) => setColor(event.target.value)} aria-label="Value color" />
+          <Button disabled={busy || !label.trim()} onClick={() => void add()}><Plus /> Add value</Button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function FieldsPage() {
@@ -546,13 +836,39 @@ export function FieldsPage() {
   const valuesField = collection.data.find((field) => String(field.id) === String(valuesFieldId)) ?? null
   const fields: FormFieldSpec[] = [{ name: 'name', label: 'Field name', required: true, wide: true }, { name: 'description', label: 'Description', type: 'textarea', wide: true }]
   const initial = mutation.selected ? { name: mutation.selected.name, description: String((mutation.selected as unknown as { description?: string }).description ?? '') } : undefined
-  const columns: Column<CustomField>[] = [
-    { key: 'name', header: 'Field', render: (field) => <div className="primary-cell"><strong>{field.name}</strong><span>{field.key ?? field.entityType ?? field.entity_type ?? 'Custom field'}</span></div> },
-    { key: 'values', header: 'Values', render: (field) => <button className="text-link" onClick={(event) => { event.stopPropagation(); setValuesFieldId(field.id) }}>{field.values?.length ?? 0} values</button> },
-    { key: 'status', header: 'Status', render: (field) => <StatusBadge value={field.active === false ? 'Inactive' : 'Active'} /> },
-    { key: 'actions', header: '', className: 'action-column', render: (field) => <RowActions removeLabel="Delete" onEdit={can('fields.edit') ? () => mutation.edit(field) : undefined} onDelete={can('fields.delete') && !(field as unknown as { is_system?: boolean }).is_system ? () => void mutation.archive(field) : undefined} /> },
+  const columns: ColumnDef<CustomField>[] = [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Field" />,
+      cell: ({ row }) => <div className="flex flex-col"><span className="font-medium">{row.original.name}</span><span className="text-xs text-muted-foreground">{row.original.key ?? row.original.entityType ?? row.original.entity_type ?? 'Custom field'}</span></div>,
+    },
+    { id: 'values', header: 'Values', cell: ({ row }) => <Button variant="link" size="sm" onClick={(event) => { event.stopPropagation(); setValuesFieldId(row.original.id) }}>{row.original.values?.length ?? 0} values</Button> },
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge value={row.original.active === false ? 'Inactive' : 'Active'} /> },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => <RowActions removeLabel="Delete" onEdit={can('fields.edit') ? () => mutation.edit(row.original) : undefined} onDelete={can('fields.delete') && !(row.original as unknown as { is_system?: boolean }).is_system ? () => void mutation.archive(row.original) : undefined} />,
+    },
   ]
-  return <div className="page-fixed"><PageHeader eyebrow="Settings" title="Fields" description="Reusable statuses, priorities, types, and departments." actions={can('fields.create') ? <button className="btn btn-primary" onClick={mutation.create}><Icon name="plus" size={16} /> New field</button> : undefined} /><SettingsNav />{(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}<Panel className="list-panel"><DataTable columns={columns} data={collection.data} rowKey={(field) => field.id} loading={collection.loading} emptyTitle="No fields found" /></Panel><EntityModal open={mutation.open} title={mutation.selected ? 'Edit field' : 'Create field'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={mutation.save} /><Modal open={Boolean(valuesField)} onClose={() => setValuesFieldId(null)} title={`${valuesField?.name ?? 'Field'} values`} size="md">{valuesField ? <FieldValuesEditor field={valuesField} canAdd={can('fields.edit')} canDelete={can('fields.delete')} onChanged={collection.reload} /> : null}</Modal></div>
+  return (
+    <div className="space-y-4">
+      <PageHeader eyebrow="Settings" title="Fields" description="Reusable statuses, priorities, types, and departments." actions={can('fields.create') ? <Button onClick={mutation.create}><Plus /> New field</Button> : undefined} />
+      <SettingsNav />
+      {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
+      <Panel>
+        <DataTable columns={columns} data={collection.data} loading={collection.loading} emptyTitle="No fields found" />
+      </Panel>
+      <EntityModal open={mutation.open} title={mutation.selected ? 'Edit field' : 'Create field'} fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={mutation.save} />
+      <Dialog open={Boolean(valuesField)} onOpenChange={(next) => { if (!next) setValuesFieldId(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{valuesField?.name ?? 'Field'} values</DialogTitle>
+          </DialogHeader>
+          {valuesField ? <FieldValuesEditor field={valuesField} canAdd={can('fields.edit')} canDelete={can('fields.delete')} onChanged={collection.reload} /> : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
 }
 
 export { SettingsNav }
