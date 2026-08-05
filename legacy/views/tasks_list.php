@@ -142,7 +142,7 @@ $inlineProjectId = $fProject !== '' ? (int)$fProject : 0;
                   data-task-id="<?= e($r['id']) ?>"
                   data-current-id="<?= e($r['status_value_id']??'') ?>">
             <?php if ($r['status_label']): ?>
-              <span class="pill tl-current-pill" style="<?= $r['status_color']?'background:'.e($r['status_color']).'22;color:'.e($r['status_color']).';border-color:'.e($r['status_color']).'44':'' ?>"><?= e($r['status_label']) ?></span>
+              <span class="pill tl-current-pill" style="<?= $r['status_color']?pill_tint($r['status_color']):'' ?>"><?= e($r['status_label']) ?></span>
             <?php else: ?><span class="pill tl-current-pill muted">— Set —</span><?php endif; ?>
           </button>
         </td>

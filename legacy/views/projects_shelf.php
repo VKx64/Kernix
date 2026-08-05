@@ -54,7 +54,7 @@ $prefill = json_encode([
     <div class="proj-field-label">Status</div>
     <div class="proj-field-value">
       <?php if ($project['status_label']): ?>
-        <span class="pill" style="<?= $project['status_color']?'background:'.e($project['status_color']).'22;color:'.e($project['status_color']).';border-color:'.e($project['status_color']).'44':'' ?>">
+        <span class="pill" style="<?= $project['status_color']?pill_tint($project['status_color']):'' ?>">
           <?= e($project['status_label']) ?>
         </span>
       <?php else: ?><span class="muted">—</span><?php endif; ?>
@@ -90,7 +90,7 @@ $prefill = json_encode([
     <span style="font-size:12px;color:var(--text-muted)"><?= $doneCount ?>/<?= $taskCount ?> complete</span>
   </div>
   <div style="height:6px;background:var(--glass-border);border-radius:3px;overflow:hidden">
-    <div style="height:100%;width:<?= $pct ?>%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:3px;transition:width .4s"></div>
+    <div style="height:100%;width:<?= $pct ?>%;background:var(--primary);border-radius:3px;transition:width .4s"></div>
   </div>
 </div>
 <?php endif; ?>
@@ -127,7 +127,7 @@ $prefill = json_encode([
         <span class="pill pill-urgency-<?= e($urgKey) ?>" style="font-size:10px"><?= e($t['urgency_label']) ?></span>
       <?php endif; ?>
       <?php if ($t['status_label']): ?>
-        <span class="pill" style="font-size:10px;<?= $t['status_color']?'background:'.e($t['status_color']).'22;color:'.e($t['status_color']).';border-color:'.e($t['status_color']).'44':'' ?>"><?= e($t['status_label']) ?></span>
+        <span class="pill" style="font-size:10px;<?= $t['status_color']?pill_tint($t['status_color']):'' ?>"><?= e($t['status_label']) ?></span>
       <?php endif; ?>
       <?php if ($t['due_date']): ?>
         <span style="font-size:11px;color:var(--text-muted)"><?= fmt_date($t['due_date']) ?></span>

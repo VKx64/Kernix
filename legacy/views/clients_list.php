@@ -100,7 +100,7 @@ $pagination = function() use ($pageNum,$totalPages,$total,$mkUrl) {
           <?php if ($isArchived): ?><span class="pill pill-archived">Archived</span><?php endif; ?></td>
         <td data-col="status">
           <?php if (!empty($r['status_label'])): ?>
-            <span class="pill" style="<?= $r['status_color']?'background:'.e($r['status_color']).'22;color:'.e($r['status_color']).';border-color:'.e($r['status_color']).'44':'' ?>"><?= e($r['status_label']) ?></span>
+            <span class="pill" style="<?= $r['status_color']?pill_tint($r['status_color']):'' ?>"><?= e($r['status_label']) ?></span>
           <?php else: ?><span class="muted">—</span><?php endif; ?>
         </td>
         <td data-col="timezone">

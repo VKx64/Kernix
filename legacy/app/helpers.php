@@ -9,6 +9,23 @@ function e($value): string
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+// ----- Status pill tinting -----
+/**
+ * Inline style for a pill carrying a workspace-configured status color.
+ *
+ * The color comes from the database and is not necessarily a six-digit hex, so
+ * the translucent background and border are mixed rather than built by
+ * appending an alpha suffix to the string.
+ */
+function pill_tint(string $color): string
+{
+    $safe = e($color);
+
+    return "background:color-mix(in oklab, {$safe} 14%, transparent);"
+        ."color:{$safe};"
+        ."border-color:color-mix(in oklab, {$safe} 30%, transparent)";
+}
+
 // ----- HTTPS detection that works behind cPanel / reverse proxies -----
 function is_https(): bool
 {

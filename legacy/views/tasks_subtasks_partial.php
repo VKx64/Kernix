@@ -27,7 +27,7 @@
           </span>
         <?php endif; ?>
         <?php if ($s['status_label']): ?>
-          <span class="subtask-meta-item pill" style="font-size:10px;<?= $s['status_color']?'background:'.e($s['status_color']).'22;color:'.e($s['status_color']).';border-color:'.e($s['status_color']).'44':'' ?>">
+          <span class="subtask-meta-item pill" style="font-size:10px;<?= $s['status_color']?pill_tint($s['status_color']):'' ?>">
             <?= e($s['status_label']) ?>
           </span>
         <?php endif; ?>

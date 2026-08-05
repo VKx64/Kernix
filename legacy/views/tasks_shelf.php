@@ -80,7 +80,7 @@ $assigneeOptions = array_map(fn($u) => [
                         data-inline-select="status_value_id"
                         data-current-id="<?= e($task['status_value_id']??'') ?>">
                   <span class="ts17-pill-current pill"
-                        style="<?= $task['status_color']?'background:'.e($task['status_color']).'22;color:'.e($task['status_color']).';border-color:'.e($task['status_color']).'44':'' ?>">
+                        style="<?= $task['status_color']?pill_tint($task['status_color']):'' ?>">
                     <?= e($task['status_label'] ?? '— Set —') ?>
                   </span>
                   <svg class="icon icon-sm" style="opacity:.4"><use href="#i-chevron-down"/></svg>
@@ -257,7 +257,7 @@ $assigneeOptions = array_map(fn($u) => [
           <div class="ts17-time-bar">
             <div class="ts17-time-bar-fill"
                  id="ts17-bar-fill"
-                 style="width:<?= min(100,$initPct) ?>%;background:<?= $initOver?'var(--danger)':'linear-gradient(90deg,var(--primary),var(--accent))' ?>"></div>
+                 style="width:<?= min(100,$initPct) ?>%;background:<?= $initOver?'var(--danger)':'var(--primary)' ?>"></div>
           </div>
         </div>
       </div>
@@ -856,7 +856,7 @@ $assigneeOptions = array_map(fn($u) => [
         barEl.style.width = Math.min(100, pct) + '%';
         barEl.style.background = over
           ? 'var(--danger)'
-          : 'linear-gradient(90deg, var(--primary), var(--accent))';
+          : 'var(--primary)';
       }
     } else {
       if (pctCell) pctCell.style.display = 'none';

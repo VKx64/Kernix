@@ -59,7 +59,7 @@ $delTpl = delete_url_template('roles');
             <td>
               <div style="display:flex;align-items:center;gap:10px;max-width:280px">
                 <div style="flex:1;height:5px;background:var(--glass-border);border-radius:3px;overflow:hidden">
-                  <div style="height:100%;width:<?= $pct ?>%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:3px;transition:width .4s"></div>
+                  <div style="height:100%;width:<?= $pct ?>%;background:var(--primary);border-radius:3px;transition:width .4s"></div>
                 </div>
                 <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;min-width:50px;text-align:right"><?= $pCount ?>/<?= $total ?></span>
               </div>
