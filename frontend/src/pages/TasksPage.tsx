@@ -591,6 +591,55 @@ export function TasksPage() {
               </PopoverContent>
             </Popover>
           )}
+          <div className="flex items-center gap-1">
+            <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
+            <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
+            <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
+          </div>
+          <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
+            <SelectTrigger size="sm" aria-label="Project filter" className="w-40">
+              <SelectValue placeholder="All projects" />
+            </SelectTrigger>
+            <SelectContent aria-label="Project filter">
+              <SelectItem value="__unset__">All projects</SelectItem>
+              {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
+            <SelectTrigger size="sm" aria-label="Sort tasks" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent aria-label="Sort tasks">
+              <SelectItem value="due_date">Due date</SelectItem>
+              <SelectItem value="-created_at">Newest</SelectItem>
+              <SelectItem value="urgency">Urgency</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+            </SelectContent>
+          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" size="sm"><SquareCheck /> Table columns</Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-56">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Table columns</p>
+              <div className="space-y-2">
+                {TASK_COLUMN_OPTIONS.map((column) => (
+                  <label key={column.key} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      aria-label={column.label}
+                      checked={columnPreferences.visible[column.key]}
+                      disabled={column.key === 'title'}
+                      onCheckedChange={(checked) => setColumnPreferences((current) => ({
+                        ...current,
+                        visible: { ...current.visible, [column.key]: checked === true },
+                      }))}
+                    />
+                    {column.label}
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           {can('tasks.create_with_ai') && <Button type="button" variant="outline" size="sm" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
           {can('tasks.create') && <Button type="button" size="sm" onClick={openTaskCreator}><Plus /> New task</Button>}
         </>
@@ -601,59 +650,6 @@ export function TasksPage() {
       {clockBlocked && !createOpen && <ClockGate compact />}
       <Card>
         <CardContent className="space-y-4">
-          {/* No search box here: the header input drives the same `search`
-              param, so the page only owns the filters and sorting. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
-              <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
-              <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
-            </div>
-            <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
-              <SelectTrigger aria-label="Project filter" className="w-48">
-                <SelectValue placeholder="All projects" />
-              </SelectTrigger>
-              <SelectContent aria-label="Project filter">
-                <SelectItem value="__unset__">All projects</SelectItem>
-                {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
-              <SelectTrigger aria-label="Sort tasks" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent aria-label="Sort tasks">
-                <SelectItem value="due_date">Due date</SelectItem>
-                <SelectItem value="-created_at">Newest</SelectItem>
-                <SelectItem value="urgency">Urgency</SelectItem>
-                <SelectItem value="title">Title</SelectItem>
-              </SelectContent>
-            </Select>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="sm"><SquareCheck /> Table columns</Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-56">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Table columns</p>
-                <div className="space-y-2">
-                  {TASK_COLUMN_OPTIONS.map((column) => (
-                    <label key={column.key} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        aria-label={column.label}
-                        checked={columnPreferences.visible[column.key]}
-                        disabled={column.key === 'title'}
-                        onCheckedChange={(checked) => setColumnPreferences((current) => ({
-                          ...current,
-                          visible: { ...current.visible, [column.key]: checked === true },
-                        }))}
-                      />
-                      {column.label}
-                    </label>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
           <TaskQueueTable
             tasks={data}
             columns={columns}

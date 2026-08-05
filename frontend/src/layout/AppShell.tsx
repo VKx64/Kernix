@@ -4,6 +4,7 @@ import {
   Briefcase,
   Building2,
   Contact,
+  ChevronsUpDown,
   Inbox,
   LayoutDashboard,
   LogOut,
@@ -25,7 +26,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -205,8 +205,8 @@ export function AppShell() {
           </SidebarGroup>
         </SidebarContent>
 
-        {can('time.track') && (
-          <SidebarFooter>
+        <SidebarFooter>
+          {can('time.track') && (
             <div className="flex items-center gap-2 rounded-md border p-2 group-data-[collapsible=icon]:hidden">
               <span
                 aria-hidden="true"
@@ -234,8 +234,60 @@ export function AppShell() {
                 </Button>
               )}
             </div>
-          </SidebarFooter>
-        )}
+          )}
+
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton size="lg" aria-label="Account menu" className="data-[state=open]:bg-sidebar-accent">
+                    <Avatar user={user} />
+                    <span className="grid flex-1 text-left leading-tight">
+                      <span className="truncate font-medium">{user?.name || user?.username}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {user?.email || `@${user?.username ?? ''}`}
+                      </span>
+                    </span>
+                    <ChevronsUpDown className="ml-auto" />
+                  </SidebarMenuButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start" className="w-56" sideOffset={4}>
+                  <DropdownMenuItem asChild>
+                    <NavLink to="/profile">
+                      <UserRound />
+                      Profile
+                    </NavLink>
+                  </DropdownMenuItem>
+                  {settingsTarget && (
+                    <DropdownMenuItem asChild>
+                      <NavLink to={settingsTarget}>
+                        <Settings />
+                        Settings
+                      </NavLink>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  {/* Theme lives in this menu rather than the header, which
+                      keeps the header free for whatever the page puts there. */}
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      toggleTheme()
+                    }}
+                  >
+                    {theme === 'dark' ? <Sun /> : <Moon />}
+                    {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void logout()}>
+                    <LogOut />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
 
@@ -246,25 +298,30 @@ export function AppShell() {
 
           {can('tasks.view') && (
             <form
-              className="relative hidden max-w-sm flex-1 sm:block"
+              className="hidden items-center gap-2 sm:flex"
               onSubmit={(event) => {
                 event.preventDefault()
                 if (!onTaskList && query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
               }}
             >
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                value={searchValue}
-                onChange={(event) => updateSearch(event.target.value)}
-                placeholder={onTaskList ? 'Search task title or project…' : 'Search tasks and projects…'}
-                aria-label={onTaskList ? 'Search task title or project…' : 'Search tasks and projects'}
-              />
+              {/* Names what the input searches, which is only ever tasks. */}
+              <span className="text-sm font-medium">Tasks</span>
+              <div className="relative w-56 lg:w-72">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  value={searchValue}
+                  onChange={(event) => updateSearch(event.target.value)}
+                  placeholder={onTaskList ? 'Search task title or project…' : 'Search tasks and projects…'}
+                  aria-label={onTaskList ? 'Search task title or project…' : 'Search tasks and projects'}
+                />
+              </div>
             </form>
           )}
 
-          <div className="ml-auto flex items-center gap-2">
-            <div ref={setActionSlot} className="flex flex-wrap items-center gap-2" />
+          <div ref={setActionSlot} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
+
+          <div className="flex items-center gap-2">
             {/* Clocking in lives in the sidebar footer. The header only carries the
                 live timer, which opens the break and clock-out controls the footer
                 has no room for. */}
@@ -315,53 +372,6 @@ export function AppShell() {
               </Popover>
             )}
 
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              onClick={toggleTheme}
-            >
-              {theme === 'dark' ? <Sun /> : <Moon />}
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
-                  <Avatar user={user} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="flex items-center gap-2 font-normal">
-                  <Avatar user={user} className="size-9" />
-                  <span className="min-w-0 leading-tight">
-                    <span className="block truncate font-medium">{user?.name || user?.username}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {user?.email || `@${user?.username ?? ''}`}
-                    </span>
-                  </span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <NavLink to="/profile">
-                    <UserRound />
-                    Profile
-                  </NavLink>
-                </DropdownMenuItem>
-                {settingsTarget && (
-                  <DropdownMenuItem asChild>
-                    <NavLink to={settingsTarget}>
-                      <Settings />
-                      Settings
-                    </NavLink>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => void logout()}>
-                  <LogOut />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </header>
 
