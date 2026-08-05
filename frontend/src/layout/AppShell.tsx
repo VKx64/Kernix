@@ -1,29 +1,77 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
-import { useAuth } from '../auth/AuthProvider'
-import { useWorkspace } from '../auth/WorkspaceProvider'
-import { Icon, type IconName } from '../components/Icon'
-import { Avatar } from '../components/ui'
-import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
-import { api, unwrap } from '../lib/api'
-import { useCan } from '../lib/permissions'
-import type { ApiEnvelope } from '../types/api'
+import {
+  BarChart3,
+  Briefcase,
+  Building2,
+  Contact,
+  Inbox,
+  LayoutDashboard,
+  LogOut,
+  Moon,
+  Pause,
+  Play,
+  Search,
+  Settings,
+  SquareCheck,
+  Sun,
+  UserRound,
+} from 'lucide-react'
+import { useAuth } from '@/auth/AuthProvider'
+import { useWorkspace } from '@/auth/WorkspaceProvider'
+import { Avatar } from '@/components/shared'
+import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from '@/components/ui/sidebar'
+import { Toaster } from '@/components/ui/sonner'
+import { api, unwrap } from '@/lib/api'
+import { useCan } from '@/lib/permissions'
+import { useTheme } from '@/lib/theme'
+import { cn } from '@/lib/utils'
+import type { ApiEnvelope } from '@/types/api'
 
 interface NavigationItem {
   to: string
   label: string
-  icon: IconName
+  icon: ComponentType<{ className?: string }>
   permission?: string
 }
 
 const navigation: NavigationItem[] = [
-  { to: '/', label: 'Dashboard', icon: 'dashboard', permission: 'dashboard.view' },
-  { to: '/messages', label: 'Messages', icon: 'inbox', permission: 'messages.view' },
-  { to: '/tasks', label: 'Tasks', icon: 'task', permission: 'tasks.view' },
-  { to: '/projects', label: 'Projects', icon: 'briefcase', permission: 'projects.view' },
-  { to: '/clients', label: 'Clients', icon: 'building', permission: 'clients.view' },
-  { to: '/contacts', label: 'Contacts', icon: 'contact', permission: 'contacts.view' },
-  { to: '/analytics', label: 'Analytics', icon: 'analytics', permission: 'analytics.view' },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
+  { to: '/messages', label: 'Messages', icon: Inbox, permission: 'messages.view' },
+  { to: '/tasks', label: 'Tasks', icon: SquareCheck, permission: 'tasks.view' },
+  { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view' },
+  { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
+  { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics.view' },
 ]
 
 function formatElapsed(seconds: number) {
@@ -37,13 +85,10 @@ function formatElapsed(seconds: number) {
 export function AppShell() {
   const { user, logout } = useAuth()
   const { time, timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [userOpen, setUserOpen] = useState(false)
-  const [timerOpen, setTimerOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [unread, setUnread] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+  const { theme, toggleTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
@@ -77,11 +122,6 @@ export function AppShell() {
   const elapsed = started ? Math.max(0, Math.floor((now - new Date(started).getTime() - breakMilliseconds) / 1000)) : initialElapsed
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    localStorage.setItem('theme', theme)
-  }, [theme])
-
-  useEffect(() => {
     if (!clockedIn) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
@@ -108,99 +148,213 @@ export function AppShell() {
   }, [can, location.pathname])
 
   return (
-    <div className="app-shell">
-      <button className={`sidebar-scrim ${mobileOpen ? 'open' : ''}`} aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
-        <div className="brand">
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
           <WorkspaceSwitcher onSwitched={async () => { await refreshWorkspace(); navigate(0) }} />
-        </div>
+        </SidebarHeader>
 
-        <nav className="main-nav">
-          <span className="nav-kicker">Workspace</span>
-          {visibleNavigation.map((item) => (
-            <NavLink end={item.to === '/'} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} key={item.to} to={item.to} onClick={() => setMobileOpen(false)}>
-              <Icon name={item.icon} size={19} />
-              <span>{item.label}</span>
-              {item.to === '/messages' && unread > 0 && <b className="nav-count">{unread > 99 ? '99+' : unread}</b>}
-            </NavLink>
-          ))}
-          {!visibleNavigation.length && <p className="nav-empty">No workspace areas are assigned to this role.</p>}
-        </nav>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {visibleNavigation.map((item) => {
+                  const active = item.to === '/'
+                    ? location.pathname === '/'
+                    : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                        <NavLink end={item.to === '/'} to={item.to}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                      {item.to === '/messages' && unread > 0 && (
+                        <SidebarMenuBadge>{unread > 99 ? '99+' : unread}</SidebarMenuBadge>
+                      )}
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+              {!visibleNavigation.length && (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  No workspace areas are assigned to this role.
+                </p>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
 
-        {can('time.track') && <div className="sidebar-footer">
-          <div className={`mini-clock ${clockedIn ? 'active' : ''} ${onBreak ? 'break' : ''}`}>
-            <span className="mini-clock-dot" />
-            <div><small>{onBreak ? 'On break' : clockedIn ? 'Clocked in' : 'Not clocked in'}</small><strong>{clockedIn ? formatElapsed(elapsed) : '--:--:--'}</strong></div>
-            {!clockedIn && <button className="icon-button" aria-label="Clock in" disabled={timeBusy} onClick={() => void timeAction('clock-in')}><Icon name="play" size={16} /></button>}
-          </div>
-        </div>}
-      </aside>
+        {can('time.track') && (
+          <SidebarFooter>
+            <div className="flex items-center gap-2 rounded-md border p-2 group-data-[collapsible=icon]:hidden">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'size-2 shrink-0 rounded-full',
+                  onBreak ? 'bg-warning' : clockedIn ? 'bg-success animate-pulse' : 'bg-muted-foreground/40',
+                )}
+              />
+              <div className="min-w-0 flex-1 leading-tight">
+                <p className="truncate text-xs text-muted-foreground">
+                  {onBreak ? 'On break' : clockedIn ? 'Clocked in' : 'Not clocked in'}
+                </p>
+                <p className="font-mono text-sm tabular-nums">{clockedIn ? formatElapsed(elapsed) : '--:--:--'}</p>
+              </div>
+              {!clockedIn && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label="Clock in"
+                  disabled={timeBusy}
+                  onClick={() => void timeAction('clock-in')}
+                >
+                  <Play />
+                </Button>
+              )}
+            </div>
+          </SidebarFooter>
+        )}
+        <SidebarRail />
+      </Sidebar>
 
-      <div className="app-main">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Icon name="menu" /></button>
-            {can('tasks.view') && <form className="global-search" onSubmit={(event) => { event.preventDefault(); if (query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`) }}>
-              <Icon name="search" size={17} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks and projects…" />
-              <kbd>↵</kbd>
-            </form>}
-          </div>
-          <div className="topbar-actions">
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+
+          {can('tasks.view') && (
+            <form
+              className="relative hidden max-w-sm flex-1 sm:block"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
+              }}
+            >
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search tasks and projects…"
+                aria-label="Search tasks and projects"
+              />
+            </form>
+          )}
+
+          <div className="ml-auto flex items-center gap-2">
             {/* Clocked out: one button, one action. Clocked in: live timer that
                 opens the session controls, so the state is never a guess. */}
             {can('time.track') && (clockedIn ? (
-              <div className="popover-wrap">
-                <button
-                  className={`clock-pill ${onBreak ? 'is-break' : 'is-running'}`}
-                  aria-expanded={timerOpen}
-                  aria-label={onBreak ? 'On break, open time tracking' : 'Clocked in, open time tracking'}
-                  onClick={() => setTimerOpen((open) => !open)}
-                >
-                  <span className="live-dot" />
-                  <span className="clock-pill-copy">
-                    <small>{onBreak ? 'On break' : 'Clocked in'}</small>
-                    <strong>{formatElapsed(elapsed)}</strong>
-                  </span>
-                  <Icon name="chevron-down" size={14} />
-                </button>
-                {timerOpen && (
-                  <div className="popover timer-popover">
-                    <span className="popover-label">{onBreak ? 'Break in progress' : 'Work session'}</span>
-                    <strong>{formatElapsed(elapsed)}</strong>
-                    <p>{onBreak ? 'Your work timer is paused. Resume to keep changing task work.' : 'Task changes and logged note time are recorded against this session.'}</p>
-                    <div className="timer-actions">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={onBreak ? 'On break, open time tracking' : 'Clocked in, open time tracking'}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn('size-2 rounded-full', onBreak ? 'bg-warning' : 'bg-success animate-pulse')}
+                    />
+                    <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 space-y-3">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                      {onBreak ? 'Break in progress' : 'Work session'}
+                    </p>
+                    <p className="font-mono text-2xl tabular-nums">{formatElapsed(elapsed)}</p>
+                    <p className="text-sm text-muted-foreground text-pretty">
                       {onBreak
-                        ? <button className="btn btn-primary" disabled={timeBusy} onClick={() => void timeAction('break-end')}><Icon name="play" size={15} /> Resume work</button>
-                        : <button className="btn btn-quiet" disabled={timeBusy} onClick={() => void timeAction('break-start')}><Icon name="pause" size={15} /> Take a break</button>}
-                      <button className="btn btn-danger-quiet" disabled={timeBusy} onClick={() => void timeAction('clock-out')}>Clock out</button>
-                    </div>
+                        ? 'Your work timer is paused. Resume to keep changing task work.'
+                        : 'Task changes and logged note time are recorded against this session.'}
+                    </p>
                   </div>
-                )}
-              </div>
+                  <div className="flex flex-wrap gap-2">
+                    {onBreak ? (
+                      <Button size="sm" disabled={timeBusy} onClick={() => void timeAction('break-end')}>
+                        <Play />
+                        Resume work
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" disabled={timeBusy} onClick={() => void timeAction('break-start')}>
+                        <Pause />
+                        Take a break
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={timeBusy} onClick={() => void timeAction('clock-out')}>
+                      Clock out
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             ) : (
-              <button className="btn btn-primary clock-in-action" disabled={timeBusy} onClick={() => void timeAction('clock-in')}>
-                <Icon name="play" size={15} /> {timeBusy ? 'Clocking in…' : 'Clock in'}
-              </button>
+              <Button size="sm" disabled={timeBusy} onClick={() => void timeAction('clock-in')}>
+                <Play />
+                {timeBusy ? 'Clocking in…' : 'Clock in'}
+              </Button>
             ))}
-            <button className="icon-button" aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
-            </button>
-            <div className="popover-wrap">
-              <button className="user-trigger" aria-label="Account menu" aria-expanded={userOpen} onClick={() => setUserOpen((open) => !open)}><Avatar user={user} size={34} /><Icon name="chevron-down" size={14} /></button>
-              {userOpen && (
-                <div className="popover user-popover">
-                  <div className="user-summary"><Avatar user={user} size={40} /><div><strong>{user?.name || user?.username}</strong><span>{user?.email || `@${user?.username ?? ''}`}</span></div></div>
-                  <NavLink to="/profile" onClick={() => setUserOpen(false)}><Icon name="profile" size={17} /> Profile</NavLink>
-                  {settingsTarget && <NavLink to={settingsTarget} onClick={() => setUserOpen(false)}><Icon name="gear" size={17} /> Settings</NavLink>}
-                  <button onClick={() => void logout()}><Icon name="logout" size={17} /> Sign out</button>
-                </div>
-              )}
-            </div>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              onClick={toggleTheme}
+            >
+              {theme === 'dark' ? <Sun /> : <Moon />}
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
+                  <Avatar user={user} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="flex items-center gap-2 font-normal">
+                  <Avatar user={user} className="size-9" />
+                  <span className="min-w-0 leading-tight">
+                    <span className="block truncate font-medium">{user?.name || user?.username}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {user?.email || `@${user?.username ?? ''}`}
+                    </span>
+                  </span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <NavLink to="/profile">
+                    <UserRound />
+                    Profile
+                  </NavLink>
+                </DropdownMenuItem>
+                {settingsTarget && (
+                  <DropdownMenuItem asChild>
+                    <NavLink to={settingsTarget}>
+                      <Settings />
+                      Settings
+                    </NavLink>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void logout()}>
+                  <LogOut />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
-        <main className="page-content"><Outlet /></main>
-      </div>
-    </div>
+
+        <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
+          <Outlet />
+        </main>
+      </SidebarInset>
+      <Toaster />
+    </SidebarProvider>
   )
 }

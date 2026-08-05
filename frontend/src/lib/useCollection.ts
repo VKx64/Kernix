@@ -6,10 +6,16 @@ interface CollectionOptions {
   search?: string
   page?: number
   filters?: Record<string, string | number | boolean | null | undefined>
+  /**
+   * Ask the API for the whole list in one request. Tables sort, filter, and
+   * paginate in the browser, so they need every row rather than one page. The
+   * server still caps how much it will return.
+   */
+  all?: boolean
 }
 
 export function useCollection<T>(path: string, options: CollectionOptions = {}) {
-  const { search = '', page = 1, filters = {} } = options
+  const { search = '', page = 1, filters = {}, all = false } = options
   const [data, setData] = useState<T[]>([])
   const [meta, setMeta] = useState<PaginationMeta>({ page: 1, perPage: 20, total: 0, lastPage: 1 })
   const [loading, setLoading] = useState(true)
@@ -21,7 +27,8 @@ export function useCollection<T>(path: string, options: CollectionOptions = {}) 
     setError('')
     try {
       const response = await api.get<Paginated<T> | ApiEnvelope<Paginated<T>> | T[]>(path, {
-        page,
+        page: all ? 1 : page,
+        per_page: all ? 'all' : undefined,
         search: search.trim() || undefined,
         ...(JSON.parse(filterKey) as CollectionOptions['filters']),
       }, signal)
@@ -40,7 +47,7 @@ export function useCollection<T>(path: string, options: CollectionOptions = {}) 
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [path, page, search, filterKey])
+  }, [path, page, search, filterKey, all])
 
   useEffect(() => {
     const controller = new AbortController()

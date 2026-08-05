@@ -30,9 +30,21 @@ abstract class ApiController extends Controller
         ]);
     }
 
+    /**
+     * The web client sorts and filters tables in the browser, so it asks for a
+     * whole list in one request rather than a page at a time. The ceiling is
+     * still enforced here: `per_page=all` resolves to the maximum, it does not
+     * disable the limit.
+     */
+    protected const MAX_PER_PAGE = 1000;
+
     protected function perPage(Request $request): int
     {
-        return max(1, min(100, $request->integer('per_page', 25)));
+        if (in_array(strtolower((string) $request->query('per_page')), ['all', 'max'], true)) {
+            return self::MAX_PER_PAGE;
+        }
+
+        return max(1, min(self::MAX_PER_PAGE, $request->integer('per_page', 25)));
     }
 
     protected function data(mixed $data, int $status = 200): JsonResponse
