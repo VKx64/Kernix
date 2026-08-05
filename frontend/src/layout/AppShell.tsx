@@ -1,7 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import {
-  BarChart3,
   Briefcase,
   Building2,
   Contact,
@@ -55,6 +54,7 @@ import { api, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { PageActionsSlotContext } from '@/layout/page-actions'
 import type { ApiEnvelope } from '@/types/api'
 
 interface NavigationItem {
@@ -71,7 +71,6 @@ const navigation: NavigationItem[] = [
   { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view' },
   { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
   { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics.view' },
 ]
 
 function formatElapsed(seconds: number) {
@@ -91,7 +90,26 @@ export function AppShell() {
   const { theme, toggleTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const can = useCan()
+  // Page actions render into the header through this slot, so a page never
+  // stacks a second bar of chrome under the shell's own.
+  const [actionSlot, setActionSlot] = useState<HTMLDivElement | null>(null)
+
+  // On the task list this input *is* the task search — it drives the same
+  // `search` param the page reads, so there is only ever one search box.
+  const onTaskList = location.pathname === '/tasks'
+  const searchValue = onTaskList ? params.get('search') ?? '' : query
+  const updateSearch = (value: string) => {
+    if (!onTaskList) {
+      setQuery(value)
+      return
+    }
+    const next = new URLSearchParams(params)
+    if (value) next.set('search', value)
+    else next.delete('search')
+    setParams(next, { replace: true })
+  }
   // Settings lives under the profile menu only — it is account/admin plumbing,
   // not one of the workspace areas the sidebar lists.
   const settingsTarget = can('settings.view')
@@ -231,24 +249,26 @@ export function AppShell() {
               className="relative hidden max-w-sm flex-1 sm:block"
               onSubmit={(event) => {
                 event.preventDefault()
-                if (query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
+                if (!onTaskList && query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
               }}
             >
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-8"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search tasks and projects…"
-                aria-label="Search tasks and projects"
+                value={searchValue}
+                onChange={(event) => updateSearch(event.target.value)}
+                placeholder={onTaskList ? 'Search task title or project…' : 'Search tasks and projects…'}
+                aria-label={onTaskList ? 'Search task title or project…' : 'Search tasks and projects'}
               />
             </form>
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Clocked out: one button, one action. Clocked in: live timer that
-                opens the session controls, so the state is never a guess. */}
-            {can('time.track') && (clockedIn ? (
+            <div ref={setActionSlot} className="flex flex-wrap items-center gap-2" />
+            {/* Clocking in lives in the sidebar footer. The header only carries the
+                live timer, which opens the break and clock-out controls the footer
+                has no room for. */}
+            {can('time.track') && clockedIn && (
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -293,12 +313,7 @@ export function AppShell() {
                   </div>
                 </PopoverContent>
               </Popover>
-            ) : (
-              <Button size="sm" disabled={timeBusy} onClick={() => void timeAction('clock-in')}>
-                <Play />
-                {timeBusy ? 'Clocking in…' : 'Clock in'}
-              </Button>
-            ))}
+            )}
 
             <Button
               variant="ghost"
@@ -351,7 +366,9 @@ export function AppShell() {
         </header>
 
         <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-          <Outlet />
+          <PageActionsSlotContext.Provider value={actionSlot}>
+            <Outlet />
+          </PageActionsSlotContext.Provider>
         </main>
       </SidebarInset>
       <Toaster />

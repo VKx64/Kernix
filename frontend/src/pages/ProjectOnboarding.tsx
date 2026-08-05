@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Building2, Calendar as CalendarIcon, Check, Plus, X } from 'lucide-react'
+import { Avatar } from '@/components/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -286,7 +287,13 @@ export function ProjectOnboarding({
             <p className="text-sm text-muted-foreground">{canOpenTasks ? 'Ready for its first tasks.' : 'Added to your project list.'}</p>
             <dl className="grid w-full grid-cols-2 gap-3 rounded-lg border p-4 text-left text-sm">
               <div><dt className="text-xs text-muted-foreground">Client</dt><dd>{created.client?.name ?? selectedClient?.name ?? 'Workspace client'}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Project manager</dt><dd>{created.manager ? displayName(created.manager) : selectedManager ? displayName(selectedManager) : 'Unassigned'}</dd></div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Project manager</dt>
+                <dd className="flex items-center gap-1.5">
+                  {(created.manager ?? selectedManager) && <Avatar user={created.manager ?? selectedManager} className="size-5" />}
+                  {created.manager ? displayName(created.manager) : selectedManager ? displayName(selectedManager) : 'Unassigned'}
+                </dd>
+              </div>
             </dl>
             {error && <Alert role="status"><AlertDescription>{error}</AlertDescription></Alert>}
             <footer className="flex w-full flex-wrap justify-end gap-2">

@@ -8,7 +8,6 @@ import {
   Plus,
   Search,
   Send,
-  UserRound,
 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { Avatar, EmptyState, ErrorBanner, Minutes, StatusBadge } from '@/components/shared'
@@ -828,7 +827,10 @@ export function MessagesPage() {
                           <div className="mt-2 space-y-2">
                             {selectedRequest.decisions.map((decision) => (
                               <div key={decision.id}>
-                                <strong>{decision.source === 'ai' ? 'AI project manager' : decision.source === 'human_override' ? 'Human override' : decision.source === 'system' ? 'System' : displayName(decision.decider)}</strong>
+                                <strong className="inline-flex items-center gap-1.5">
+                                  {!['ai', 'human_override', 'system'].includes(decision.source ?? '') && <Avatar user={decision.decider} className="size-5" />}
+                                  {decision.source === 'ai' ? 'AI project manager' : decision.source === 'human_override' ? 'Human override' : decision.source === 'system' ? 'System' : displayName(decision.decider)}
+                                </strong>
                                 <span className="ml-1 text-muted-foreground">{decision.action}{decision.action === 'approve' ? ` · ${decision.approvedAdditionalMinutes ?? decision.approved_additional_minutes ?? 0} minutes` : ''}</span>
                                 <p className="text-muted-foreground">{decision.reason}</p>
                               </div>
@@ -896,7 +898,7 @@ export function MessagesPage() {
                     aria-label={`${Math.round((loggedMinutes / estimateMinutes) * 100)} percent of the estimate used`}
                   />
                 )}
-                {task.assignee && <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><UserRound className="size-3.5" /> {displayName(task.assignee)}</p>}
+                {task.assignee && <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Avatar user={task.assignee} className="size-5" /> {displayName(task.assignee)}</p>}
               </div>
             </Card>
             {threadFiles.length > 0 && (

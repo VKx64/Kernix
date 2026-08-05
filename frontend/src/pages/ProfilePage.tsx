@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/auth/AuthProvider'
+import { AvatarUpload } from '@/components/AvatarUpload'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
-import { Avatar, ErrorBanner, PageHeader, Panel } from '@/components/shared'
+import { ErrorBanner, PageHeader, Panel } from '@/components/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -163,7 +164,7 @@ export function ProfilePage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <Card className="h-fit">
           <CardContent className="flex flex-col items-center gap-2 text-center">
-            <Avatar user={user} className="size-20" />
+            <AvatarUpload user={user} onChanged={() => void refresh()} />
             <h2 className="text-lg font-semibold tracking-tight">
               {user?.name || `${user?.firstName ?? user?.first_name ?? ''} ${user?.lastName ?? user?.last_name ?? ''}`.trim()}
             </h2>

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BRAND_MARK } from './lib/brand'
 import { useCan } from './lib/permissions'
-import { AnalyticsPage } from './pages/AnalyticsPage'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
 import { DashboardPage } from './pages/DashboardPage'
 import { InviteAcceptPage } from './pages/InviteAcceptPage'
@@ -85,7 +84,7 @@ export default function App() {
         <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />
         <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
         <Route path="contacts" element={<PermissionRoute permission="contacts.view"><ContactsPage /></PermissionRoute>} />
-        <Route path="analytics" element={<PermissionRoute permission="analytics.view"><AnalyticsPage /></PermissionRoute>} />
+        <Route path="analytics" element={<Navigate to="/" replace />} />
         <Route path="settings" element={<PermissionRoute permission="settings.view"><SettingsPage /></PermissionRoute>} />
         <Route path="settings/users" element={<PermissionRoute permission="users.view"><UsersPage /></PermissionRoute>} />
         <Route path="settings/roles" element={<PermissionRoute permission="roles.view"><RolesPage /></PermissionRoute>} />

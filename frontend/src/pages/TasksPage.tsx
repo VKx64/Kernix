@@ -22,7 +22,8 @@ import { useWorkspace } from '../auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '../components/ClockGate'
 import { CompletionProofCard, CompletionProofModal } from '../components/CompletionProof'
 import { TaskAttachments } from '../components/TaskAttachments'
-import { Avatar, EmptyState, ErrorBanner, Minutes, PageHeader, SearchToolbar, StatusBadge } from '@/components/shared'
+import { Avatar, EmptyState, ErrorBanner, Minutes, PageHeader, StatusBadge } from '@/components/shared'
+import { PageActions } from '@/layout/page-actions'
 import { DataTable } from '@/components/data-table'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -558,7 +559,9 @@ export function TasksPage() {
         eyebrow="Work queue"
         title="Tasks"
         description={projectId ? `${meta.total} tasks in ${selectedProject?.name ?? 'the selected project'}.` : `${meta.total} tasks across your visible projects.`}
-        actions={<>
+      />
+      <PageActions>
+        <>
           {projectId && can('projects.edit') && (
             <Popover>
               <PopoverTrigger asChild>
@@ -588,17 +591,19 @@ export function TasksPage() {
               </PopoverContent>
             </Popover>
           )}
-          {can('tasks.create_with_ai') && <Button type="button" variant="outline" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
-          {can('tasks.create') && <Button type="button" onClick={openTaskCreator}><Plus /> New task</Button>}
-        </>}
-      />
+          {can('tasks.create_with_ai') && <Button type="button" variant="outline" size="sm" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
+          {can('tasks.create') && <Button type="button" size="sm" onClick={openTaskCreator}><Plus /> New task</Button>}
+        </>
+      </PageActions>
       {error && <ErrorBanner message={error} onRetry={() => void reload()} />}
       {folderCatalog.error && <ErrorBanner message={folderCatalog.error} onRetry={() => void folderCatalog.reload()} />}
       {folderActionError && !folderOpen && <ErrorBanner message={folderActionError} />}
       {clockBlocked && !createOpen && <ClockGate compact />}
       <Card>
         <CardContent className="space-y-4">
-          <SearchToolbar search={search} onSearch={(value) => setFilter('search', value || undefined)} placeholder="Search task title or project…">
+          {/* No search box here: the header input drives the same `search`
+              param, so the page only owns the filters and sorting. */}
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
               <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
               <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
@@ -648,7 +653,7 @@ export function TasksPage() {
                 </div>
               </PopoverContent>
             </Popover>
-          </SearchToolbar>
+          </div>
           <TaskQueueTable
             tasks={data}
             columns={columns}
@@ -1232,7 +1237,9 @@ export function TaskDetailPage() {
                 {pendingWorkRequestsForReview.map((request) => (
                   <div key={request.id} className="space-y-2 rounded-md border p-3">
                     <div>
-                      <strong className="block text-sm">{displayName(request.requester)}</strong>
+                      <strong className="flex items-center gap-1.5 text-sm">
+                        <Avatar user={request.requester} className="size-5" /> {displayName(request.requester)}
+                      </strong>
                       <p className="text-sm text-muted-foreground">{request.reason}</p>
                     </div>
                     {decliningWorkRequest?.id === request.id ? (
@@ -1308,7 +1315,7 @@ export function TaskDetailPage() {
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Type</dt><dd>{fieldLabel(task.typeValue ?? task.type_value ?? task.type)}</dd></div>
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Assignee</dt><dd className="flex items-center gap-1.5"><Avatar user={task.assignee} className="size-5" /> {displayName(task.assignee)}</dd></div>
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Due</dt><dd>{dueDate(task) ? new Date(dueDate(task)!).toLocaleDateString() : '—'}</dd></div>
-                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Created by</dt><dd>{displayName(task.creator)}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Created by</dt><dd className="flex items-center gap-1.5"><Avatar user={task.creator} className="size-5" /> {displayName(task.creator)}</dd></div>
               </dl>
             </CardContent>
           </Card>
@@ -1498,7 +1505,10 @@ function NotesList({ notes, empty, canEdit, canDelete, onEdit, onDelete }: { not
       {notes.map((note) => (
         <article key={note.id} className="space-y-1.5 rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <strong>{displayName(note.author ?? (typeof note.createdBy === 'object' ? note.createdBy : undefined))}</strong>
+            <strong className="flex items-center gap-1.5">
+              <Avatar user={note.author ?? (typeof note.createdBy === 'object' ? note.createdBy : undefined)} className="size-6" />
+              {displayName(note.author ?? (typeof note.createdBy === 'object' ? note.createdBy : undefined))}
+            </strong>
             <time className="text-xs text-muted-foreground">{note.createdAt ?? note.created_at ? new Date((note.createdAt ?? note.created_at)!).toLocaleString() : '—'}</time>
             {Number(note.timeMinutes ?? note.time_minutes ?? 0) > 0 && <Badge variant="outline" className="gap-1"><Clock className="size-3" /><Minutes value={note.timeMinutes ?? note.time_minutes} /></Badge>}
             {(canEdit(note) || canDelete(note)) && (
@@ -1548,7 +1558,10 @@ export function SubtasksTab({ subtasks, title, busy, canManage, canComplete, can
                 </Button>
                 <div className="min-w-0 flex-1">
                   <strong className="block truncate text-sm">{subtask.title}</strong>
-                  <span className="text-xs text-muted-foreground">{displayName(subtask.assignee)}{(subtask.dueDate ?? subtask.due_date) ? ` · Due ${new Date(subtask.dueDate ?? subtask.due_date ?? '').toLocaleDateString()}` : ''}</span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Avatar user={subtask.assignee} className="size-5" />
+                    {displayName(subtask.assignee)}{(subtask.dueDate ?? subtask.due_date) ? ` · Due ${new Date(subtask.dueDate ?? subtask.due_date ?? '').toLocaleDateString()}` : ''}
+                  </span>
                 </div>
                 <StatusBadge value={subtask.statusValue ?? subtask.status_value ?? subtask.status} />
                 <span className="text-sm text-muted-foreground"><Minutes value={subtask.actualMinutes ?? subtask.actual_minutes} /></span>

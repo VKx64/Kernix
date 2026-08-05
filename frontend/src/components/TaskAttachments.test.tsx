@@ -41,7 +41,8 @@ describe('TaskAttachments', () => {
     renderPanel()
 
     expect(screen.getByText('storyboard.png')).toBeInTheDocument()
-    expect(screen.getByText('2 KB · Casey Worker')).toBeInTheDocument()
+    expect(screen.getByText('2 KB')).toBeInTheDocument()
+    expect(screen.getByText('Casey Worker')).toBeInTheDocument()
     expect(screen.getByLabelText('Download storyboard.png')).toHaveAttribute('href', '/api/tasks/9/attachments/3')
     expect(screen.getByLabelText('Download contract.docx')).toBeInTheDocument()
     expect(screen.queryByLabelText('View contract.docx')).not.toBeInTheDocument()

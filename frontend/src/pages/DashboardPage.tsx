@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowRight, Briefcase, Building2, Clock, Inbox, SquareCheck } from 'lucide-react'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { useAuth } from '@/auth/AuthProvider'
 import { Avatar, ErrorBanner, Minutes, PageHeader, Panel } from '@/components/shared'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import { api, displayName, unwrap } from '@/lib/api'
+import { api, ApiError, displayName, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
-import type { ApiEnvelope, DashboardData, EntityId, TeamTimeSummary } from '@/types/api'
+import type { AnalyticsData, ApiEnvelope, DashboardData, EntityId, TeamTimeSummary, UserSummary } from '@/types/api'
 
 interface DashboardEntry {
   id: EntityId
@@ -38,10 +41,52 @@ interface DashboardResponse extends DashboardData {
   range?: { from: string; to: string }
 }
 
+/** Reporting rows, only fetched for roles that hold analytics.view. */
+interface AnalyticsRow {
+  id?: EntityId
+  task_id?: EntityId
+  name?: string
+  task_title?: string
+  project_name?: string
+  client_name?: string
+  user?: UserSummary
+  minutes?: number
+  time_minutes?: number
+  worked_minutes?: number
+  created_at?: string
+  clock_in_at?: string
+}
+
+interface AnalyticsResponse extends AnalyticsData {
+  entries?: AnalyticsRow[]
+  sessions?: AnalyticsRow[]
+  total_minutes?: number
+  range_minutes?: number
+}
+
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+
+const chartConfig = { minutes: { label: 'Minutes', color: 'var(--chart-1)' } } satisfies ChartConfig
 
 function localDate(date: Date) {
   return new Intl.DateTimeFormat('en-CA').format(date)
+}
+
+/** Horizontal bars, matching the timesheet-style breakdowns reporting used before. */
+function TimeBarChart({ rows, label }: { rows: Array<{ name: string; minutes: number; count?: number }>; label: string }) {
+  if (!rows.length) return <p className="py-8 text-center text-sm text-muted-foreground">No time has been logged in this range.</p>
+  const top = rows.slice(0, 10).map((row) => ({ name: row.name, minutes: Number(row.minutes || 0) }))
+  return (
+    <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full" aria-label={label}>
+      <BarChart data={top} layout="vertical" margin={{ left: 8, right: 12 }}>
+        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+        <XAxis type="number" tickLine={false} axisLine={false} />
+        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={140} tick={{ fontSize: 12 }} />
+        <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value) => `${value} min`} />} />
+        <Bar dataKey="minutes" fill="var(--color-minutes)" radius={4} />
+      </BarChart>
+    </ChartContainer>
+  )
 }
 
 function Donut({ rows, label }: { rows: Array<{ name: string; minutes: number; color?: string }>; label: string }) {
@@ -162,6 +207,50 @@ export function DashboardPage() {
 
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
 
+  const canReport = can('analytics.view')
+  const [reporting, setReporting] = useState<AnalyticsResponse | null>(null)
+  const [reportingLoading, setReportingLoading] = useState(canReport)
+  const [reportingError, setReportingError] = useState('')
+
+  // Reporting is a separate endpoint behind its own permission, so it loads
+  // independently and a failure here never blanks the rest of the overview.
+  const loadReporting = useCallback(async (signal?: AbortSignal) => {
+    if (!canReport) return
+    setReportingLoading(true)
+    setReportingError('')
+    try {
+      try {
+        const response = await api.get<ApiEnvelope<AnalyticsResponse> | AnalyticsResponse>('/api/analytics', { from, to }, signal)
+        setReporting(unwrap(response))
+      } catch (reason) {
+        if (!(reason instanceof ApiError) || reason.status !== 404) throw reason
+        const response = await api.get<ApiEnvelope<AnalyticsResponse> | AnalyticsResponse>('/api/time/summary', { from, to }, signal)
+        setReporting(unwrap(response))
+      }
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setReportingError(reason instanceof Error ? reason.message : 'Unable to load analytics.')
+    } finally {
+      if (!signal?.aborted) setReportingLoading(false)
+    }
+  }, [canReport, from, to])
+
+  useEffect(() => { const controller = new AbortController(); void loadReporting(controller.signal); return () => controller.abort() }, [loadReporting])
+
+  const reportEntries = reporting?.entries ?? reporting?.sessions ?? []
+  const reportTimeline: AnalyticsRow[] = (reporting?.timeline ?? []).map((row) => ({
+    name: `${row.count ?? 0} logged ${row.count === 1 ? 'entry' : 'entries'}`,
+    minutes: row.minutes,
+    created_at: row.date,
+  }))
+  const reportRecords = reportEntries.length ? reportEntries : reportTimeline
+  const reportTotal = reporting?.totals?.minutes ?? reporting?.totals?.total_minutes ?? reporting?.total_minutes ?? reporting?.range_minutes
+    ?? reportRecords.reduce((sum, row) => sum + Number(row.minutes ?? row.time_minutes ?? row.worked_minutes ?? 0), 0)
+  const reportCount = reporting?.totals?.entries ?? reportEntries.length
+  const byProject = reporting?.byProject ?? reporting?.by_project ?? []
+  const byUser = reporting?.byUser ?? reporting?.by_user ?? []
+  const reportAverage = reportCount ? Math.round(reportTotal / reportCount) : 0
+
   const counts = data?.counts ?? {}
   const cards = [
     { label: 'My tasks', value: counts.myTasks ?? counts.my_tasks ?? 0, to: '/tasks?mine=1', icon: 'task', permission: 'tasks.view' },
@@ -243,8 +332,71 @@ export function DashboardPage() {
         </div>
       )}
 
-      {(entries.length > 0 || hasTimeSummary) && (
-        <Panel title="Recent logged time" action={can('analytics.view') ? <Link to="/analytics" className="text-sm text-primary hover:underline">Open analytics →</Link> : undefined}>
+      {canReport && (
+        <>
+          {reportingError && <ErrorBanner message={reportingError} onRetry={() => void loadReporting()} />}
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Panel>
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">Total logged</span>
+              <strong className="block text-2xl">{reportingLoading ? '—' : <Minutes value={reportTotal} />}</strong>
+              <p className="text-sm text-muted-foreground">One sum of time-entry or session records.</p>
+            </Panel>
+            <Panel>
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">Entries</span>
+              <strong className="block text-2xl">{reportingLoading ? '—' : reportCount}</strong>
+              <p className="text-sm text-muted-foreground">Records inside the selected range.</p>
+            </Panel>
+            <Panel>
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">Average entry</span>
+              <strong className="block text-2xl">{reportingLoading ? '—' : <Minutes value={reportAverage} />}</strong>
+              <p className="text-sm text-muted-foreground">Average duration per record.</p>
+            </Panel>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Panel title="Time by project"><TimeBarChart rows={byProject} label="Time by project" /></Panel>
+            <Panel title="Time by person"><TimeBarChart rows={byUser} label="Time by person" /></Panel>
+          </div>
+
+          <Panel title="Time records">
+            {reportingLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-10" />)}
+              </div>
+            ) : reportRecords.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Work</TableHead>
+                    <TableHead>Person</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reportRecords.map((row, index) => (
+                    <TableRow key={String(row.id ?? index)}>
+                      <TableCell>
+                        <div className="max-w-64">
+                          <strong className="block truncate">{row.task_title ?? row.name ?? 'Work session'}</strong>
+                          <span className="block truncate text-xs text-muted-foreground">{[row.project_name, row.client_name].filter(Boolean).join(' · ') || 'General time'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{row.user ? displayName(row.user) : 'All visible users'}</TableCell>
+                      <TableCell>{row.created_at ?? row.clock_in_at ? new Date((row.created_at ?? row.clock_in_at)!).toLocaleDateString() : '—'}</TableCell>
+                      <TableCell className="text-right"><Minutes value={row.minutes ?? row.time_minutes ?? row.worked_minutes} /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : <p className="text-sm text-muted-foreground">No records were returned for this date range.</p>}
+          </Panel>
+        </>
+      )}
+
+      {!canReport && (entries.length > 0 || hasTimeSummary) && (
+        <Panel title="Recent logged time">
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-10" />)}

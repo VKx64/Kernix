@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import {
   Pencil,
@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { DataTable, DataTableColumnHeader, type ColumnDef } from '@/components/data-table'
+import { AvatarUpload } from '@/components/AvatarUpload'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
 import {
   Avatar,
@@ -140,6 +141,7 @@ function EntityModal({
   error,
   onClose,
   onSave,
+  aside,
 }: {
   open: boolean
   title: string
@@ -149,6 +151,8 @@ function EntityModal({
   error: string
   onClose: () => void
   onSave: (values: FormPayload) => Promise<void>
+  /** Rendered above the fields, for controls that save on their own. */
+  aside?: ReactNode
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
@@ -156,6 +160,7 @@ function EntityModal({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
+        {aside}
         <EntityForm fields={fields} initialValues={initialValues} busy={busy} error={error} onCancel={onClose} onSubmit={onSave} />
       </DialogContent>
     </Dialog>
@@ -603,6 +608,14 @@ export function UsersPage() {
         busy={mutation.busy}
         error={mutation.error}
         onClose={mutation.close}
+        aside={mutation.selected && can('users.edit') ? (
+          <AvatarUpload
+            user={mutation.selected as UserSummary}
+            userId={mutation.selected.id}
+            onChanged={() => void collection.reload()}
+            className="pb-2"
+          />
+        ) : undefined}
         onSave={async (payload) => {
           const clean = { ...payload }
           if (!isAdmin) { delete clean.personal_email; if (mutation.selected) delete clean.role_id; if (selectedIsSelf) delete clean.status }

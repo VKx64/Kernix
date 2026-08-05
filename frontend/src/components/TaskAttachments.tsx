@@ -3,7 +3,7 @@ import { Download, Eye, File, FileImage, FileVideo, Music, Trash2, Upload } from
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { EmptyState } from '@/components/shared'
+import { Avatar, EmptyState } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { api, displayName } from '../lib/api'
 import {
@@ -164,8 +164,15 @@ export function TaskAttachments({
                 </button>
                 <div className="min-w-0 flex-1">
                   <strong className="block truncate text-sm" title={name}>{name}</strong>
-                  <small className="block truncate text-xs text-muted-foreground">
-                    {formatBytes(attachmentSize(attachment))}{uploader ? ` · ${displayName(uploader)}` : ''}
+                  <small className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                    <span>{formatBytes(attachmentSize(attachment))}</span>
+                    {uploader && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <Avatar user={uploader} className="size-5" />
+                        <span className="truncate">{displayName(uploader)}</span>
+                      </>
+                    )}
                   </small>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">

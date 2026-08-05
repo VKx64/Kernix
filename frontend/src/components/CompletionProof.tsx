@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Check, Clock, File, FileImage, FileVideo, Flag, Music, Trash2, Upload } from 'lucide-react'
+import { Avatar } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -191,7 +192,8 @@ export function CompletionProofCard({
         <strong className="text-sm">{headline}</strong>
       </header>
       <p className="text-sm">{proof.summary}</p>
-      <p className="text-xs text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Avatar user={state.submitter} className="size-5" />
         {displayName(state.submitter)}
         {state.submittedAt ? ` · ${new Date(state.submittedAt).toLocaleDateString()}` : ''}
         {state.reviewMode ? ` · ${state.reviewMode === 'ai' ? 'AI audit' : 'Reviewed by a person'}` : ''}
