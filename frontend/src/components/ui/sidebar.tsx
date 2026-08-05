@@ -599,17 +599,21 @@ function SidebarMenuBadge({
   )
 }
 
+// Widths cycle through this ladder so a column of skeletons looks like a list
+// of varying labels. The upstream component randomizes instead, which makes the
+// render impure and gives a different layout on every re-render.
+const SKELETON_WIDTHS = ["58%", "82%", "67%", "74%", "51%"]
+
 function SidebarMenuSkeleton({
   className,
   showIcon = false,
+  index = 0,
   ...props
 }: React.ComponentProps<"div"> & {
   showIcon?: boolean
+  index?: number
 }) {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+  const width = SKELETON_WIDTHS[index % SKELETON_WIDTHS.length]
 
   return (
     <div
