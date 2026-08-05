@@ -290,8 +290,11 @@ export function AppShell() {
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      {/* The shell owns the viewport height and the content area does the
+          scrolling, so the header stays put and a page can pin its own footer
+          to the bottom of the scroll container. */}
+      <SidebarInset className="h-svh overflow-hidden">
+        <header className="z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
           {/* Below md the sidebar is a sheet and this is the only way to open
               it, so the trigger stays there and only the desktop one goes. */}
           <SidebarTrigger className="-ml-1 md:hidden" />
@@ -379,7 +382,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
+        <main className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 md:p-6">
           <PageActionsSlotContext.Provider value={actionSlot}>
             <Outlet />
           </PageActionsSlotContext.Provider>

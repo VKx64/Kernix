@@ -219,7 +219,9 @@ export function DataTablePagination<TData>({ table }: { table: TableInstance<TDa
   const last = Math.min(total, (pageIndex + 1) * pageSize)
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+    // Sticks to the bottom of whatever scrolls, so the row count and the page
+    // controls stay reachable without scrolling to the end of a long table.
+    <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t bg-background px-1 py-2">
       <p className="text-sm text-muted-foreground" aria-live="polite">
         {total === 0 ? 'No rows' : `${first}–${last} of ${total}`}
       </p>
