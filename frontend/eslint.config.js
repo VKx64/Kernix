@@ -31,6 +31,9 @@ export default tseslint.config(
       // Data-loading effects intentionally transition local loading/error state.
       'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': 'off',
+      // A leading underscore marks a parameter that exists to type a signature
+      // rather than to be read — test doubles need it to keep call typing.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 )

@@ -1,13 +1,49 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import {
+  ArrowLeft,
+  Calendar,
+  Check,
+  Clock,
+  Folder,
+  Inbox,
+  Pencil,
+  Play,
+  Plus,
+  Send,
+  Sparkles,
+  SquareCheck,
+  Trash2,
+  User,
+} from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useAuth } from '../auth/AuthProvider'
 import { useWorkspace } from '../auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '../components/ClockGate'
-import { Icon } from '../components/Icon'
 import { CompletionProofCard, CompletionProofModal } from '../components/CompletionProof'
 import { TaskAttachments } from '../components/TaskAttachments'
-import { Select } from '../components/fields'
-import { DataTable, EmptyState, EntityForm, ErrorBanner, Minutes, Modal, PageHeader, Pagination, Panel, SearchToolbar, StatusBadge, type Column, type FormFieldSpec } from '../components/ui'
+import { Avatar, EmptyState, ErrorBanner, Minutes, PageHeader, SearchToolbar, StatusBadge } from '@/components/shared'
+import { DataTable } from '@/components/data-table'
+import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Progress } from '@/components/ui/progress'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { api, displayName, fieldLabel, normalizePage, unwrap } from '../lib/api'
 import { uploadTaskAttachments } from '../lib/attachments'
 import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
@@ -154,21 +190,19 @@ type TaskColumnKey = 'title' | 'status' | 'urgency' | 'assignee' | 'due' | 'time
 
 interface TaskColumnPreferences {
   visible: Record<TaskColumnKey, boolean>
-  widths: Record<TaskColumnKey, number>
 }
 
-const TASK_COLUMN_STORAGE_KEY = 'kernix.task-columns.v1'
-const TASK_COLUMN_OPTIONS: Array<{ key: TaskColumnKey; label: string; min: number; max: number }> = [
-  { key: 'title', label: 'Task', min: 220, max: 520 },
-  { key: 'status', label: 'Status', min: 110, max: 240 },
-  { key: 'urgency', label: 'Urgency', min: 100, max: 220 },
-  { key: 'assignee', label: 'Assignee', min: 120, max: 300 },
-  { key: 'due', label: 'Due date', min: 100, max: 220 },
-  { key: 'time', label: 'Logged time', min: 80, max: 180 },
+const TASK_COLUMN_STORAGE_KEY = 'kernix.task-columns.v2'
+const TASK_COLUMN_OPTIONS: Array<{ key: TaskColumnKey; label: string }> = [
+  { key: 'title', label: 'Task' },
+  { key: 'status', label: 'Status' },
+  { key: 'urgency', label: 'Urgency' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'due', label: 'Due date' },
+  { key: 'time', label: 'Logged time' },
 ]
 const DEFAULT_TASK_COLUMNS: TaskColumnPreferences = {
   visible: { title: true, status: true, urgency: true, assignee: true, due: true, time: true },
-  widths: { title: 280, status: 130, urgency: 120, assignee: 150, due: 120, time: 90 },
 }
 
 function taskColumnPreferences(): TaskColumnPreferences {
@@ -176,10 +210,7 @@ function taskColumnPreferences(): TaskColumnPreferences {
     const stored = window.localStorage.getItem(TASK_COLUMN_STORAGE_KEY)
     if (!stored) return structuredClone(DEFAULT_TASK_COLUMNS)
     const parsed = JSON.parse(stored) as Partial<TaskColumnPreferences>
-    return {
-      visible: { ...DEFAULT_TASK_COLUMNS.visible, ...parsed.visible, title: true },
-      widths: { ...DEFAULT_TASK_COLUMNS.widths, ...parsed.widths },
-    }
+    return { visible: { ...DEFAULT_TASK_COLUMNS.visible, ...parsed.visible, title: true } }
   } catch {
     return structuredClone(DEFAULT_TASK_COLUMNS)
   }
@@ -206,7 +237,7 @@ export function TaskQueueTable({
   onMoveTask,
 }: {
   tasks: Task[]
-  columns: Column<Task>[]
+  columns: ColumnDef<Task>[]
   foldersByProject?: TaskFolderCatalog
   folderErrorsByProject?: Record<string, string>
   loading?: boolean
@@ -219,22 +250,21 @@ export function TaskQueueTable({
   const [folderTask, setFolderTask] = useState<Task | null>(null)
   const [folderChoice, setFolderChoice] = useState('')
 
-  const tableColumns = useMemo<Column<Task>[]>(() => canMove && onMoveTask ? [
+  const tableColumns = useMemo<ColumnDef<Task>[]>(() => canMove && onMoveTask ? [
     ...columns,
     {
-      key: 'folder-move',
+      id: 'folder-move',
       header: 'Folder',
-      className: 'task-folder-move-cell',
-      width: 118,
-      minWidth: 104,
-      render: (task) => {
+      cell: ({ row }) => {
+        const task = row.original
         const projectId = taskProjectId(task)
         const currentFolderId = taskFolderId(task)
         const unavailable = foldersLoading || (projectId !== undefined && Boolean(folderErrorsByProject[String(projectId)])) || String(movingTaskId ?? '') === String(task.id)
         return (
-          <button
+          <Button
             type="button"
-            className="btn btn-quiet task-folder-change"
+            variant="outline"
+            size="sm"
             aria-label={`Change folder for ${task.title}`}
             disabled={unavailable}
             onClick={(event) => {
@@ -243,8 +273,8 @@ export function TaskQueueTable({
               setFolderTask(task)
             }}
           >
-            <Icon name="folder" size={14} /> Change
-          </button>
+            <Folder /> Change
+          </Button>
         )
       },
     },
@@ -255,53 +285,51 @@ export function TaskQueueTable({
   if (folderTask?.folder && !folderTaskOptions.some((folder) => String(folder.id) === String(folderTask.folder?.id))) folderTaskOptions.push(folderTask.folder)
   folderTaskOptions.sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name))
   const currentFolderChoice = folderTask ? String(taskFolderId(folderTask) ?? '') : ''
-  const moveDialog = (
-    <Modal
-      open={Boolean(folderTask)}
-      onClose={() => setFolderTask(null)}
-      title="Change folder"
-      description={folderTask ? `Choose where “${folderTask.title}” belongs.` : undefined}
-      size="sm"
-      className="task-folder-dialog"
-    >
-      <form
-        className="entity-form task-folder-dialog-form"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (!folderTask || folderChoice === currentFolderChoice) return
-          onMoveTask?.(folderTask, folderChoice || null)
-          setFolderTask(null)
-        }}
-      >
-        <div className="form-grid">
-          <label className="form-field wide">
-            <span className="field-label">Folder</span>
-            <select aria-label="Folder destination" value={folderChoice} onChange={(event) => setFolderChoice(event.target.value)}>
-              <option value="">Ungrouped</option>
-              {folderTaskOptions.map((folder) => <option value={String(folder.id)} key={folder.id}>{folder.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <footer className="form-footer">
-          <button type="button" className="btn btn-quiet" onClick={() => setFolderTask(null)}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={!folderTask || folderChoice === currentFolderChoice}>Move task</button>
-        </footer>
-      </form>
-    </Modal>
-  )
 
   return (
     <>
       <DataTable
         columns={tableColumns}
         data={tasks}
-        rowKey={(task) => task.id}
         loading={loading}
         emptyTitle="No tasks match this view"
         emptyDescription="Try changing a filter or create the next piece of work."
         onRowClick={onTaskClick}
       />
-      {moveDialog}
+      <Dialog open={Boolean(folderTask)} onOpenChange={(open) => { if (!open) setFolderTask(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change folder</DialogTitle>
+            {folderTask && <DialogDescription>Choose where “{folderTask.title}” belongs.</DialogDescription>}
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!folderTask || folderChoice === currentFolderChoice) return
+              onMoveTask?.(folderTask, folderChoice || null)
+              setFolderTask(null)
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="task-folder-destination">Folder</Label>
+              <Select value={folderChoice || '__unset__'} onValueChange={(next) => setFolderChoice(next === '__unset__' ? '' : next)}>
+                <SelectTrigger id="task-folder-destination" aria-label="Folder destination" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent aria-label="Folder destination">
+                  <SelectItem value="__unset__">Ungrouped</SelectItem>
+                  {folderTaskOptions.map((folder) => <SelectItem value={String(folder.id)} key={folder.id}>{folder.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setFolderTask(null)}>Cancel</Button>
+              <Button type="submit" disabled={!folderTask || folderChoice === currentFolderChoice}>Move task</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -310,7 +338,6 @@ export function TasksPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const search = params.get('search') ?? ''
-  const [page, setPage] = useState(1)
   const mine = params.get('mine') === '1'
   const urgent = params.get('urgent') === '1'
   const archived = params.get('archived') === '1'
@@ -336,7 +363,7 @@ export function TasksPage() {
   const urgencyOptions = lookupValues(lookups.fields, 'task_urgency')
   const { data, meta, loading, error, reload } = useCollection<Task>('/api/tasks', {
     search,
-    page,
+    all: true,
     filters: {
       project_id: projectId || undefined,
       mine: mine ? 1 : undefined,
@@ -374,30 +401,31 @@ export function TasksPage() {
     if (value) next.set(key, value)
     else next.delete(key)
     setParams(next, { replace: true })
-    setPage(1)
   }
 
   const columnRenderers: Record<TaskColumnKey, (task: Task) => React.ReactNode> = {
     title: (task) => {
       const projectName = task.project?.name ?? 'No project'
       const clientName = task.project?.client?.name
-      return <div className="primary-cell"><strong>{task.title}</strong><span>{[projectName, clientName && clientName !== projectName ? clientName : null].filter(Boolean).join(' · ')}</span></div>
+      return (
+        <div>
+          <strong className="block">{task.title}</strong>
+          <span className="text-xs text-muted-foreground">{[projectName, clientName && clientName !== projectName ? clientName : null].filter(Boolean).join(' · ')}</span>
+        </div>
+      )
     },
     status: (task) => <StatusBadge value={taskStatus(task)} />,
     urgency: (task) => <StatusBadge value={taskUrgency(task)} />,
     assignee: (task) => <span>{displayName(task.assignee)}</span>,
-    due: (task) => dueDate(task) ? <time className={new Date(dueDate(task)!) < new Date() ? 'overdue' : ''}>{new Date(dueDate(task)!).toLocaleDateString()}</time> : '—',
+    due: (task) => dueDate(task) ? <time className={new Date(dueDate(task)!) < new Date() ? 'text-destructive' : undefined}>{new Date(dueDate(task)!).toLocaleDateString()}</time> : '—',
     time: (task) => <Minutes value={actual(task)} />,
   }
-  const columns: Column<Task>[] = TASK_COLUMN_OPTIONS
+  const columns: ColumnDef<Task>[] = TASK_COLUMN_OPTIONS
     .filter((column) => columnPreferences.visible[column.key])
     .map((column) => ({
-      key: column.key,
+      id: column.key,
       header: column.label,
-      render: columnRenderers[column.key],
-      width: columnPreferences.widths[column.key],
-      minWidth: column.min,
-      className: column.key === 'time' ? 'numeric-cell' : undefined,
+      cell: ({ row }) => columnRenderers[column.key](row.original),
     }))
 
   const create = async (values: CreateTaskPayload, files: File[] = []) => {
@@ -524,115 +552,116 @@ export function TasksPage() {
   }
 
   return (
-    <div className="page-fixed">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Work queue"
         title="Tasks"
         description={projectId ? `${meta.total} tasks in ${selectedProject?.name ?? 'the selected project'}.` : `${meta.total} tasks across your visible projects.`}
-        actions={<>{projectId && can('projects.edit') && (
-          <details className="task-folder-settings">
-            <summary className="btn btn-quiet"><Icon name="folder" size={16} /> Folders</summary>
-            <div className="task-folder-menu">
-              <header><div><strong>Project folders</strong><span>{selectedProject?.name ?? 'Selected project'}</span></div><button type="button" className="btn btn-primary" aria-label="New folder" disabled={folderBusy} onClick={openNewFolder}><Icon name="plus" size={14} /> New</button></header>
-              <div className="task-folder-menu-list">
-                {selectedProjectFolders.length ? selectedProjectFolders.map((folder) => (
-                  <div key={folder.id}>
-                    <span><Icon name="folder" size={15} /> {folder.name}</span>
-                    <div>
-                      <button type="button" className="icon-button" aria-label={`Rename ${folder.name}`} onClick={() => openRenameFolder(folder)}><Icon name="edit" size={14} /></button>
-                      <button type="button" className="icon-button danger" aria-label={`Delete ${folder.name}`} onClick={() => void deleteFolder(folder)}><Icon name="trash" size={14} /></button>
-                    </div>
+        actions={<>
+          {projectId && can('projects.edit') && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" size="sm"><Folder /> Folders</Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <strong className="text-sm">Project folders</strong>
+                    <p className="text-xs text-muted-foreground">{selectedProject?.name ?? 'Selected project'}</p>
                   </div>
-                )) : <p>No folders yet.</p>}
-              </div>
-            </div>
-          </details>
-        )}{can('tasks.create_with_ai') && <button className="btn btn-quiet" onClick={() => setAiCreateOpen(true)}><Icon name="sparkles" size={16} /> Create with AI</button>}{can('tasks.create') && <button className="btn btn-primary" onClick={openTaskCreator}><Icon name="plus" size={16} /> New task</button>}</>}
+                  <Button type="button" size="sm" aria-label="New folder" disabled={folderBusy} onClick={openNewFolder}>
+                    <Plus /> New
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-1">
+                  {selectedProjectFolders.length ? selectedProjectFolders.map((folder) => (
+                    <div key={folder.id} className="flex items-center justify-between rounded-md px-1.5 py-1 hover:bg-accent">
+                      <span className="flex items-center gap-2 text-sm"><Folder className="size-3.5 text-muted-foreground" /> {folder.name}</span>
+                      <div className="flex gap-1">
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Rename ${folder.name}`} onClick={() => openRenameFolder(folder)}><Pencil /></Button>
+                        <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${folder.name}`} onClick={() => void deleteFolder(folder)}><Trash2 /></Button>
+                      </div>
+                    </div>
+                  )) : <p className="text-sm text-muted-foreground">No folders yet.</p>}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {can('tasks.create_with_ai') && <Button type="button" variant="outline" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
+          {can('tasks.create') && <Button type="button" onClick={openTaskCreator}><Plus /> New task</Button>}
+        </>}
       />
       {error && <ErrorBanner message={error} onRetry={() => void reload()} />}
       {folderCatalog.error && <ErrorBanner message={folderCatalog.error} onRetry={() => void folderCatalog.reload()} />}
       {folderActionError && !folderOpen && <ErrorBanner message={folderActionError} />}
       {clockBlocked && !createOpen && <ClockGate compact />}
-      <Panel className="list-panel">
-        <SearchToolbar search={search} onSearch={(value) => setFilter('search', value || undefined)} placeholder="Search task title or project…">
-          <div className="filter-segment">
-            <label className={`filter-chip ${mine ? 'active' : ''}`}><input type="checkbox" checked={mine} onChange={(event) => setFilter('mine', event.target.checked ? '1' : undefined)} />Mine</label>
-            <label className={`filter-chip ${urgent ? 'active' : ''}`}><input type="checkbox" checked={urgent} onChange={(event) => setFilter('urgent', event.target.checked ? '1' : undefined)} />Urgent</label>
-            <label className={`filter-chip ${archived ? 'active' : ''}`}><input type="checkbox" checked={archived} onChange={(event) => setFilter('archived', event.target.checked ? '1' : undefined)} />Archived</label>
-          </div>
-          <Select
-            className={`filter-select ${projectId ? 'has-value' : ''}`.trim()}
-            icon="briefcase"
-            label="Project filter"
-            value={projectId}
-            options={[{ value: '', label: 'All projects' }, ...lookups.projects.map((project) => ({ value: String(project.id), label: project.name }))]}
-            placeholder="All projects"
-            onChange={(next) => setFilter('project_id', next || undefined)}
-          />
-          <Select
-            className="filter-select"
-            icon="field"
-            label="Sort tasks"
-            value={sort}
-            options={[
-              { value: 'due_date', label: 'Due date' },
-              { value: '-created_at', label: 'Newest' },
-              { value: 'urgency', label: 'Urgency' },
-              { value: 'title', label: 'Title' },
-            ]}
-            onChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}
-          />
-          <details className="task-column-settings">
-            <summary className="btn btn-quiet"><Icon name="field" size={15} /> Columns</summary>
-            <div className="task-column-menu">
-              <header><strong>Table columns</strong><span>Choose what appears and how wide it is.</span></header>
-              {TASK_COLUMN_OPTIONS.map((column) => (
-                <div className="task-column-option" key={column.key}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={columnPreferences.visible[column.key]}
-                      disabled={column.key === 'title'}
-                      onChange={(event) => setColumnPreferences((current) => ({
-                        ...current,
-                        visible: { ...current.visible, [column.key]: event.target.checked },
-                      }))}
-                    />
-                    <span>{column.label}</span>
-                  </label>
-                  <input
-                    type="range"
-                    aria-label={`${column.label} column width`}
-                    min={column.min}
-                    max={column.max}
-                    step={10}
-                    value={columnPreferences.widths[column.key]}
-                    onChange={(event) => setColumnPreferences((current) => ({
-                      ...current,
-                      widths: { ...current.widths, [column.key]: Number(event.target.value) },
-                    }))}
-                  />
-                  <output>{columnPreferences.widths[column.key]}px</output>
-                </div>
-              ))}
-              <button type="button" className="text-link" onClick={() => setColumnPreferences(structuredClone(DEFAULT_TASK_COLUMNS))}>Reset columns</button>
+      <Card>
+        <CardContent className="space-y-4">
+          <SearchToolbar search={search} onSearch={(value) => setFilter('search', value || undefined)} placeholder="Search task title or project…">
+            <div className="flex items-center gap-1">
+              <Button type="button" variant={mine ? 'secondary' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
+              <Button type="button" variant={urgent ? 'secondary' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
+              <Button type="button" variant={archived ? 'secondary' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
             </div>
-          </details>
-        </SearchToolbar>
-        <TaskQueueTable
-          tasks={data}
-          columns={columns}
-          foldersByProject={folderCatalog.foldersByProject}
-          folderErrorsByProject={folderCatalog.errorsByProject}
-          loading={loading}
-          foldersLoading={folderCatalog.loading}
-          canMove={!archived && can('tasks.edit')}
-          movingTaskId={movingTaskId}
-          onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
-          onMoveTask={(task, folderId) => void moveTask(task, folderId)}
-        />
-        <Pagination meta={meta} onPage={setPage} />
-      </Panel>
+            <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
+              <SelectTrigger aria-label="Project filter" className="w-48">
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent aria-label="Project filter">
+                <SelectItem value="__unset__">All projects</SelectItem>
+                {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
+              <SelectTrigger aria-label="Sort tasks" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent aria-label="Sort tasks">
+                <SelectItem value="due_date">Due date</SelectItem>
+                <SelectItem value="-created_at">Newest</SelectItem>
+                <SelectItem value="urgency">Urgency</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+              </SelectContent>
+            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" size="sm"><SquareCheck /> Table columns</Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Table columns</p>
+                <div className="space-y-2">
+                  {TASK_COLUMN_OPTIONS.map((column) => (
+                    <label key={column.key} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        aria-label={column.label}
+                        checked={columnPreferences.visible[column.key]}
+                        disabled={column.key === 'title'}
+                        onCheckedChange={(checked) => setColumnPreferences((current) => ({
+                          ...current,
+                          visible: { ...current.visible, [column.key]: checked === true },
+                        }))}
+                      />
+                      {column.label}
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </SearchToolbar>
+          <TaskQueueTable
+            tasks={data}
+            columns={columns}
+            foldersByProject={folderCatalog.foldersByProject}
+            folderErrorsByProject={folderCatalog.errorsByProject}
+            loading={loading}
+            foldersLoading={folderCatalog.loading}
+            canMove={!archived && can('tasks.edit')}
+            movingTaskId={movingTaskId}
+            onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
+            onMoveTask={(task, folderId) => void moveTask(task, folderId)}
+          />
+        </CardContent>
+      </Card>
       <CreateTaskModal
         open={createOpen}
         busy={formBusy}
@@ -658,9 +687,24 @@ export function TasksPage() {
         onSubmit={create}
       />
       <AiCreateTaskModal open={aiCreateOpen} projects={lookups.projects} initialProjectId={projectId || undefined} onClose={() => setAiCreateOpen(false)} onCreated={reload} />
-      <Modal open={folderOpen} onClose={() => { if (!folderBusy) { setFolderOpen(false); setEditingFolder(null) } }} title={editingFolder ? 'Rename folder' : 'Create a folder'} description="Folders organize tasks inside this project." closeDisabled={folderBusy}>
-        <EntityForm key={`${editingFolder?.id ?? 'new'}-${folderOpen}`} fields={[{ name: 'name', label: 'Folder name', required: true, wide: true, placeholder: 'For example, Pre-production' }]} initialValues={editingFolder ? { name: editingFolder.name } : undefined} busy={folderBusy} error={folderActionError} submitLabel={editingFolder ? 'Save folder' : 'Create folder'} onCancel={() => { setFolderOpen(false); setEditingFolder(null) }} onSubmit={saveFolder} />
-      </Modal>
+      <Dialog open={folderOpen} onOpenChange={(open) => { if (!open && !folderBusy) { setFolderOpen(false); setEditingFolder(null) } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingFolder ? 'Rename folder' : 'Create a folder'}</DialogTitle>
+            <DialogDescription>Folders organize tasks inside this project.</DialogDescription>
+          </DialogHeader>
+          <EntityForm
+            key={`${editingFolder?.id ?? 'new'}-${folderOpen}`}
+            fields={[{ name: 'name', label: 'Folder name', required: true, wide: true, placeholder: 'For example, Pre-production' }]}
+            initialValues={editingFolder ? { name: editingFolder.name } : undefined}
+            busy={folderBusy}
+            error={folderActionError}
+            submitLabel={editingFolder ? 'Save folder' : 'Create folder'}
+            onCancel={() => { setFolderOpen(false); setEditingFolder(null) }}
+            onSubmit={saveFolder}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -845,6 +889,7 @@ export function TaskDetailPage() {
   const detailTabs: DetailTab[] = canEmail
     ? ['notes', 'subtasks', 'files', 'emails', 'activity']
     : ['notes', 'subtasks', 'files', 'activity']
+  const tabLabels: Record<DetailTab, string> = { notes: 'Notes', subtasks: 'Subtasks', files: 'Files', emails: 'Emails', activity: 'Activity' }
   const ownsRecentNote = (note: Note) => {
     if (isAdmin) return true
     const creator = note.author?.id ?? (typeof note.createdBy === 'object' ? note.createdBy.id : note.createdBy) ?? (typeof note.created_by === 'object' ? note.created_by.id : note.created_by)
@@ -882,7 +927,7 @@ export function TaskDetailPage() {
     ...(can('tasks.estimate') ? [{ name: 'estimated_minutes', label: 'Estimated minutes', type: 'number' as const, min: 0 }] : []),
   ] : []
 
-  if (loading) return <div className="full-page-loading"><span className="spinner" /> Loading task…</div>
+  if (loading) return <div className="flex items-center gap-2 py-16 text-sm text-muted-foreground"><Clock className="size-4 animate-spin" /> Loading task…</div>
   if (error || !task) return <ErrorBanner message={error || 'Task not found.'} onRetry={() => void load()} />
 
   const assignmentGranted = isAssignmentGranted(task, user?.id, can, isAdmin)
@@ -1109,33 +1154,39 @@ export function TaskDetailPage() {
   }
 
   return (
-    <div className="task-detail-page">
-      <button className="back-link" onClick={() => navigate('/tasks')}><Icon name="arrow-left" size={17} /> Back to tasks</button>
-      <header className="task-hero">
-        <div className="task-breadcrumb">
+    <div className="space-y-6">
+      <Button type="button" variant="ghost" size="sm" className="-ml-2" onClick={() => navigate('/tasks')}><ArrowLeft /> Back to tasks</Button>
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           {task.project?.client?.name && <span>{task.project.client.name}</span>}
+          {task.project?.client?.name && <span aria-hidden="true">·</span>}
           {task.project && can('projects.view')
-            ? <Link to={`/tasks?project_id=${task.project.id}`}>{task.project.name}</Link>
+            ? <Link className="hover:underline" to={`/tasks?project_id=${task.project.id}`}>{task.project.name}</Link>
             : <span>{task.project?.name ?? 'No project'}</span>}
+          <span aria-hidden="true">·</span>
           <span>{detailFolder?.name ?? 'Ungrouped'}</span>
         </div>
-        <div className="task-hero-top">
-          <h1>{task.title}</h1>
-          <div className="page-actions">
-            {canSubmitProof && <button className="btn btn-primary" disabled={busy || blockedByAssignment} onClick={() => { setProofError(''); setProofOpen(true); setClockBlocked(false) }}><Icon name="check" size={16} /> Complete task</button>}
-            {canEditTaskFields && !isArchived && <button className={`btn ${canSubmitProof ? 'btn-quiet' : 'btn-primary'}`} disabled={blockedByAssignment} onClick={() => { setEditProjectId(detailProjectId ?? ''); setEditOpen(true); setClockBlocked(false) }}><Icon name="edit" size={16} /> Edit task</button>}
-            {can('tasks.archive') && isArchived && <button className="btn btn-primary" disabled={busy || blockedByAssignment} onClick={() => void restoreTask()}><Icon name="play" size={16} /> Restore task</button>}
-            {can('tasks.archive') && !isArchived && <button className="btn btn-quiet" disabled={busy || blockedByAssignment} onClick={() => void archiveTask()}>Archive</button>}
-            {can('tasks.archive') && <button className="btn btn-danger-quiet" disabled={busy || blockedByAssignment} onClick={() => void deleteTask()}><Icon name="trash" size={16} /> Delete</button>}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">{task.title}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            {canSubmitProof && <Button type="button" disabled={busy || blockedByAssignment} onClick={() => { setProofError(''); setProofOpen(true); setClockBlocked(false) }}><Check /> Complete task</Button>}
+            {canEditTaskFields && !isArchived && <Button type="button" variant={canSubmitProof ? 'outline' : 'default'} disabled={blockedByAssignment} onClick={() => { setEditProjectId(detailProjectId ?? ''); setEditOpen(true); setClockBlocked(false) }}><Pencil /> Edit task</Button>}
+            {can('tasks.archive') && isArchived && <Button type="button" disabled={busy || blockedByAssignment} onClick={() => void restoreTask()}><Play /> Restore task</Button>}
+            {can('tasks.archive') && !isArchived && <Button type="button" variant="outline" disabled={busy || blockedByAssignment} onClick={() => void archiveTask()}>Archive</Button>}
+            {can('tasks.archive') && <Button type="button" variant="outline" className="text-destructive hover:text-destructive" disabled={busy || blockedByAssignment} onClick={() => void deleteTask()}><Trash2 /> Delete</Button>}
           </div>
         </div>
-        <div className="task-hero-chips">
+        <div className="flex flex-wrap items-center gap-2">
           <StatusBadge value={taskStatus(task)} />
           <StatusBadge value={taskUrgency(task)} />
-          {isArchived && <span className="task-chip is-warning"><Icon name="inbox" size={13} /> Archived</span>}
-          <span className="task-chip"><Icon name="user" size={13} /> {displayName(task.assignee)}</span>
-          {dueDate(task) && <span className={`task-chip ${new Date(dueDate(task)!) < new Date() && !isArchived ? 'is-danger' : ''}`.trim()}><Icon name="calendar" size={13} /> {new Date(dueDate(task)!).toLocaleDateString()}</span>}
-          {(task.aiTaskGenerationId ?? task.ai_task_generation_id) && <span className="task-chip ai-generated-badge"><Icon name="sparkles" size={13} /> AI batch #{task.aiTaskGenerationId ?? task.ai_task_generation_id}</span>}
+          {isArchived && <Badge variant="outline" className="gap-1"><Inbox className="size-3" /> Archived</Badge>}
+          <Badge variant="outline" className="gap-1"><User className="size-3" /> {displayName(task.assignee)}</Badge>
+          {dueDate(task) && (
+            <Badge variant="outline" className={new Date(dueDate(task)!) < new Date() && !isArchived ? 'gap-1 border-destructive text-destructive' : 'gap-1'}>
+              <Calendar className="size-3" /> {new Date(dueDate(task)!).toLocaleDateString()}
+            </Badge>
+          )}
+          {(task.aiTaskGenerationId ?? task.ai_task_generation_id) && <Badge variant="outline" className="gap-1"><Sparkles className="size-3" /> AI batch #{task.aiTaskGenerationId ?? task.ai_task_generation_id}</Badge>}
         </div>
       </header>
 
@@ -1144,144 +1195,171 @@ export function TaskDetailPage() {
       {workRequestError && <ErrorBanner message={workRequestError} />}
 
       {blockedByAssignment && (
-        <section className="panel assignment-gate">
-          {myPendingWorkRequest ? (
-            <EmptyState
-              icon="user"
-              title={myPendingWorkRequest.status === 'pending' ? 'Your request is waiting on a reviewer' : `Your request was ${myPendingWorkRequest.status}`}
-              description={myPendingWorkRequest.status === 'pending'
-                ? 'You are not assigned to this task yet. A reviewer will approve or decline your request to work on it.'
-                : (myPendingWorkRequest.decisionReason ?? myPendingWorkRequest.decision_reason) || 'You are not assigned to this task.'}
-              action={myPendingWorkRequest.status === 'pending' && (
-                <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => void withdrawWorkRequest(myPendingWorkRequest)}>Withdraw request</button>
-              )}
-            />
-          ) : (
-            <EmptyState
-              icon="user"
-              title="You are not assigned to this task"
-              description="This task is assigned to someone else. Ask to be put on it before working on it."
-              action={can('tasks.request_work') && (
-                <button type="button" className="btn btn-primary" onClick={() => { setWorkRequestError(''); setWorkRequestReason(''); setWorkRequestOpen(true) }}>Request to work on this</button>
-              )}
-            />
-          )}
-        </section>
+        <Card>
+          <CardContent>
+            {myPendingWorkRequest ? (
+              <EmptyState
+                icon={User}
+                title={myPendingWorkRequest.status === 'pending' ? 'Your request is waiting on a reviewer' : `Your request was ${myPendingWorkRequest.status}`}
+                description={myPendingWorkRequest.status === 'pending'
+                  ? 'You are not assigned to this task yet. A reviewer will approve or decline your request to work on it.'
+                  : (myPendingWorkRequest.decisionReason ?? myPendingWorkRequest.decision_reason) || 'You are not assigned to this task.'}
+                action={myPendingWorkRequest.status === 'pending' && (
+                  <Button type="button" variant="outline" disabled={workRequestBusy} onClick={() => void withdrawWorkRequest(myPendingWorkRequest)}>Withdraw request</Button>
+                )}
+              />
+            ) : (
+              <EmptyState
+                icon={User}
+                title="You are not assigned to this task"
+                description="This task is assigned to someone else. Ask to be put on it before working on it."
+                action={can('tasks.request_work') && (
+                  <Button type="button" onClick={() => { setWorkRequestError(''); setWorkRequestReason(''); setWorkRequestOpen(true) }}>Request to work on this</Button>
+                )}
+              />
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      <div className="task-detail-grid">
-        <aside className="task-side">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+        <aside className="space-y-4">
           {canReviewWorkRequests && pendingWorkRequestsForReview.length > 0 && (
-            <section className="task-side-card work-request-review">
-              <h2>Work requests</h2>
-              {pendingWorkRequestsForReview.map((request) => (
-                <div className="work-request-row" key={request.id}>
-                  <div>
-                    <strong>{displayName(request.requester)}</strong>
-                    <p>{request.reason}</p>
-                  </div>
-                  {decliningWorkRequest?.id === request.id ? (
+            <Card>
+              <CardHeader><CardTitle>Work requests</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {pendingWorkRequestsForReview.map((request) => (
+                  <div key={request.id} className="space-y-2 rounded-md border p-3">
                     <div>
-                      <label className="form-field wide">
-                        <span className="field-label">Why decline?</span>
-                        <textarea value={declineWorkReason} disabled={workRequestBusy} onChange={(event) => setDeclineWorkReason(event.target.value)} placeholder="Tell the requester why…" />
-                      </label>
-                      <div className="proof-review-actions">
-                        <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(null); setDeclineWorkReason('') }}>Cancel</button>
-                        <button type="button" className="btn btn-danger-quiet" disabled={workRequestBusy || !declineWorkReason.trim()} onClick={() => void declineWorkRequest()}>Confirm decline</button>
+                      <strong className="block text-sm">{displayName(request.requester)}</strong>
+                      <p className="text-sm text-muted-foreground">{request.reason}</p>
+                    </div>
+                    {decliningWorkRequest?.id === request.id ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="decline-work-reason">Why decline?</Label>
+                        <Textarea id="decline-work-reason" value={declineWorkReason} disabled={workRequestBusy} onChange={(event) => setDeclineWorkReason(event.target.value)} placeholder="Tell the requester why…" />
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="outline" size="sm" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(null); setDeclineWorkReason('') }}>Cancel</Button>
+                          <Button type="button" variant="destructive" size="sm" disabled={workRequestBusy || !declineWorkReason.trim()} onClick={() => void declineWorkRequest()}>Confirm decline</Button>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="proof-review-actions">
-                      <button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(request); setDeclineWorkReason('') }}>Decline</button>
-                      <button type="button" className="btn btn-primary" disabled={workRequestBusy} onClick={() => void approveWorkRequest(request)}>Approve</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </section>
+                    ) : (
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" size="sm" disabled={workRequestBusy} onClick={() => { setDecliningWorkRequest(request); setDeclineWorkReason('') }}>Decline</Button>
+                        <Button type="button" size="sm" disabled={workRequestBusy} onClick={() => void approveWorkRequest(request)}>Approve</Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
           {proof && (
-            <section className="task-side-card">
-              <h2>Completion proof</h2>
-              <CompletionProofCard
-                proof={proof}
-                canReview={canReviewProof && !isArchived}
-                busy={busy}
-                onSettle={(approved, reason) => void settleProof(approved, reason)}
-                onResubmit={canSubmitProof ? () => { setProofError(''); setProofOpen(true) } : undefined}
-              />
-            </section>
+            <Card>
+              <CardHeader><CardTitle>Completion proof</CardTitle></CardHeader>
+              <CardContent>
+                <CompletionProofCard
+                  proof={proof}
+                  canReview={canReviewProof && !isArchived}
+                  busy={busy}
+                  onSettle={(approved, reason) => void settleProof(approved, reason)}
+                  onResubmit={canSubmitProof ? () => { setProofError(''); setProofOpen(true) } : undefined}
+                />
+              </CardContent>
+            </Card>
           )}
-          <section className="task-side-card">
-            <h2>Time</h2>
-            <div className="task-progress-meter">
-              <div className="time-progress"><span style={{ width: `${progress}%` }} /></div>
-              <strong>{estimatedTotal ? `${progress}%` : 'No estimate'}</strong>
-            </div>
-            <dl className="task-facts">
-              <div><dt>Estimated</dt><dd><Minutes value={estimatedTotal} /></dd></div>
-              <div><dt>Logged</dt><dd><Minutes value={actualTotal} /></dd></div>
-            </dl>
-            {(canRequestEstimate || latestEstimateRequest) && (
-              <div className="task-side-extra">
-                {latestEstimateRequest && (
-                  <div className="task-estimate-request-summary">
-                    <div>
-                      <span className="eyebrow">Latest request</span>
-                      <strong><Minutes value={latestEstimateRequest.requestedAdditionalMinutes ?? latestEstimateRequest.requested_additional_minutes ?? 0} /> additional</strong>
-                      {(latestEstimateRequest.reviewMode ?? latestEstimateRequest.review_mode) === 'ai' && <small>AI project manager · {(latestEstimateRequest.aiState ?? latestEstimateRequest.ai_state ?? 'queued').replaceAll('_', ' ')}</small>}
-                    </div>
-                    <StatusBadge value={latestEstimateRequest.status} />
-                    {(latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id) && <Link className="text-link" to={`/messages/${latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id}?scope=all`}>Open conversation →</Link>}
-                  </div>
-                )}
-                {canRequestEstimate && <button className="btn btn-quiet" disabled={busy || blockedByAssignment} onClick={() => { setEstimateRequestOpen(true); setClockBlocked(false) }}><Icon name="clock" size={16} /> Request more time</button>}
+          <Card>
+            <CardHeader><CardTitle>Time</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Progress value={progress} />
+                <strong className="text-sm">{estimatedTotal ? `${progress}%` : 'No estimate'}</strong>
               </div>
-            )}
-          </section>
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <div><dt className="text-muted-foreground">Estimated</dt><dd><Minutes value={estimatedTotal} /></dd></div>
+                <div><dt className="text-muted-foreground">Logged</dt><dd><Minutes value={actualTotal} /></dd></div>
+              </dl>
+              {(canRequestEstimate || latestEstimateRequest) && (
+                <div className="space-y-2 border-t pt-3">
+                  {latestEstimateRequest && (
+                    <div className="space-y-1 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs uppercase tracking-wide text-muted-foreground">Latest request</span>
+                        <StatusBadge value={latestEstimateRequest.status} />
+                      </div>
+                      <strong><Minutes value={latestEstimateRequest.requestedAdditionalMinutes ?? latestEstimateRequest.requested_additional_minutes ?? 0} /> additional</strong>
+                      {(latestEstimateRequest.reviewMode ?? latestEstimateRequest.review_mode) === 'ai' && <small className="block text-muted-foreground">AI project manager · {(latestEstimateRequest.aiState ?? latestEstimateRequest.ai_state ?? 'queued').replaceAll('_', ' ')}</small>}
+                      {(latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id) && <Link className="block text-sm underline" to={`/messages/${latestEstimateRequest.conversationId ?? latestEstimateRequest.conversation_id}?scope=all`}>Open conversation →</Link>}
+                    </div>
+                  )}
+                  {canRequestEstimate && <Button type="button" variant="outline" size="sm" disabled={busy || blockedByAssignment} onClick={() => { setEstimateRequestOpen(true); setClockBlocked(false) }}><Clock /> Request more time</Button>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-          <section className="task-side-card">
-            <h2>Details</h2>
-            <dl className="task-facts">
-              <div><dt>Project</dt><dd>{task.project?.name ?? 'No project'}</dd></div>
-              <div><dt>Folder</dt><dd>{detailFolder?.name ?? 'Ungrouped'}</dd></div>
-              <div><dt>Type</dt><dd>{fieldLabel(task.typeValue ?? task.type_value ?? task.type)}</dd></div>
-              <div><dt>Assignee</dt><dd>{displayName(task.assignee)}</dd></div>
-              <div><dt>Due</dt><dd>{dueDate(task) ? new Date(dueDate(task)!).toLocaleDateString() : '—'}</dd></div>
-              <div><dt>Created by</dt><dd>{displayName(task.creator)}</dd></div>
-            </dl>
-          </section>
+          <Card>
+            <CardHeader><CardTitle>Details</CardTitle></CardHeader>
+            <CardContent>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Project</dt><dd>{task.project?.name ?? 'No project'}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Folder</dt><dd>{detailFolder?.name ?? 'Ungrouped'}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Type</dt><dd>{fieldLabel(task.typeValue ?? task.type_value ?? task.type)}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Assignee</dt><dd className="flex items-center gap-1.5"><Avatar user={task.assignee} className="size-5" /> {displayName(task.assignee)}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Due</dt><dd>{dueDate(task) ? new Date(dueDate(task)!).toLocaleDateString() : '—'}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Created by</dt><dd>{displayName(task.creator)}</dd></div>
+              </dl>
+            </CardContent>
+          </Card>
         </aside>
 
-        <div className="task-main">
+        <div className="min-w-0 space-y-4">
           {task.description && (
-            <section className="task-brief panel">
-              <h2>Brief</h2>
-              <div className="prose">{task.description}</div>
-            </section>
+            <Card>
+              <CardHeader><CardTitle>Brief</CardTitle></CardHeader>
+              <CardContent><p className="text-sm text-pretty">{task.description}</p></CardContent>
+            </Card>
           )}
-          <section className="task-workspace panel">
-            <div className="detail-tabs">
-              {detailTabs.map((value) => <button className={tab === value ? 'active' : ''} onClick={() => setTab(value)} key={value}>{value[0].toUpperCase() + value.slice(1)}{value === 'notes' ? <b>{noteList.length}</b> : value === 'subtasks' ? <b>{subtasks.length}</b> : value === 'files' ? <b>{attachments.length}</b> : null}</button>)}
-            </div>
-            <div className="tab-content">
-              {tab === 'notes' && <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy || blockedByAssignment} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsRecentNote(note)} canDelete={(note) => !isArchived && canComment && ownsRecentNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />}
-              {tab === 'subtasks' && <SubtasksTab subtasks={subtasks} title={subtaskTitle} busy={busy || blockedByAssignment} canManage={!isArchived && canManageSubtasks} canComplete={!isArchived && canChangeStatus} canEditAny={!isArchived && (canManageSubtasks || canChangeStatus || can('tasks.assign') || can('tasks.estimate'))} onTitle={setSubtaskTitle} onAdd={() => void addSubtask()} onComplete={(subtask) => void completeSubtask(subtask)} onEdit={setEditingSubtask} onDelete={(subtask) => void deleteSubtask(subtask)} onMove={(subtask, direction) => void moveSubtask(subtask, direction)} />}
-              {tab === 'files' && (
-                <TaskAttachments
-                  taskId={task.id}
-                  attachments={attachments}
-                  canManage={can('tasks.attachments')}
-                  readOnly={isArchived || blockedByAssignment}
-                  adminOverride={adminOverride && canAdminOverride}
-                  onChanged={() => load()}
-                />
-              )}
-              {tab === 'emails' && canEmail && <EmailsTab emails={emails} to={emailTo} subject={emailSubject} body={emailBody} busy={busy || blockedByAssignment} readOnly={isArchived} onTo={setEmailTo} onSubject={setEmailSubject} onBody={setEmailBody} onSend={() => void sendEmail()} onDelete={(email) => void deleteEmail(email)} />}
-              {tab === 'activity' && <ActivityList rows={activity} />}
-            </div>
-          </section>
+          <Card>
+            <CardContent>
+              <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
+                <TabsList>
+                  {detailTabs.map((value) => (
+                    <TabsTrigger value={value} key={value}>
+                      {tabLabels[value]}
+                      {value === 'notes' && <Badge variant="secondary" className="ml-1">{noteList.length}</Badge>}
+                      {value === 'subtasks' && <Badge variant="secondary" className="ml-1">{subtasks.length}</Badge>}
+                      {value === 'files' && <Badge variant="secondary" className="ml-1">{attachments.length}</Badge>}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <TabsContent value="notes" className="pt-4">
+                  <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy || blockedByAssignment} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsRecentNote(note)} canDelete={(note) => !isArchived && canComment && ownsRecentNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />
+                </TabsContent>
+                <TabsContent value="subtasks" className="pt-4">
+                  <SubtasksTab subtasks={subtasks} title={subtaskTitle} busy={busy || blockedByAssignment} canManage={!isArchived && canManageSubtasks} canComplete={!isArchived && canChangeStatus} canEditAny={!isArchived && (canManageSubtasks || canChangeStatus || can('tasks.assign') || can('tasks.estimate'))} onTitle={setSubtaskTitle} onAdd={() => void addSubtask()} onComplete={(subtask) => void completeSubtask(subtask)} onEdit={setEditingSubtask} onDelete={(subtask) => void deleteSubtask(subtask)} onMove={(subtask, direction) => void moveSubtask(subtask, direction)} />
+                </TabsContent>
+                <TabsContent value="files" className="pt-4">
+                  <TaskAttachments
+                    taskId={task.id}
+                    attachments={attachments}
+                    canManage={can('tasks.attachments')}
+                    readOnly={isArchived || blockedByAssignment}
+                    adminOverride={adminOverride && canAdminOverride}
+                    onChanged={() => load()}
+                  />
+                </TabsContent>
+                {canEmail && (
+                  <TabsContent value="emails" className="pt-4">
+                    <EmailsTab emails={emails} to={emailTo} subject={emailSubject} body={emailBody} busy={busy || blockedByAssignment} readOnly={isArchived} onTo={setEmailTo} onSubject={setEmailSubject} onBody={setEmailBody} onSend={() => void sendEmail()} onDelete={(email) => void deleteEmail(email)} />
+                  </TabsContent>
+                )}
+                <TabsContent value="activity" className="pt-4">
+                  <ActivityList rows={activity} />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
       </div>
       <CompletionProofModal
@@ -1292,62 +1370,257 @@ export function TaskDetailPage() {
         onClose={() => { if (!busy) setProofOpen(false) }}
         onSubmit={submitProof}
       />
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit task" size="lg">
-        {clockBlocked && <ClockGate compact showOverride={false} />}
-        <EntityForm fields={editFields} initialValues={editInitial} busy={busy} error={mutationError} onValuesChange={(values) => setEditProjectId((values.project_id ?? '') as EntityId | '')} onCancel={() => setEditOpen(false)} onSubmit={saveTask} />
-      </Modal>
-      <Modal open={estimateRequestOpen} onClose={() => { if (!busy) setEstimateRequestOpen(false) }} title="Request more time" description="Ask the project manager to increase this task’s estimate." size="md" closeDisabled={busy}>
-        {clockBlocked && <ClockGate compact showOverride={false} />}
-        <form className="entity-form" onSubmit={(event) => { event.preventDefault(); void requestMoreTime() }}>
-          {pendingEstimateRequest && <div className="warning-banner">Submitting this will replace your pending request for <Minutes value={pendingEstimateRequest.requestedAdditionalMinutes ?? pendingEstimateRequest.requested_additional_minutes ?? 0} />.</div>}
-          <div className="form-grid">
-            <label className="form-field"><span className="field-label">Additional minutes needed</span><input type="number" min="1" value={additionalMinutes} onChange={(event) => setAdditionalMinutes(Number(event.target.value))} required /></label>
-            <label className="form-field wide"><span className="field-label">Why do you need more time?</span><textarea value={estimateReason} onChange={(event) => setEstimateReason(event.target.value)} placeholder="Explain what changed or what remains to be done…" required /></label>
-          </div>
-          <footer className="form-footer"><button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setEstimateRequestOpen(false)}>Cancel</button><button className="btn btn-primary" disabled={busy || additionalMinutes < 1 || !estimateReason.trim()}>{busy ? 'Sending…' : pendingEstimateRequest ? 'Replace request' : 'Send request'}</button></footer>
-        </form>
-      </Modal>
-      <Modal open={workRequestOpen} onClose={() => { if (!workRequestBusy) setWorkRequestOpen(false) }} title="Request to work on this task" description="Explain why you should be assigned, then wait for a reviewer to respond." size="md" closeDisabled={workRequestBusy}>
-        <form className="entity-form" onSubmit={(event) => { event.preventDefault(); void submitWorkRequest() }}>
-          <div className="form-grid">
-            <label className="form-field wide">
-              <span className="field-label">Why do you want this task? <b aria-hidden="true">*</b></span>
-              <textarea value={workRequestReason} disabled={workRequestBusy} onChange={(event) => setWorkRequestReason(event.target.value)} placeholder="At least 10 characters…" required />
-              <span className="field-help">Minimum 10 characters.</span>
-            </label>
-          </div>
-          <footer className="form-footer"><button type="button" className="btn btn-quiet" disabled={workRequestBusy} onClick={() => setWorkRequestOpen(false)}>Cancel</button><button className="btn btn-primary" disabled={workRequestBusy || workRequestReason.trim().length < 10}>{workRequestBusy ? 'Sending…' : 'Send request'}</button></footer>
-        </form>
-      </Modal>
-      <Modal open={Boolean(editingNote)} onClose={() => setEditingNote(null)} title="Edit note" size="md">
-        <form className="entity-form" onSubmit={(event) => { event.preventDefault(); void saveNote() }}><div className="form-grid"><label className="form-field wide"><span className="field-label">Note</span><textarea value={noteEditBody} onChange={(event) => setNoteEditBody(event.target.value)} required /></label>{canLogTime && <label className="form-field"><span className="field-label">Time logged</span><input type="number" min="0" value={noteEditMinutes} onChange={(event) => setNoteEditMinutes(Number(event.target.value))} /></label>}</div><footer className="form-footer"><button type="button" className="btn btn-quiet" onClick={() => setEditingNote(null)}>Cancel</button><button className="btn btn-primary" disabled={busy || !noteEditBody.trim()}>{busy ? 'Saving…' : 'Save note'}</button></footer></form>
-      </Modal>
-      <Modal open={Boolean(editingSubtask)} onClose={() => setEditingSubtask(null)} title="Edit subtask" size="md">
-        {editingSubtask && <EntityForm fields={subtaskFields} initialValues={{ title: editingSubtask.title, due_date: editingSubtask.dueDate ?? editingSubtask.due_date ?? '', assignee_user_id: editingSubtask.assignee?.id, status_value_id: editingSubtask.statusValue?.id ?? editingSubtask.status_value?.id, estimated_minutes: editingSubtask.estimatedMinutes ?? editingSubtask.estimated_minutes ?? 0 }} busy={busy} error={mutationError} onCancel={() => setEditingSubtask(null)} onSubmit={saveSubtask} />}
-      </Modal>
+      <Dialog open={editOpen} onOpenChange={(open) => { if (!open) setEditOpen(false) }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader><DialogTitle>Edit task</DialogTitle></DialogHeader>
+          {clockBlocked && <ClockGate compact showOverride={false} />}
+          <EntityForm fields={editFields} initialValues={editInitial} busy={busy} error={mutationError} onValuesChange={(values) => setEditProjectId((values.project_id ?? '') as EntityId | '')} onCancel={() => setEditOpen(false)} onSubmit={saveTask} />
+        </DialogContent>
+      </Dialog>
+      <Dialog open={estimateRequestOpen} onOpenChange={(open) => { if (!open && !busy) setEstimateRequestOpen(false) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request more time</DialogTitle>
+            <DialogDescription>Ask the project manager to increase this task’s estimate.</DialogDescription>
+          </DialogHeader>
+          {clockBlocked && <ClockGate compact showOverride={false} />}
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void requestMoreTime() }}>
+            {pendingEstimateRequest && (
+              <Alert>
+                <AlertDescription>Submitting this will replace your pending request for <Minutes value={pendingEstimateRequest.requestedAdditionalMinutes ?? pendingEstimateRequest.requested_additional_minutes ?? 0} />.</AlertDescription>
+              </Alert>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="estimate-request-minutes">Additional minutes needed</Label>
+              <Input id="estimate-request-minutes" type="number" min="1" value={additionalMinutes} onChange={(event) => setAdditionalMinutes(Number(event.target.value))} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="estimate-request-reason">Why do you need more time?</Label>
+              <Textarea id="estimate-request-reason" value={estimateReason} onChange={(event) => setEstimateReason(event.target.value)} placeholder="Explain what changed or what remains to be done…" required />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setEstimateRequestOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={busy || additionalMinutes < 1 || !estimateReason.trim()}>{busy ? 'Sending…' : pendingEstimateRequest ? 'Replace request' : 'Send request'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={workRequestOpen} onOpenChange={(open) => { if (!open && !workRequestBusy) setWorkRequestOpen(false) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request to work on this task</DialogTitle>
+            <DialogDescription>Explain why you should be assigned, then wait for a reviewer to respond.</DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submitWorkRequest() }}>
+            <div className="space-y-1.5">
+              <Label htmlFor="work-request-reason">Why do you want this task? <span aria-hidden="true" className="text-destructive">*</span></Label>
+              <Textarea id="work-request-reason" value={workRequestReason} disabled={workRequestBusy} onChange={(event) => setWorkRequestReason(event.target.value)} placeholder="At least 10 characters…" required />
+              <p className="text-xs text-muted-foreground">Minimum 10 characters.</p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={workRequestBusy} onClick={() => setWorkRequestOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={workRequestBusy || workRequestReason.trim().length < 10}>{workRequestBusy ? 'Sending…' : 'Send request'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(editingNote)} onOpenChange={(open) => { if (!open) setEditingNote(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit note</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void saveNote() }}>
+            <div className="space-y-1.5">
+              <Label htmlFor="note-edit-body">Note</Label>
+              <Textarea id="note-edit-body" value={noteEditBody} onChange={(event) => setNoteEditBody(event.target.value)} required />
+            </div>
+            {canLogTime && (
+              <div className="space-y-1.5">
+                <Label htmlFor="note-edit-minutes">Time logged</Label>
+                <Input id="note-edit-minutes" type="number" min="0" value={noteEditMinutes} onChange={(event) => setNoteEditMinutes(Number(event.target.value))} />
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingNote(null)}>Cancel</Button>
+              <Button type="submit" disabled={busy || !noteEditBody.trim()}>{busy ? 'Saving…' : 'Save note'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(editingSubtask)} onOpenChange={(open) => { if (!open) setEditingSubtask(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Edit subtask</DialogTitle></DialogHeader>
+          {editingSubtask && <EntityForm fields={subtaskFields} initialValues={{ title: editingSubtask.title, due_date: editingSubtask.dueDate ?? editingSubtask.due_date ?? '', assignee_user_id: editingSubtask.assignee?.id, status_value_id: editingSubtask.statusValue?.id ?? editingSubtask.status_value?.id, estimated_minutes: editingSubtask.estimatedMinutes ?? editingSubtask.estimated_minutes ?? 0 }} busy={busy} error={mutationError} onCancel={() => setEditingSubtask(null)} onSubmit={saveSubtask} />}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 export function NotesTab({ notes, body, minutes, notifyUserId, users, busy, canComment, canLogTime, canEdit, canDelete, onBody, onMinutes, onNotifyUser, onAdd, onEdit, onDelete }: { notes: Note[]; body: string; minutes: number; notifyUserId: string; users: UserSummary[]; busy: boolean; canComment: boolean; canLogTime: boolean; canEdit: (note: Note) => boolean; canDelete: (note: Note) => boolean; onBody: (value: string) => void; onMinutes: (value: number) => void; onNotifyUser: (value: string) => void; onAdd: () => void; onEdit: (note: Note) => void; onDelete: (note: Note) => void }) {
-  return <div>{canComment && <div className="note-composer"><textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder={canLogTime ? 'Share an update or log completed work…' : 'Share an update…'} /><div className="note-controls">{canLogTime && <label>Time logged <input type="number" min="0" step="1" value={minutes} onChange={(event) => onMinutes(Number(event.target.value))} /> min</label>}<label>Notify <select value={notifyUserId} onChange={(event) => onNotifyUser(event.target.value)}><option value="">No one</option>{users.map((person) => <option value={person.id} key={person.id}>{displayName(person)}</option>)}</select></label><button className="btn btn-primary" disabled={busy || !body.trim()} onClick={onAdd}><Icon name="send" size={15} /> Add note</button></div></div>}<NotesList notes={notes} empty="No notes yet." canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} /></div>
+  return (
+    <div className="space-y-4">
+      {canComment && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <Textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder={canLogTime ? 'Share an update or log completed work…' : 'Share an update…'} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              {canLogTime && (
+                <label className="flex items-center gap-1.5">
+                  Time logged
+                  <Input type="number" min="0" step="1" className="h-8 w-20" value={minutes} onChange={(event) => onMinutes(Number(event.target.value))} />
+                  min
+                </label>
+              )}
+              <label className="flex items-center gap-1.5">
+                Notify
+                <Select value={notifyUserId || '__unset__'} onValueChange={(next) => onNotifyUser(next === '__unset__' ? '' : next)}>
+                  <SelectTrigger aria-label="Notify" size="sm" className="w-40"><SelectValue /></SelectTrigger>
+                  <SelectContent aria-label="Notify">
+                    <SelectItem value="__unset__">No one</SelectItem>
+                    {users.map((person) => <SelectItem value={String(person.id)} key={person.id}>{displayName(person)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+            <Button type="button" size="sm" disabled={busy || !body.trim()} onClick={onAdd}><Send /> Add note</Button>
+          </div>
+        </div>
+      )}
+      <NotesList notes={notes} empty="No notes yet." canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  )
 }
 
 function NotesList({ notes, empty, canEdit, canDelete, onEdit, onDelete }: { notes: Note[]; empty: string; canEdit: (note: Note) => boolean; canDelete: (note: Note) => boolean; onEdit: (note: Note) => void; onDelete: (note: Note) => void }) {
   if (!notes.length) return <EmptyState title={empty} />
-  return <div className="notes-list">{notes.map((note) => <article key={note.id}><div className="note-meta"><strong>{displayName(note.author ?? (typeof note.createdBy === 'object' ? note.createdBy : undefined))}</strong><time>{note.createdAt ?? note.created_at ? new Date((note.createdAt ?? note.created_at)!).toLocaleString() : '—'}</time>{Number(note.timeMinutes ?? note.time_minutes ?? 0) > 0 && <span><Icon name="clock" size={13} /><Minutes value={note.timeMinutes ?? note.time_minutes} /></span>}{(canEdit(note) || canDelete(note)) && <span className="note-actions">{canEdit(note) && <button className="text-link" onClick={() => onEdit(note)}>Edit</button>}{canDelete(note) && <button className="text-link danger-text" onClick={() => onDelete(note)}>Delete</button>}</span>}</div><div className="note-body">{note.body}</div>{!!note.attachments?.length && <div className="attachment-row">{note.attachments.map((attachment) => <a href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.originalName ?? attachment.original_name ?? attachment.name}</a>)}</div>}</article>)}</div>
+  return (
+    <div className="space-y-3">
+      {notes.map((note) => (
+        <article key={note.id} className="space-y-1.5 rounded-lg border p-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <strong>{displayName(note.author ?? (typeof note.createdBy === 'object' ? note.createdBy : undefined))}</strong>
+            <time className="text-xs text-muted-foreground">{note.createdAt ?? note.created_at ? new Date((note.createdAt ?? note.created_at)!).toLocaleString() : '—'}</time>
+            {Number(note.timeMinutes ?? note.time_minutes ?? 0) > 0 && <Badge variant="outline" className="gap-1"><Clock className="size-3" /><Minutes value={note.timeMinutes ?? note.time_minutes} /></Badge>}
+            {(canEdit(note) || canDelete(note)) && (
+              <span className="ml-auto flex gap-2">
+                {canEdit(note) && <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onEdit(note)}>Edit</Button>}
+                {canDelete(note) && <Button type="button" variant="link" size="sm" className="h-auto p-0 text-destructive" onClick={() => onDelete(note)}>Delete</Button>}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-pretty">{note.body}</p>
+          {!!note.attachments?.length && (
+            <div className="flex flex-wrap gap-2">
+              {note.attachments.map((attachment) => <a className="text-xs underline" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.originalName ?? attachment.original_name ?? attachment.name}</a>)}
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  )
 }
 
 export function SubtasksTab({ subtasks, title, busy, canManage, canComplete, canEditAny, onTitle, onAdd, onComplete, onEdit, onDelete, onMove }: { subtasks: Subtask[]; title: string; busy: boolean; canManage: boolean; canComplete: boolean; canEditAny: boolean; onTitle: (value: string) => void; onAdd: () => void; onComplete: (subtask: Subtask) => void; onEdit: (subtask: Subtask) => void; onDelete: (subtask: Subtask) => void; onMove: (subtask: Subtask, direction: -1 | 1) => void }) {
-  return <div>{canManage && <div className="quick-add"><input value={title} onChange={(event) => onTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (!busy && title.trim()) onAdd() } }} placeholder="Add a subtask…" /><button type="button" className="btn btn-primary" disabled={busy || !title.trim()} onClick={onAdd}><Icon name="plus" size={15} /> Add</button></div>}{subtasks.length ? <div className="subtask-list">{subtasks.map((subtask, index) => { const completed = Boolean(subtask.completedAt ?? subtask.completed_at); return <div key={subtask.id}><button className={`subtask-check ${completed ? 'completed' : ''}`} disabled={busy || !canComplete} onClick={() => onComplete(subtask)} aria-label={`${completed ? 'Reopen' : 'Complete'} ${subtask.title}`} title={canComplete ? completed ? 'Reopen subtask' : 'Complete subtask' : 'Your role cannot change task status'}><Icon name="check" size={14} /></button><div><strong>{subtask.title}</strong><span>{displayName(subtask.assignee)}{(subtask.dueDate ?? subtask.due_date) ? ` · Due ${new Date(subtask.dueDate ?? subtask.due_date ?? '').toLocaleDateString()}` : ''}</span></div><StatusBadge value={subtask.statusValue ?? subtask.status_value ?? subtask.status} /><span><Minutes value={subtask.actualMinutes ?? subtask.actual_minutes} /></span>{(canEditAny || canManage) && <div className="subtask-actions">{canManage && <><button className="icon-button" disabled={busy || index === 0} aria-label={`Move ${subtask.title} up`} onClick={() => onMove(subtask, -1)}>↑</button><button className="icon-button" disabled={busy || index === subtasks.length - 1} aria-label={`Move ${subtask.title} down`} onClick={() => onMove(subtask, 1)}>↓</button></>}{canEditAny && <button className="icon-button" aria-label={`Edit ${subtask.title}`} onClick={() => onEdit(subtask)}><Icon name="edit" size={14} /></button>}{canManage && <button className="icon-button danger" aria-label={`Delete ${subtask.title}`} onClick={() => onDelete(subtask)}><Icon name="trash" size={14} /></button>}</div>}</div> })}</div> : <EmptyState title="No subtasks yet" description="Break this task into smaller, assignable steps." />}</div>
+  return (
+    <div className="space-y-4">
+      {canManage && (
+        <div className="flex gap-2">
+          <Input value={title} onChange={(event) => onTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (!busy && title.trim()) onAdd() } }} placeholder="Add a subtask…" />
+          <Button type="button" disabled={busy || !title.trim()} onClick={onAdd}><Plus /> Add</Button>
+        </div>
+      )}
+      {subtasks.length ? (
+        <div className="space-y-2">
+          {subtasks.map((subtask, index) => {
+            const completed = Boolean(subtask.completedAt ?? subtask.completed_at)
+            return (
+              <div key={subtask.id} className="flex items-center gap-3 rounded-lg border p-3">
+                <Button
+                  type="button"
+                  variant={completed ? 'default' : 'outline'}
+                  size="icon-sm"
+                  disabled={busy || !canComplete}
+                  onClick={() => onComplete(subtask)}
+                  aria-label={`${completed ? 'Reopen' : 'Complete'} ${subtask.title}`}
+                  title={canComplete ? completed ? 'Reopen subtask' : 'Complete subtask' : 'Your role cannot change task status'}
+                >
+                  <Check />
+                </Button>
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate text-sm">{subtask.title}</strong>
+                  <span className="text-xs text-muted-foreground">{displayName(subtask.assignee)}{(subtask.dueDate ?? subtask.due_date) ? ` · Due ${new Date(subtask.dueDate ?? subtask.due_date ?? '').toLocaleDateString()}` : ''}</span>
+                </div>
+                <StatusBadge value={subtask.statusValue ?? subtask.status_value ?? subtask.status} />
+                <span className="text-sm text-muted-foreground"><Minutes value={subtask.actualMinutes ?? subtask.actual_minutes} /></span>
+                {(canEditAny || canManage) && (
+                  <div className="flex items-center gap-1">
+                    {canManage && (
+                      <>
+                        <Button type="button" variant="ghost" size="icon-sm" disabled={busy || index === 0} aria-label={`Move ${subtask.title} up`} onClick={() => onMove(subtask, -1)}>↑</Button>
+                        <Button type="button" variant="ghost" size="icon-sm" disabled={busy || index === subtasks.length - 1} aria-label={`Move ${subtask.title} down`} onClick={() => onMove(subtask, 1)}>↓</Button>
+                      </>
+                    )}
+                    {canEditAny && <Button type="button" variant="ghost" size="icon-sm" aria-label={`Edit ${subtask.title}`} onClick={() => onEdit(subtask)}><Pencil /></Button>}
+                    {canManage && <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${subtask.title}`} onClick={() => onDelete(subtask)}><Trash2 /></Button>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : <EmptyState title="No subtasks yet" description="Break this task into smaller, assignable steps." />}
+    </div>
+  )
 }
 
 function EmailsTab({ emails, to, subject, body, busy, readOnly, onTo, onSubject, onBody, onSend, onDelete }: { emails: Note[]; to: string; subject: string; body: string; busy: boolean; readOnly: boolean; onTo: (value: string) => void; onSubject: (value: string) => void; onBody: (value: string) => void; onSend: () => void; onDelete: (email: Note) => void }) {
   const rows = emails as Array<Note & { subject?: string; to_addresses?: string; sent_at?: string; status?: string }>
-  return <div>{!readOnly && <div className="email-composer"><div className="email-line"><span>To</span><input type="email" value={to} onChange={(event) => onTo(event.target.value)} placeholder="client@example.com" /></div><div className="email-line"><span>Subject</span><input value={subject} onChange={(event) => onSubject(event.target.value)} placeholder="Production update" /></div><textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder="Write the email…" /><footer><button className="btn btn-primary" disabled={busy || !to.trim() || !subject.trim() || !body.trim()} onClick={onSend}><Icon name="send" size={15} /> Send email</button></footer></div>}{rows.length ? <div className="notes-list email-list">{rows.map((email) => <article key={email.id}><div className="note-meta"><strong>{email.subject || 'Task email'}</strong><time>{email.sent_at ? new Date(email.sent_at).toLocaleString() : email.createdAt ?? email.created_at ? new Date((email.createdAt ?? email.created_at)!).toLocaleString() : '—'}</time><StatusBadge value={email.status || 'sent'} />{!readOnly && <button className="text-link danger-text" onClick={() => onDelete(email)}>Delete</button>}</div><span className="email-to">To: {email.to_addresses || 'Recipient hidden'}</span><div className="note-body">{email.body}</div></article>)}</div> : <EmptyState title="No task emails have been captured." />}</div>
+  return (
+    <div className="space-y-4">
+      {!readOnly && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input type="email" value={to} onChange={(event) => onTo(event.target.value)} placeholder="To — client@example.com" aria-label="To" />
+            <Input value={subject} onChange={(event) => onSubject(event.target.value)} placeholder="Subject" aria-label="Subject" />
+          </div>
+          <Textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder="Write the email…" aria-label="Message" />
+          <div className="flex justify-end">
+            <Button type="button" disabled={busy || !to.trim() || !subject.trim() || !body.trim()} onClick={onSend}><Send /> Send email</Button>
+          </div>
+        </div>
+      )}
+      {rows.length ? (
+        <div className="space-y-3">
+          {rows.map((email) => (
+            <article key={email.id} className="space-y-1.5 rounded-lg border p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <strong>{email.subject || 'Task email'}</strong>
+                <time className="text-xs text-muted-foreground">{email.sent_at ? new Date(email.sent_at).toLocaleString() : email.createdAt ?? email.created_at ? new Date((email.createdAt ?? email.created_at)!).toLocaleString() : '—'}</time>
+                <StatusBadge value={email.status || 'sent'} />
+                {!readOnly && <Button type="button" variant="link" size="sm" className="ml-auto h-auto p-0 text-destructive" onClick={() => onDelete(email)}>Delete</Button>}
+              </div>
+              <p className="text-xs text-muted-foreground">To: {email.to_addresses || 'Recipient hidden'}</p>
+              <p className="text-sm text-pretty">{email.body}</p>
+            </article>
+          ))}
+        </div>
+      ) : <EmptyState title="No task emails have been captured." />}
+    </div>
+  )
 }
 
 function ActivityList({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (!rows.length) return <EmptyState title="No activity recorded" description="Task changes will appear here." />
-  return <div className="activity-timeline">{rows.map((row, index) => <div key={String(row.id ?? index)}><span /><div><strong>{String(row.description ?? row.message ?? fieldLabel(row.action) ?? 'Task updated')}</strong><time>{row.created_at ? new Date(String(row.created_at)).toLocaleString() : ''}</time></div></div>)}</div>
+  return (
+    <div className="space-y-3">
+      {rows.map((row, index) => (
+        <div key={String(row.id ?? index)} className="flex items-start gap-3">
+          <span aria-hidden="true" className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+          <div>
+            <strong className="block text-sm">{String(row.description ?? row.message ?? fieldLabel(row.action) ?? 'Task updated')}</strong>
+            <time className="text-xs text-muted-foreground">{row.created_at ? new Date(String(row.created_at)).toLocaleString() : ''}</time>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }

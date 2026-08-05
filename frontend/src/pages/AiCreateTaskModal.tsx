@@ -1,9 +1,30 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Icon } from '../components/Icon'
-import { ErrorBanner, Modal } from '../components/ui'
+import { Loader2, Sparkles, SquareCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { EmptyState } from '@/components/shared'
+import { cn } from '@/lib/utils'
 import { api, unwrap } from '../lib/api'
 import type { AiTaskGeneration, ApiEnvelope, EntityId, Project, TaskFolder } from '../types/api'
+
+const STATUS_COPY: Record<string, string> = {
+  queued: 'Waiting for the AI',
+  creating: 'Creating your task batch',
+  needs_input: 'The AI needs one detail',
+  created: 'Tasks created',
+  undone: 'Batch undone',
+}
 
 export function AiCreateTaskModal({ open, projects, initialProjectId, onClose, onCreated }: {
   open: boolean
@@ -87,24 +108,127 @@ export function AiCreateTaskModal({ open, projects, initialProjectId, onClose, o
   }
 
   const terminal = generation && ['created', 'failed', 'clock_blocked', 'budget_blocked', 'undone'].includes(generation.status)
-  return <Modal open={open} onClose={onClose} title="Create tasks with AI" description="Describe the outcome in plain language. The AI may create one task or a complete set." size="lg" closeDisabled={busy}>
-    <div className="ai-task-creator">
-      {error && <ErrorBanner message={error} />}
-      {!enabledProjects.length && <div className="empty-inline">AI task creation is not enabled on any visible project. A project manager can enable it in the project settings.</div>}
-      {!generation && enabledProjects.length > 0 && <form onSubmit={start} className="form-grid">
-        <label className="form-field"><span className="field-label">Project</span><select value={projectId} onChange={(event) => { setProjectId(event.target.value); setFolderId('') }} required>{enabledProjects.map((project) => <option key={project.id} value={String(project.id)}>{project.name}</option>)}</select></label>
-        <label className="form-field"><span className="field-label">Folder (optional)</span><select value={folderId} onChange={(event) => setFolderId(event.target.value)}><option value="">Ungrouped</option>{folders.map((folder) => <option key={folder.id} value={String(folder.id)}>{folder.name}</option>)}</select></label>
-        <label className="form-field wide"><span className="field-label">What needs to be done?</span><textarea rows={7} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Example: Prepare next month's client launch. Create the planning, asset review, QA, and handoff tasks, assign them where sensible, and keep everything before July 30." required /></label>
-        <div className="ai-privacy-note"><Icon name="sparkles" size={16} /><span>Only approved project memory is used. Private messages, email, and attachments are excluded.</span></div>
-        <footer className="form-footer"><button type="button" className="btn btn-quiet" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !prompt.trim()}><Icon name="sparkles" size={16} /> {busy ? 'Starting…' : 'Create now'}</button></footer>
-      </form>}
-      {generation && <div className="ai-generation-result">
-        <div className={`ai-generation-state ${generation.status}`}><span className={['queued', 'creating'].includes(generation.status) ? 'spinner' : ''} /><div><strong>{generation.status === 'queued' ? 'Waiting for the AI' : generation.status === 'creating' ? 'Creating your task batch' : generation.status === 'needs_input' ? 'The AI needs one detail' : generation.status === 'created' ? 'Tasks created' : generation.status === 'undone' ? 'Batch undone' : 'AI creation stopped'}</strong><span>{generation.result_summary || generation.error_message || (generation.status === 'creating' ? 'Validating the plan and creating everything together…' : '')}</span></div></div>
-        {generation.messages?.map((message) => <div key={message.id} className={`ai-conversation-message ${message.role}`}><small>{message.role === 'assistant' ? 'AI project manager' : 'You'}</small><p>{message.body}</p></div>)}
-        {generation.status === 'needs_input' && <form onSubmit={answer} className="ai-clarification"><textarea rows={4} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Answer the question…" required /><button className="btn btn-primary" disabled={busy || !reply.trim()}>Send answer</button></form>}
-        {generation.status === 'created' && <div className="ai-created-tasks">{generation.generated_tasks?.map((link) => link.task && <Link key={link.task_id} to={`/tasks/${link.task.id}`}><Icon name="task" size={15} /> {link.task.title}</Link>)}</div>}
-        {terminal && <footer className="form-footer">{generation.status === 'created' && <button type="button" className="btn btn-quiet danger" disabled={busy} onClick={() => void undo()}>Undo batch</button>}<button type="button" className="btn btn-primary" onClick={onClose}>Done</button></footer>}
-      </div>}
-    </div>
-  </Modal>
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Create tasks with AI</DialogTitle>
+          <DialogDescription>Describe the outcome in plain language. The AI may create one task or a complete set.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {!enabledProjects.length && (
+            <EmptyState
+              title="AI task creation is not enabled on any visible project."
+              description="A project manager can enable it in the project settings."
+              icon={Sparkles}
+            />
+          )}
+
+          {!generation && enabledProjects.length > 0 && (
+            <form onSubmit={start} className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ai-task-project">Project</Label>
+                  <Select value={projectId} onValueChange={(next) => { setProjectId(next); setFolderId('') }}>
+                    <SelectTrigger id="ai-task-project" className="w-full">
+                      <SelectValue placeholder="Choose project…" />
+                    </SelectTrigger>
+                    <SelectContent aria-label="Project">
+                      {enabledProjects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ai-task-folder">Folder (optional)</Label>
+                  <Select value={folderId || '__unset__'} onValueChange={(next) => setFolderId(next === '__unset__' ? '' : next)}>
+                    <SelectTrigger id="ai-task-folder" className="w-full">
+                      <SelectValue placeholder="Ungrouped" />
+                    </SelectTrigger>
+                    <SelectContent aria-label="Folder (optional)">
+                      <SelectItem value="__unset__">Ungrouped</SelectItem>
+                      {folders.map((folder) => <SelectItem key={folder.id} value={String(folder.id)}>{folder.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ai-task-prompt">What needs to be done?</Label>
+                <Textarea
+                  id="ai-task-prompt"
+                  rows={7}
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="Example: Prepare next month's client launch. Create the planning, asset review, QA, and handoff tasks, assign them where sensible, and keep everything before July 30."
+                  required
+                />
+              </div>
+              <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                <Sparkles className="mt-0.5 size-4 shrink-0" />
+                <span>Only approved project memory is used. Private messages, email, and attachments are excluded.</span>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+                <Button disabled={busy || !prompt.trim()}><Sparkles /> {busy ? 'Starting…' : 'Create now'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {generation && (
+            <div className="space-y-4">
+              <div className={cn('flex items-center gap-3 rounded-lg border p-3', generation.status === 'created' && 'border-success')}>
+                {['queued', 'creating'].includes(generation.status) ? <Loader2 className="size-4 animate-spin" /> : <SquareCheck className="size-4" />}
+                <div>
+                  <strong className="block text-sm">{STATUS_COPY[generation.status] ?? 'AI creation stopped'}</strong>
+                  <span className="text-sm text-muted-foreground">
+                    {generation.result_summary || generation.error_message || (generation.status === 'creating' ? 'Validating the plan and creating everything together…' : '')}
+                  </span>
+                </div>
+              </div>
+
+              {generation.messages?.map((message) => (
+                <div key={message.id} className="rounded-md border p-3">
+                  <small className="text-xs font-medium text-muted-foreground">{message.role === 'assistant' ? 'AI project manager' : 'You'}</small>
+                  <p className="text-sm text-pretty">{message.body}</p>
+                </div>
+              ))}
+
+              {generation.status === 'needs_input' && (
+                <form onSubmit={answer} className="space-y-2">
+                  <Label htmlFor="ai-task-reply" className="sr-only">Answer the question</Label>
+                  <Textarea id="ai-task-reply" rows={4} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Answer the question…" required />
+                  <Button disabled={busy || !reply.trim()}>Send answer</Button>
+                </form>
+              )}
+
+              {generation.status === 'created' && (
+                <div className="space-y-1">
+                  {generation.generated_tasks?.map((link) => link.task && (
+                    <Link key={link.task_id} to={`/tasks/${link.task.id}`} className="flex items-center gap-2 rounded-md border p-2 text-sm hover:bg-accent">
+                      <SquareCheck className="size-4 text-muted-foreground" /> {link.task.title}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {terminal && (
+                <DialogFooter>
+                  {generation.status === 'created' && (
+                    <Button type="button" variant="outline" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void undo()}>Undo batch</Button>
+                  )}
+                  <Button type="button" onClick={onClose}>Done</Button>
+                </DialogFooter>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }

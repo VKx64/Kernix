@@ -1,6 +1,10 @@
 import { useRef, useState, type DragEvent } from 'react'
-import { Icon, type IconName } from './Icon'
-import { Modal } from './ui'
+import { Download, Eye, File, FileImage, FileVideo, Music, Trash2, Upload } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { EmptyState } from '@/components/shared'
+import { cn } from '@/lib/utils'
 import { api, displayName } from '../lib/api'
 import {
   MAX_ATTACHMENTS_PER_UPLOAD,
@@ -17,12 +21,12 @@ import {
 } from '../lib/attachments'
 import type { EntityId, TaskAttachment } from '../types/api'
 
-const KIND_ICONS: Record<ReturnType<typeof fileKind>, IconName> = {
-  image: 'image',
-  video: 'video',
-  audio: 'play',
-  pdf: 'file',
-  file: 'file',
+const KIND_ICONS: Record<ReturnType<typeof fileKind>, typeof File> = {
+  image: FileImage,
+  video: FileVideo,
+  audio: Music,
+  pdf: File,
+  file: File,
 }
 
 export function TaskAttachments({
@@ -94,22 +98,25 @@ export function TaskAttachments({
   }
 
   return (
-    <section className="task-attachments">
+    <section className="space-y-4">
       {canUpload && (
         <div
-          className={`attachment-dropzone ${dragging ? 'is-dragging' : ''}`.trim()}
+          className={cn(
+            'flex flex-col items-center gap-3 rounded-lg border border-dashed p-6 text-center transition-colors',
+            dragging && 'border-primary bg-accent/40',
+          )}
           onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <Icon name="upload" size={18} />
-          <div>
-            <strong>Drop files here</strong>
-            <small>Pictures, video, and documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small>
+          <Upload className="size-6 text-muted-foreground" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Drop files here</p>
+            <p className="text-xs text-muted-foreground">Pictures, video, and documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</p>
           </div>
-          <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => inputRef.current?.click()}>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
             {busy ? 'Uploading…' : 'Choose files'}
-          </button>
+          </Button>
           <input
             ref={inputRef}
             className="sr-only"
@@ -125,48 +132,57 @@ export function TaskAttachments({
         </div>
       )}
 
-      {error && <div className="form-error" role="alert">{error}</div>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {!attachments.length ? (
-        <p className="empty-hint">No files are attached to this task yet.</p>
+        <EmptyState title="No files are attached to this task yet." icon={File} />
       ) : (
-        <ul className="attachment-grid">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {attachments.map((attachment) => {
             const name = attachmentName(attachment)
             const mime = attachmentMime(attachment)
             const kind = fileKind(mime)
             const previewable = attachmentCanPreview(attachment)
             const uploader = attachment.uploadedBy ?? attachment.uploaded_by
+            const KindIcon = KIND_ICONS[kind]
 
             return (
-              <li key={attachment.id} className="attachment-card">
+              <li key={attachment.id} className="flex items-center gap-3 rounded-lg border p-3">
                 <button
                   type="button"
-                  className="attachment-thumb"
+                  className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted"
                   aria-label={previewable ? `Preview ${name}` : `Open ${name}`}
                   onClick={() => previewable ? setPreview(attachment) : window.open(attachmentUrl(taskId, attachment.id), '_blank', 'noopener')}
                 >
                   {kind === 'image' && previewable
-                    ? <img src={attachmentUrl(taskId, attachment.id, true)} alt={name} loading="lazy" />
-                    : <Icon name={KIND_ICONS[kind]} size={24} />}
+                    ? <img src={attachmentUrl(taskId, attachment.id, true)} alt={name} loading="lazy" className="size-full object-cover" />
+                    : <KindIcon className="size-5 text-muted-foreground" />}
                 </button>
-                <div className="attachment-meta">
-                  <strong title={name}>{name}</strong>
-                  <small>{formatBytes(attachmentSize(attachment))}{uploader ? ` · ${displayName(uploader)}` : ''}</small>
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate text-sm" title={name}>{name}</strong>
+                  <small className="block truncate text-xs text-muted-foreground">
+                    {formatBytes(attachmentSize(attachment))}{uploader ? ` · ${displayName(uploader)}` : ''}
+                  </small>
                 </div>
-                <div className="attachment-actions">
+                <div className="flex shrink-0 items-center gap-1">
                   {previewable && (
-                    <button type="button" className="icon-button" aria-label={`View ${name}`} onClick={() => setPreview(attachment)}>
-                      <Icon name="eye" size={15} />
-                    </button>
+                    <Button type="button" variant="ghost" size="icon-sm" aria-label={`View ${name}`} onClick={() => setPreview(attachment)}>
+                      <Eye />
+                    </Button>
                   )}
-                  <a className="icon-button" href={attachmentUrl(taskId, attachment.id)} download={name} aria-label={`Download ${name}`}>
-                    <Icon name="download" size={15} />
-                  </a>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Download ${name}`} asChild>
+                    <a href={attachmentUrl(taskId, attachment.id)} download={name}>
+                      <Download />
+                    </a>
+                  </Button>
                   {canUpload && (
-                    <button type="button" className="icon-button danger" aria-label={`Delete ${name}`} disabled={busy} onClick={() => void remove(attachment)}>
-                      <Icon name="trash" size={15} />
-                    </button>
+                    <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${name}`} disabled={busy} onClick={() => void remove(attachment)}>
+                      <Trash2 />
+                    </Button>
                   )}
                 </div>
               </li>
@@ -175,15 +191,14 @@ export function TaskAttachments({
         </ul>
       )}
 
-      <Modal
-        open={Boolean(preview)}
-        onClose={() => setPreview(null)}
-        title={preview ? attachmentName(preview) : 'Attachment'}
-        size="lg"
-        className="attachment-preview-modal"
-      >
-        {preview && <AttachmentPreview taskId={taskId} attachment={preview} />}
-      </Modal>
+      <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null) }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{preview ? attachmentName(preview) : 'Attachment'}</DialogTitle>
+          </DialogHeader>
+          {preview && <AttachmentPreview taskId={taskId} attachment={preview} />}
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
@@ -194,17 +209,19 @@ function AttachmentPreview({ taskId, attachment }: { taskId: EntityId; attachmen
   const kind = fileKind(attachmentMime(attachment))
 
   return (
-    <div className="attachment-preview">
-      {kind === 'image' && <img src={source} alt={name} />}
-      {kind === 'video' && <video src={source} controls playsInline preload="metadata" />}
-      {kind === 'audio' && <audio src={source} controls preload="metadata" />}
-      {kind === 'pdf' && <iframe src={source} title={name} />}
-      <footer>
-        <span>{formatBytes(attachmentSize(attachment))}</span>
-        <a className="btn btn-quiet" href={attachmentUrl(taskId, attachment.id)} download={name}>
-          <Icon name="download" size={15} /> Download
-        </a>
-      </footer>
+    <div className="space-y-3">
+      {kind === 'image' && <img src={source} alt={name} className="max-h-[70vh] w-full rounded-md object-contain" />}
+      {kind === 'video' && <video src={source} controls playsInline preload="metadata" className="w-full rounded-md" />}
+      {kind === 'audio' && <audio src={source} controls preload="metadata" className="w-full" />}
+      {kind === 'pdf' && <iframe src={source} title={name} className="h-[70vh] w-full rounded-md border" />}
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted-foreground">{formatBytes(attachmentSize(attachment))}</span>
+        <Button variant="outline" size="sm" asChild>
+          <a href={attachmentUrl(taskId, attachment.id)} download={name}>
+            <Download /> Download
+          </a>
+        </Button>
+      </div>
     </div>
   )
 }

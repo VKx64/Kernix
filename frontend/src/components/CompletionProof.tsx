@@ -1,17 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Icon, type IconName } from './Icon'
-import { Modal } from './ui'
+import { Check, Clock, File, FileImage, FileVideo, Flag, Music, Trash2, Upload } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Label } from '@/components/ui/label'
 import { displayName } from '../lib/api'
 import { MAX_ATTACHMENTS_PER_UPLOAD, MAX_ATTACHMENT_BYTES, fileKind, formatBytes, rejectionReason } from '../lib/attachments'
 import { MIN_PROOF_SUMMARY, proofState } from '../lib/completionProof'
 import type { CompletionProof as Proof } from '../types/api'
 
-const KIND_ICONS: Record<ReturnType<typeof fileKind>, IconName> = {
-  image: 'image',
-  video: 'video',
-  audio: 'play',
-  pdf: 'file',
-  file: 'file',
+const KIND_ICONS: Record<ReturnType<typeof fileKind>, typeof File> = {
+  image: FileImage,
+  video: FileVideo,
+  audio: Music,
+  pdf: File,
+  file: File,
 }
 
 export function CompletionProofModal({
@@ -71,71 +75,86 @@ export function CompletionProofModal({
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      closeDisabled={busy}
-      title="Submit proof of completion"
-      description={`Show what you finished on “${taskTitle}”. An AI auditor checks it against the brief before the task closes.`}
-      size="md"
-    >
-      <form className="entity-form completion-proof-form" onSubmit={submit}>
-        <label className="form-field wide">
-          <span className="field-label">What did you complete? <b aria-hidden="true">*</b></span>
-          <textarea
-            value={summary}
-            disabled={busy}
-            placeholder="Describe the finished work: what was delivered, where it lives, and anything the reviewer should check."
-            onChange={(event) => { setSummary(event.target.value); setValidationError('') }}
-          />
-        </label>
-
-        <div className="form-field wide">
-          <span className="field-label">Evidence <b aria-hidden="true">*</b></span>
-          <label className="proof-dropzone">
-            <Icon name="upload" size={18} />
-            <span>
-              <strong>Attach screenshots, exports, or photos</strong>
-              <small>Up to {MAX_ATTACHMENTS_PER_UPLOAD} files, {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small>
-            </span>
-            <input
-              className="sr-only"
-              type="file"
-              multiple
-              aria-label="Attach proof files"
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Submit proof of completion</DialogTitle>
+          <DialogDescription>
+            Show what you finished on “{taskTitle}”. An AI auditor checks it against the brief before the task closes.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit}>
+          <div className="space-y-2">
+            <Label htmlFor="proof-summary">
+              What did you complete? <span aria-hidden="true" className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="proof-summary"
+              value={summary}
               disabled={busy}
-              onChange={(event) => { addFiles(event.target.files); event.target.value = '' }}
+              placeholder="Describe the finished work: what was delivered, where it lives, and anything the reviewer should check."
+              onChange={(event) => { setSummary(event.target.value); setValidationError('') }}
             />
-          </label>
-          {files.length > 0 && (
-            <ul className="attachment-rows">
-              {files.map((file) => (
-                <li key={`${file.name}-${file.size}-${file.lastModified}`}>
-                  <span className="attachment-kind"><Icon name={KIND_ICONS[fileKind(file.type)]} size={15} /></span>
-                  <span className="attachment-meta"><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
-                  <button
-                    type="button"
-                    className="icon-button danger"
-                    aria-label={`Remove ${file.name}`}
-                    disabled={busy}
-                    onClick={() => setFiles((current) => current.filter((candidate) => candidate !== file))}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <Label>
+              Evidence <span aria-hidden="true" className="text-destructive">*</span>
+            </Label>
+            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center hover:bg-accent/40">
+              <Upload className="size-5 text-muted-foreground" />
+              <span className="space-y-0.5">
+                <span className="block text-sm font-medium">Attach screenshots, exports, or photos</span>
+                <span className="block text-xs text-muted-foreground">Up to {MAX_ATTACHMENTS_PER_UPLOAD} files, {formatBytes(MAX_ATTACHMENT_BYTES)} each.</span>
+              </span>
+              <input
+                className="sr-only"
+                type="file"
+                multiple
+                aria-label="Attach proof files"
+                disabled={busy}
+                onChange={(event) => { addFiles(event.target.files); event.target.value = '' }}
+              />
+            </label>
+            {files.length > 0 && (
+              <ul className="space-y-2">
+                {files.map((file) => (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 rounded-md border p-2">
+                    {(() => { const KindIcon = KIND_ICONS[fileKind(file.type)]; return <KindIcon className="size-4 text-muted-foreground" /> })()}
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm">{file.name}</strong>
+                      <small className="block text-xs text-muted-foreground">{formatBytes(file.size)}</small>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-destructive hover:text-destructive"
+                      aria-label={`Remove ${file.name}`}
+                      disabled={busy}
+                      onClick={() => setFiles((current) => current.filter((candidate) => candidate !== file))}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {(validationError || error) && (
+            <Alert variant="destructive">
+              <AlertDescription>{validationError || error}</AlertDescription>
+            </Alert>
           )}
-        </div>
 
-        {(validationError || error) && <div className="form-error" role="alert">{validationError || error}</div>}
-
-        <footer className="form-footer">
-          <button type="button" className="btn btn-quiet" disabled={busy} onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit proof'}</button>
-        </footer>
-      </form>
-    </Modal>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Submitting…' : 'Submit proof'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -156,7 +175,6 @@ export function CompletionProofCard({
   const [reason, setReason] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
-  const tone = state.status === 'approved' ? 'is-approved' : state.status === 'rejected' ? 'is-rejected' : 'is-pending'
   const headline = state.status === 'approved'
     ? 'Completion proof accepted'
     : state.status === 'rejected'
@@ -164,52 +182,53 @@ export function CompletionProofCard({
       : state.awaitsHumanReview
         ? 'Waiting on a reviewer'
         : 'Audit in progress'
+  const HeadlineIcon = state.status === 'approved' ? Check : state.status === 'rejected' ? Flag : Clock
 
   return (
-    <section className={`proof-card ${tone}`}>
-      <header>
-        <Icon name={state.status === 'approved' ? 'check' : state.status === 'rejected' ? 'flag' : 'clock'} size={15} />
-        <strong>{headline}</strong>
+    <section className="space-y-3 rounded-lg border p-4">
+      <header className="flex items-center gap-2">
+        <HeadlineIcon className="size-4 text-muted-foreground" />
+        <strong className="text-sm">{headline}</strong>
       </header>
-      <p className="proof-summary">{proof.summary}</p>
-      <small className="proof-byline">
+      <p className="text-sm">{proof.summary}</p>
+      <p className="text-xs text-muted-foreground">
         {displayName(state.submitter)}
         {state.submittedAt ? ` · ${new Date(state.submittedAt).toLocaleDateString()}` : ''}
         {state.reviewMode ? ` · ${state.reviewMode === 'ai' ? 'AI audit' : 'Reviewed by a person'}` : ''}
-      </small>
+      </p>
 
-      {state.message && <p className="proof-verdict">{state.message}</p>}
+      {state.message && <p className="text-sm text-pretty">{state.message}</p>}
       {state.missing.length > 0 && (
-        <ul className="proof-missing">
+        <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
           {state.missing.map((item) => <li key={item}>{item}</li>)}
         </ul>
       )}
-      {state.reviewReason && <p className="proof-verdict">{state.reviewReason}</p>}
+      {state.reviewReason && <p className="text-sm text-pretty">{state.reviewReason}</p>}
 
       {state.status === 'rejected' && onResubmit && (
-        <button type="button" className="btn btn-quiet" disabled={busy} onClick={onResubmit}>
-          <Icon name="upload" size={15} /> Submit new proof
-        </button>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onResubmit}>
+          <Upload /> Submit new proof
+        </Button>
       )}
 
       {canReview && state.status === 'pending' && (
-        <div className="proof-review">
+        <div className="space-y-3">
           {rejecting && (
-            <label className="form-field wide">
-              <span className="field-label">Why is this not accepted?</span>
-              <textarea value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} placeholder="Tell the submitter what is missing…" />
-            </label>
+            <div className="space-y-2">
+              <Label htmlFor="proof-reject-reason">Why is this not accepted?</Label>
+              <Textarea id="proof-reject-reason" value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} placeholder="Tell the submitter what is missing…" />
+            </div>
           )}
-          <div className="proof-review-actions">
+          <div className="flex justify-end gap-2">
             {rejecting ? (
               <>
-                <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => { setRejecting(false); setReason('') }}>Cancel</button>
-                <button type="button" className="btn btn-danger-quiet" disabled={busy || !reason.trim()} onClick={() => void onSettle(false, reason.trim())}>Confirm rejection</button>
+                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { setRejecting(false); setReason('') }}>Cancel</Button>
+                <Button type="button" variant="destructive" size="sm" disabled={busy || !reason.trim()} onClick={() => void onSettle(false, reason.trim())}>Confirm rejection</Button>
               </>
             ) : (
               <>
-                <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setRejecting(true)}>Reject</button>
-                <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void onSettle(true, '')}>Approve completion</button>
+                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setRejecting(true)}>Reject</Button>
+                <Button type="button" size="sm" disabled={busy} onClick={() => void onSettle(true, '')}>Approve completion</Button>
               </>
             )}
           </div>

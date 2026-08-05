@@ -13,6 +13,10 @@ export default defineConfig({
     environment: 'jsdom',
     environmentOptions: { jsdom: { url: 'http://localhost/' } },
     globals: true,
+    // The shadcn components are driven through real pointer interactions, and
+    // opening a dialog or a select costs a few hundred milliseconds each. A
+    // test that walks a whole form runs past the 5s default without hanging.
+    testTimeout: 20_000,
     setupFiles: './src/test/setup.ts',
     clearMocks: true,
     restoreMocks: true,

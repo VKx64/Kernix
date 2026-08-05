@@ -1,11 +1,27 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
-import { DatePicker, Select, useAnchoredPopup, type SelectOption } from '../components/fields'
-import { Icon } from '../components/Icon'
-import { Modal } from '../components/ui'
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { Clock, File, FileImage, FileVideo, ListChecks, MoreHorizontal, Music, Paperclip, Plus, Trash2, Upload } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { DatePicker } from '@/components/date-picker'
 import { displayName } from '../lib/api'
 import { MAX_ATTACHMENTS_PER_UPLOAD, MAX_ATTACHMENT_BYTES, fileKind, formatBytes, rejectionReason } from '../lib/attachments'
-import type { IconName } from '../components/Icon'
 import type { EntityId, FieldValue, Project, TaskFolder, UserSummary } from '../types/api'
 
 interface TaskDraft {
@@ -32,6 +48,11 @@ export type CreateTaskPayload = Record<string, unknown> & {
   project_id: EntityId
   title: string
   subtasks?: Array<{ title: string }>
+}
+
+interface SelectOption {
+  value: string
+  label: string
 }
 
 interface CreateTaskModalProps {
@@ -74,16 +95,12 @@ function emptyDraft(initialProjectId?: string): TaskDraft {
   }
 }
 
-const KIND_ICONS: Record<ReturnType<typeof fileKind>, IconName> = {
-  image: 'image',
-  video: 'video',
-  audio: 'play',
-  pdf: 'file',
-  file: 'file',
-}
-
-function fileIcon(mime: string): IconName {
-  return KIND_ICONS[fileKind(mime)]
+const KIND_ICONS: Record<ReturnType<typeof fileKind>, typeof File> = {
+  image: FileImage,
+  video: FileVideo,
+  audio: Music,
+  pdf: File,
+  file: File,
 }
 
 function optional(payload: Record<string, unknown>, key: string, value: string) {
@@ -104,6 +121,38 @@ function defaultFieldValue(options: FieldValue[], key: string, fallbackLabel: st
     const candidateKey = value.key ?? (value as FieldValue & { key_name?: string }).key_name
     return candidateKey === key || value.label.trim().toLowerCase() === fallbackLabel.toLowerCase()
   })
+}
+
+/** A `<Select>` whose empty/default option renders the current fallback label as its placeholder. */
+function DraftSelect({
+  id,
+  label,
+  value,
+  options,
+  placeholder,
+  disabled,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  options: SelectOption[]
+  placeholder: string
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <Select value={value || '__unset__'} disabled={disabled} onValueChange={(next) => onChange(next === '__unset__' ? '' : next)}>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent aria-label={label}>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value || '__unset__'}>{option.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 export function CreateTaskModal({
@@ -131,12 +180,10 @@ export function CreateTaskModal({
   onSubmit,
 }: CreateTaskModalProps) {
   const formId = useId()
-  const moreTriggerRef = useRef<HTMLButtonElement>(null)
-  const moreMenuRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const subtaskSequence = useRef(0)
   const subtaskInputs = useRef(new Map<string, HTMLInputElement>())
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(initialProjectId))
-  const [moreOpen, setMoreOpen] = useState(false)
   const [showEstimate, setShowEstimate] = useState(false)
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([])
@@ -146,13 +193,10 @@ export function CreateTaskModal({
   const defaultStatus = defaultFieldValue(statusOptions, 'pending', 'Pending')
   const defaultType = defaultFieldValue(typeOptions, 'task', 'Task')
   const defaultUrgency = defaultFieldValue(urgencyOptions, 'normal', 'Normal')
-  const closeMore = useCallback(() => setMoreOpen(false), [])
-  const morePosition = useAnchoredPopup(moreOpen, moreTriggerRef, moreMenuRef, closeMore)
 
   useEffect(() => {
     if (!open) return
     setDraft(emptyDraft(initialProjectId))
-    setMoreOpen(false)
     setShowEstimate(false)
     setShowSubtasks(false)
     setSubtasks([])
@@ -162,62 +206,12 @@ export function CreateTaskModal({
     subtaskSequence.current = 0
   }, [initialProjectId, open])
 
-  // The menu is portalled outside the dialog, so it has to own Escape and Tab
-  // while it is open: otherwise Escape reaches the modal and throws away the
-  // draft, and Tab makes the modal focus trap yank focus out of the menu.
-  useEffect(() => {
-    if (!moreOpen) return
-    const items = () => Array.from(moreMenuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])
-    const close = () => {
-      setMoreOpen(false)
-      moreTriggerRef.current?.focus()
-    }
-    const step = (offset: number) => {
-      const buttons = items()
-      if (!buttons.length) return
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-      buttons[(index + offset + buttons.length) % buttons.length].focus()
-    }
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        close()
-        return
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        event.stopPropagation()
-        step(event.shiftKey ? -1 : 1)
-        return
-      }
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault()
-        event.stopPropagation()
-        step(event.key === 'ArrowDown' ? 1 : -1)
-      }
-    }
-    window.addEventListener('keydown', onKey, true)
-    const frame = window.requestAnimationFrame(() => items()[0]?.focus())
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.removeEventListener('keydown', onKey, true)
-    }
-  }, [moreOpen])
-
-  // The unset row doubles as the default the backend applies, so a choice can
-  // always be undone without a second "clear" affordance.
-  const projectChoices = useMemo(() => projects.map((project) => ({ value: String(project.id), label: project.name })), [projects])
-  const folderChoices = useMemo<SelectOption[]>(
-    () => [{ value: '', label: 'Ungrouped' }, ...folders.map((folder) => ({ value: String(folder.id), label: folder.name }))],
-    [folders],
-  )
-  const statusChoices = useMemo(() => withDefault(statusOptions, defaultStatus, 'Pending'), [defaultStatus, statusOptions])
-  const typeChoices = useMemo(() => withDefault(typeOptions, defaultType, 'Task'), [defaultType, typeOptions])
-  const urgencyChoices = useMemo(() => withDefault(urgencyOptions, defaultUrgency, 'Priority'), [defaultUrgency, urgencyOptions])
-  const userChoices = useMemo<SelectOption[]>(
-    () => [{ value: '', label: 'Unassigned' }, ...users.map((user) => ({ value: String(user.id), label: displayName(user) }))],
-    [users],
-  )
+  const projectChoices: SelectOption[] = projects.map((project) => ({ value: String(project.id), label: project.name }))
+  const folderChoices: SelectOption[] = [{ value: '', label: 'Ungrouped' }, ...folders.map((folder) => ({ value: String(folder.id), label: folder.name }))]
+  const statusChoices = withDefault(statusOptions, defaultStatus, 'Pending')
+  const typeChoices = withDefault(typeOptions, defaultType, 'Task')
+  const urgencyChoices = withDefault(urgencyOptions, defaultUrgency, 'Priority')
+  const userChoices: SelectOption[] = [{ value: '', label: 'Unassigned' }, ...users.map((user) => ({ value: String(user.id), label: displayName(user) }))]
 
   // Only touch error state when there is an error, so typing does not re-render
   // the whole page through the parent on every keystroke.
@@ -228,7 +222,7 @@ export function CreateTaskModal({
 
   const setField = (field: keyof TaskDraft, value: string) => {
     dismissErrors()
-    setDraft((current) => ({ ...current, [field]: value }))
+    setDraft((current) => ({ ...current, [field]: value === '__unset__' ? '' : value }))
   }
 
   const focusSubtask = (id: string) => {
@@ -252,19 +246,16 @@ export function CreateTaskModal({
 
   const revealSubtasks = () => {
     setShowSubtasks(true)
-    setMoreOpen(false)
     if (!subtasks.length) addSubtask()
   }
 
   const revealEstimate = () => {
     setShowEstimate(true)
-    setMoreOpen(false)
     window.requestAnimationFrame(() => document.getElementById(`${formId}-estimate`)?.focus())
   }
 
   const revealAttachments = () => {
     setShowAttachments(true)
-    setMoreOpen(false)
     window.requestAnimationFrame(() => document.getElementById(`${formId}-files`)?.focus())
   }
 
@@ -335,11 +326,11 @@ export function CreateTaskModal({
     || (!initialProjectId && draft.project_id),
   )
 
-  const requestClose = () => {
+  const requestClose = useCallback(() => {
     if (busy) return
     if (isDirty && !window.confirm('Discard this task draft?')) return
     onClose()
-  }
+  }, [busy, isDirty, onClose])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -365,179 +356,195 @@ export function CreateTaskModal({
   const canRevealMore = (canEstimate && !showEstimate) || (canCreateSubtasks && !showSubtasks) || (canAttach && !showAttachments)
 
   return (
-    <Modal
-      open={open}
-      onClose={requestClose}
-      closeDisabled={busy}
-      title="Create task"
-      description="Start with the essentials, then add only the detail the team needs."
-      size="lg"
-      className="task-create-modal"
-    >
-      <form className="task-create-form" onSubmit={submit} noValidate>
-        <fieldset className="task-create-fields" disabled={busy}>
-          <legend className="sr-only">New task details</legend>
-          <div className="task-create-body">
+    <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose() }}>
+      <DialogContent
+        className="sm:max-w-2xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          titleRef.current?.focus()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Create task</DialogTitle>
+          <DialogDescription>Start with the essentials, then add only the detail the team needs.</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit} noValidate>
+          <fieldset className="space-y-4" disabled={busy}>
+            <legend className="sr-only">New task details</legend>
             {notice}
 
-            <div className="task-create-location" role="group" aria-label="Task location and type">
-              <Select
-                className="task-location-control task-location-project"
-                icon="briefcase"
-                label="Project"
-                required
-                value={draft.project_id}
-                options={projectChoices}
-                placeholder="Choose project…"
-                disabled={Boolean(initialProjectId)}
-                onChange={(next) => {
-                  setDraft((current) => ({ ...current, project_id: next, task_folder_id: '' }))
-                  onProjectChange?.(next)
-                  dismissErrors()
-                }}
-              />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor={`${formId}-project`}>Project</Label>
+                <DraftSelect
+                  id={`${formId}-project`}
+                  label="Project"
+                  value={draft.project_id}
+                  options={projectChoices}
+                  placeholder="Choose project…"
+                  disabled={Boolean(initialProjectId)}
+                  onChange={(next) => {
+                    setDraft((current) => ({ ...current, project_id: next, task_folder_id: '' }))
+                    onProjectChange?.(next)
+                    dismissErrors()
+                  }}
+                />
+              </div>
 
-              <Select
-                className="task-location-control"
-                icon="folder"
-                label="Folder"
-                value={draft.task_folder_id}
-                options={!draft.project_id || foldersLoading ? [] : folderChoices}
-                placeholder={!draft.project_id ? 'Choose project first…' : 'Loading folders…'}
-                disabled={!draft.project_id || foldersLoading}
-                onChange={(next) => setField('task_folder_id', next)}
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor={`${formId}-folder`}>Folder</Label>
+                <DraftSelect
+                  id={`${formId}-folder`}
+                  label="Folder"
+                  value={draft.task_folder_id}
+                  options={folderChoices}
+                  placeholder={!draft.project_id ? 'Choose project first…' : foldersLoading ? 'Loading folders…' : 'Ungrouped'}
+                  disabled={!draft.project_id || foldersLoading}
+                  onChange={(next) => setField('task_folder_id', next)}
+                />
+              </div>
 
               {typeOptions.length > 0 && (
-                <Select
-                  className="task-location-control task-location-type"
-                  icon="task"
-                  label="Type"
-                  value={draft.type_value_id}
-                  options={typeChoices}
-                  placeholder={defaultType?.label ?? 'Task'}
-                  onChange={(next) => setField('type_value_id', next)}
-                />
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${formId}-type`}>Type</Label>
+                  <DraftSelect
+                    id={`${formId}-type`}
+                    label="Type"
+                    value={draft.type_value_id}
+                    options={typeChoices}
+                    placeholder={defaultType?.label ?? 'Task'}
+                    onChange={(next) => setField('type_value_id', next)}
+                  />
+                </div>
               )}
             </div>
-            {folderError && <div className="task-create-inline-error" role="alert">{folderError}</div>}
+            {folderError && (
+              <Alert variant="destructive">
+                <AlertDescription>{folderError}</AlertDescription>
+              </Alert>
+            )}
 
-            <label className="task-title-field">
-              <span className="sr-only">Task title</span>
-              <input
+            <div className="space-y-1.5">
+              <Label htmlFor={`${formId}-title`} className="sr-only">Task title</Label>
+              <Input
+                id={`${formId}-title`}
+                ref={titleRef}
                 aria-label="Task title"
-                data-autofocus
                 required
                 maxLength={255}
+                className="h-11 text-base font-medium"
                 value={draft.title}
                 placeholder="What needs to be done?"
                 onChange={(event) => setField('title', event.target.value)}
               />
-            </label>
+            </div>
 
-            <label className="task-description-field">
-              <span className="sr-only">Description</span>
-              <textarea
+            <div className="space-y-1.5">
+              <Label htmlFor={`${formId}-description`} className="sr-only">Description</Label>
+              <Textarea
+                id={`${formId}-description`}
                 aria-label="Description"
                 value={draft.description}
                 placeholder="Add a description or helpful context…"
                 onChange={(event) => setField('description', event.target.value)}
               />
-            </label>
+            </div>
 
-            <div className="task-create-properties" role="group" aria-label="Task properties">
+            <div className="flex flex-wrap items-end gap-3">
               {canChangeStatus && statusOptions.length > 0 && (
-                <Select className="task-property-control" icon="check" label="Status" value={draft.status_value_id} options={statusChoices} placeholder={defaultStatus?.label ?? 'Pending'} onChange={(next) => setField('status_value_id', next)} />
+                <div className="w-40 space-y-1.5">
+                  <Label htmlFor={`${formId}-status`}>Status</Label>
+                  <DraftSelect id={`${formId}-status`} label="Status" value={draft.status_value_id} options={statusChoices} placeholder={defaultStatus?.label ?? 'Pending'} onChange={(next) => setField('status_value_id', next)} />
+                </div>
               )}
 
               {canAssign && (
-                <Select className="task-property-control" icon="user" label="Assignee" value={draft.assignee_user_id} options={userChoices} placeholder="Unassigned" onChange={(next) => setField('assignee_user_id', next)} />
+                <div className="w-44 space-y-1.5">
+                  <Label htmlFor={`${formId}-assignee`}>Assignee</Label>
+                  <DraftSelect id={`${formId}-assignee`} label="Assignee" value={draft.assignee_user_id} options={userChoices} placeholder="Unassigned" onChange={(next) => setField('assignee_user_id', next)} />
+                </div>
               )}
 
-              <DatePicker
-                className={`task-property-control ${draft.due_date ? 'has-value' : ''}`}
-                icon="calendar"
-                label="Due date"
-                value={draft.due_date}
-                placeholder="Due date"
-                onChange={(next) => setField('due_date', next)}
-              />
+              <div className="w-44 space-y-1.5">
+                <Label htmlFor={`${formId}-due-date`}>Due date</Label>
+                <DatePicker id={`${formId}-due-date`} value={draft.due_date} placeholder="Due date" onChange={(next) => setField('due_date', next)} />
+              </div>
 
               {urgencyOptions.length > 0 && (
-                <Select className="task-property-control" icon="flag" label="Priority" value={draft.urgency_value_id} options={urgencyChoices} placeholder={defaultUrgency?.label ?? 'Priority'} onChange={(next) => setField('urgency_value_id', next)} />
+                <div className="w-36 space-y-1.5">
+                  <Label htmlFor={`${formId}-urgency`}>Priority</Label>
+                  <DraftSelect id={`${formId}-urgency`} label="Priority" value={draft.urgency_value_id} options={urgencyChoices} placeholder={defaultUrgency?.label ?? 'Priority'} onChange={(next) => setField('urgency_value_id', next)} />
+                </div>
               )}
 
               {showEstimate && canEstimate && (
-                <label className={`task-property-control task-estimate-control ${draft.estimated_minutes ? 'has-value' : ''}`}>
-                  <Icon name="clock" size={14} />
-                  <span className="sr-only">Estimated minutes</span>
-                  <input
-                    id={`${formId}-estimate`}
-                    aria-label="Estimated minutes"
-                    type="number"
-                    min={0}
-                    max={1000000}
-                    inputMode="numeric"
-                    value={draft.estimated_minutes}
-                    placeholder="Estimate"
-                    onChange={(event) => setField('estimated_minutes', event.target.value)}
-                  />
-                  <span aria-hidden="true">min</span>
-                </label>
+                <div className="w-32 space-y-1.5">
+                  <Label htmlFor={`${formId}-estimate`}>Estimated minutes</Label>
+                  <div className="relative">
+                    <Clock className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id={`${formId}-estimate`}
+                      aria-label="Estimated minutes"
+                      type="number"
+                      min={0}
+                      max={1000000}
+                      inputMode="numeric"
+                      className="pl-8"
+                      value={draft.estimated_minutes}
+                      placeholder="Estimate"
+                      onChange={(event) => setField('estimated_minutes', event.target.value)}
+                    />
+                  </div>
+                </div>
               )}
 
               {canRevealMore && (
-                <>
-                  <button
-                    type="button"
-                    ref={moreTriggerRef}
-                    className="task-create-more"
-                    aria-label="More task properties"
-                    aria-expanded={moreOpen}
-                    onClick={() => setMoreOpen((current) => !current)}
-                  >
-                    <Icon name="more-horizontal" size={15} /><span>More</span>
-                  </button>
-                  {moreOpen && morePosition && createPortal(
-                    <div className="field-popup task-create-more-menu" ref={moreMenuRef} style={{ top: morePosition.top, left: morePosition.left }}>
-                      {canEstimate && !showEstimate && <button type="button" onClick={revealEstimate}><Icon name="clock" size={15} /><span>Time estimate</span></button>}
-                      {canCreateSubtasks && !showSubtasks && <button type="button" onClick={revealSubtasks}><Icon name="task" size={15} /><span>Subtasks</span></button>}
-                      {canAttach && !showAttachments && <button type="button" onClick={revealAttachments}><Icon name="paperclip" size={15} /><span>Attachments</span></button>}
-                    </div>,
-                    document.body,
-                  )}
-                </>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" aria-label="More task properties">
+                      <MoreHorizontal /> More
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {canEstimate && !showEstimate && <DropdownMenuItem onSelect={revealEstimate}><Clock /> Time estimate</DropdownMenuItem>}
+                    {canCreateSubtasks && !showSubtasks && <DropdownMenuItem onSelect={revealSubtasks}><ListChecks /> Subtasks</DropdownMenuItem>}
+                    {canAttach && !showAttachments && <DropdownMenuItem onSelect={revealAttachments}><Paperclip /> Attachments</DropdownMenuItem>}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
 
               {showSubtasks && (
-                <button type="button" className="task-property-summary" onClick={() => focusSubtask(subtasks[0]?.id)}>
-                  <Icon name="task" size={14} />
-                  <span>{displayedSubtaskCount} {displayedSubtaskCount === 1 ? 'subtask' : 'subtasks'}</span>
-                </button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => focusSubtask(subtasks[0]?.id)}>
+                  <ListChecks /> {displayedSubtaskCount} {displayedSubtaskCount === 1 ? 'subtask' : 'subtasks'}
+                </Button>
               )}
 
               {showAttachments && canAttach && (
-                <button type="button" className="task-property-summary" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                  <Icon name="paperclip" size={14} />
-                  <span>{files.length} {files.length === 1 ? 'file' : 'files'}</span>
-                </button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                  <Paperclip /> {files.length} {files.length === 1 ? 'file' : 'files'}
+                </Button>
               )}
             </div>
 
             {showSubtasks && canCreateSubtasks && (
-              <section className="task-draft-subtasks" aria-labelledby={`${formId}-subtasks-title`}>
-                <header>
-                  <div>
-                    <span className="task-draft-subtasks-icon"><Icon name="task" size={16} /></span>
-                    <span><strong id={`${formId}-subtasks-title`}>Subtasks</strong><small>Break the work into quick, actionable steps.</small></span>
+              <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-subtasks-title`}>
+                <header className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ListChecks className="size-4 text-muted-foreground" />
+                    <div>
+                      <strong id={`${formId}-subtasks-title`} className="block text-sm">Subtasks</strong>
+                      <small className="text-xs text-muted-foreground">Break the work into quick, actionable steps.</small>
+                    </div>
                   </div>
-                  <button type="button" className="btn btn-quiet" disabled={subtasks.length >= MAX_SUBTASKS} onClick={() => addSubtask()}><Icon name="plus" size={14} /> Add subtask</button>
+                  <Button type="button" variant="outline" size="sm" disabled={subtasks.length >= MAX_SUBTASKS} onClick={() => addSubtask()}>
+                    <Plus /> Add subtask
+                  </Button>
                 </header>
-                <ol>
+                <ol className="space-y-2">
                   {subtasks.map((subtask, index) => (
-                    <li key={subtask.id}>
-                      <span aria-hidden="true">{index + 1}</span>
-                      <input
+                    <li key={subtask.id} className="flex items-center gap-2">
+                      <span aria-hidden="true" className="w-5 shrink-0 text-right text-sm text-muted-foreground">{index + 1}</span>
+                      <Input
                         ref={(node) => {
                           if (node) subtaskInputs.current.set(subtask.id, node)
                           else subtaskInputs.current.delete(subtask.id)
@@ -552,32 +559,43 @@ export function CreateTaskModal({
                           setSubtasks((current) => current.map((row) => row.id === subtask.id ? { ...row, title: event.target.value } : row))
                         }}
                       />
-                      <button
+                      <Button
                         type="button"
-                        className="icon-button danger"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-destructive hover:text-destructive"
                         aria-label={`Remove subtask ${index + 1}`}
                         onClick={() => removeSubtask(subtask.id, subtasks[index - 1]?.id ?? subtasks[index + 1]?.id)}
                       >
-                        <Icon name="trash" size={14} />
-                      </button>
+                        <Trash2 />
+                      </Button>
                     </li>
                   ))}
                 </ol>
-                {!subtasks.length && <button type="button" className="task-empty-subtask" onClick={() => addSubtask()}><Icon name="plus" size={15} /> Add the first subtask</button>}
-                <p aria-live="polite">{subtasks.length >= MAX_SUBTASKS ? `${MAX_SUBTASKS}-subtask limit reached.` : 'Press Enter to add the next subtask. Empty rows are ignored when the task is created.'}</p>
+                {!subtasks.length && (
+                  <Button type="button" variant="outline" className="w-full" onClick={() => addSubtask()}>
+                    <Plus /> Add the first subtask
+                  </Button>
+                )}
+                <p aria-live="polite" className="text-xs text-muted-foreground">
+                  {subtasks.length >= MAX_SUBTASKS ? `${MAX_SUBTASKS}-subtask limit reached.` : 'Press Enter to add the next subtask. Empty rows are ignored when the task is created.'}
+                </p>
               </section>
             )}
 
             {showAttachments && canAttach && (
-              <section className="task-draft-attachments" aria-labelledby={`${formId}-files-title`}>
-                <header>
-                  <div>
-                    <span className="task-draft-subtasks-icon"><Icon name="paperclip" size={16} /></span>
-                    <span><strong id={`${formId}-files-title`}>Attachments</strong><small>Pictures, video, or documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small></span>
+              <section className="space-y-3 rounded-lg border p-4" aria-labelledby={`${formId}-files-title`}>
+                <header className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="size-4 text-muted-foreground" />
+                    <div>
+                      <strong id={`${formId}-files-title`} className="block text-sm">Attachments</strong>
+                      <small className="text-xs text-muted-foreground">Pictures, video, or documents up to {formatBytes(MAX_ATTACHMENT_BYTES)} each.</small>
+                    </div>
                   </div>
-                  <button type="button" className="btn btn-quiet" disabled={files.length >= MAX_ATTACHMENTS_PER_UPLOAD} onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                    <Icon name="plus" size={14} /> Add files
-                  </button>
+                  <Button type="button" variant="outline" size="sm" disabled={files.length >= MAX_ATTACHMENTS_PER_UPLOAD} onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                    <Plus /> Add files
+                  </Button>
                 </header>
                 <input
                   id={`${formId}-files`}
@@ -591,24 +609,30 @@ export function CreateTaskModal({
                   }}
                 />
                 {files.length > 0 && (
-                  <ul className="attachment-rows">
-                    {files.map((file) => (
-                      <li key={`${file.name}-${file.size}-${file.lastModified}`}>
-                        <span className="attachment-kind"><Icon name={fileIcon(file.type)} size={15} /></span>
-                        <span className="attachment-meta"><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
-                        <button type="button" className="icon-button danger" aria-label={`Remove ${file.name}`} onClick={() => removeFile(file)}>
-                          <Icon name="trash" size={14} />
-                        </button>
-                      </li>
-                    ))}
+                  <ul className="space-y-2">
+                    {files.map((file) => {
+                      const KindIcon = KIND_ICONS[fileKind(file.type)]
+                      return (
+                        <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 rounded-md border p-2">
+                          <KindIcon className="size-4 text-muted-foreground" />
+                          <span className="min-w-0 flex-1">
+                            <strong className="block truncate text-sm">{file.name}</strong>
+                            <small className="block text-xs text-muted-foreground">{formatBytes(file.size)}</small>
+                          </span>
+                          <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Remove ${file.name}`} onClick={() => removeFile(file)}>
+                            <Trash2 />
+                          </Button>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
                 {!files.length && (
-                  <button type="button" className="task-empty-subtask" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
-                    <Icon name="upload" size={15} /> Choose files to attach
-                  </button>
+                  <Button type="button" variant="outline" className="w-full" onClick={() => document.getElementById(`${formId}-files`)?.click()}>
+                    <Upload /> Choose files to attach
+                  </Button>
                 )}
-                <p aria-live="polite">
+                <p aria-live="polite" className="text-xs text-muted-foreground">
                   {files.length >= MAX_ATTACHMENTS_PER_UPLOAD
                     ? `${MAX_ATTACHMENTS_PER_UPLOAD}-file limit reached.`
                     : 'Files upload once the task is created.'}
@@ -616,17 +640,19 @@ export function CreateTaskModal({
               </section>
             )}
 
-            {(validationError || error) && <div className="form-error task-create-error" role="alert">{validationError || error}</div>}
-          </div>
-        </fieldset>
+            {(validationError || error) && (
+              <Alert variant="destructive">
+                <AlertDescription>{validationError || error}</AlertDescription>
+              </Alert>
+            )}
+          </fieldset>
 
-        <footer className="task-create-footer">
-          <div className="task-create-footer-actions">
-            <button type="button" className="btn btn-quiet" disabled={busy} onClick={requestClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={busy || !draft.title.trim() || !draft.project_id}>{busy ? 'Creating…' : 'Create task'}</button>
-          </div>
-        </footer>
-      </form>
-    </Modal>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={requestClose}>Cancel</Button>
+            <Button type="submit" disabled={busy || !draft.title.trim() || !draft.project_id}>{busy ? 'Creating…' : 'Create task'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

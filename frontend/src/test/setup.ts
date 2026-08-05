@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach } from 'vitest'
 
 // jsdom implements none of these, and the Radix primitives behind the shadcn
 // components call all of them during layout. Without the stubs every dialog,
@@ -36,7 +36,4 @@ if (!Element.prototype.hasPointerCapture) {
   Element.prototype.releasePointerCapture = () => {}
 }
 
-afterEach(() => {
-  cleanup()
-  vi.unstubAllGlobals()
-})
+afterEach(() => cleanup())

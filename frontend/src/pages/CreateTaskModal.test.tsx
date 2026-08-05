@@ -38,19 +38,40 @@ type Actor = ReturnType<typeof userEvent.setup>
 
 async function choose(actor: Actor, field: string, option: string) {
   await actor.click(screen.getByRole('combobox', { name: field }))
-  await actor.click(await screen.findByRole('option', { name: option }))
+  const listbox = await screen.findByRole('listbox', { name: field })
+  await actor.click(await within(listbox).findByRole('option', { name: option }))
+  // Radix unmounts the listbox on close; waiting for that keeps the next
+  // trigger click from landing on a still-closing popup underneath it.
+  await waitFor(() => expect(screen.queryByRole('listbox', { name: field })).not.toBeInTheDocument())
 }
 
-/** Clicks a selectable day in whichever month the picker opens on, returning its ISO value. */
-async function pickDay(actor: Actor, field: string, day: number) {
-  await actor.click(screen.getByRole('button', { name: field }))
-  const popup = await screen.findByRole('dialog', { name: field })
-  const cell = within(popup)
+/**
+ * Clicks the Due date trigger, picks the first selectable (non-outside-month)
+ * day in the open picker, and returns the ISO date the component should submit.
+ */
+async function pickDueDate(actor: Actor) {
+  await actor.click(screen.getByRole('button', { name: 'Due date' }))
+  const dialogs = await waitFor(() => {
+    const found = screen.getAllByRole('dialog')
+    if (found.length < 2) throw new Error('Date picker popover has not opened yet.')
+    return found
+  })
+  const popover = dialogs[dialogs.length - 1]
+  const dayButton = within(popover)
     .getAllByRole('button')
-    .find((button) => button.dataset.day && !button.className.includes('is-outside') && button.textContent === String(day))
-  if (!cell) throw new Error(`No selectable day ${day} in the ${field} picker.`)
-  await actor.click(cell)
-  return cell.dataset.day as string
+    .find((button) => button.dataset.day && !button.closest('td')?.className.includes('outside'))
+  if (!dayButton) throw new Error('No selectable day found in the due date picker.')
+  await actor.click(dayButton)
+  await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1))
+  const parsed = new Date(dayButton.dataset.day as string)
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+/** Opens the "More" menu, clicks the named item, and waits for the menu to close. */
+async function chooseMore(actor: Actor, item: string) {
+  await actor.click(screen.getByLabelText('More task properties'))
+  await actor.click(await screen.findByRole('menuitem', { name: item }))
+  await waitFor(() => expect(screen.queryByRole('menuitem', { name: item })).not.toBeInTheDocument())
 }
 
 describe('CreateTaskModal', () => {
@@ -80,8 +101,9 @@ describe('CreateTaskModal', () => {
     const { onSubmit } = renderModal()
 
     await actor.click(screen.getByLabelText('More task properties'))
-    expect(screen.getByRole('button', { name: 'Time estimate' })).toBeInTheDocument()
-    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
+    expect(await screen.findByRole('menuitem', { name: 'Time estimate' })).toBeInTheDocument()
+    await actor.click(screen.getByRole('menuitem', { name: 'Subtasks' }))
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Subtasks' })).not.toBeInTheDocument())
 
     const firstSubtask = screen.getByLabelText('Subtask 1 title')
     await actor.type(firstSubtask, 'Draft the brief{Enter}')
@@ -101,14 +123,12 @@ describe('CreateTaskModal', () => {
     await choose(actor, 'Type', 'Milestone')
     await choose(actor, 'Status', 'In progress')
     await choose(actor, 'Assignee', 'Casey Worker')
-    const due = await pickDay(actor, 'Due date', 18)
+    const due = await pickDueDate(actor)
     await choose(actor, 'Priority', 'High')
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    await actor.click(screen.getByRole('button', { name: 'Time estimate' }))
+    await chooseMore(actor, 'Time estimate')
     await actor.type(screen.getByLabelText('Estimated minutes'), '90')
-    await actor.click(screen.getByLabelText('More task properties'))
-    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
+    await chooseMore(actor, 'Subtasks')
 
     await actor.type(screen.getByLabelText('Subtask 1 title'), '  Draft brief  {Enter}')
     await actor.type(await screen.findByLabelText('Subtask 2 title'), '  Review copy  ')
@@ -135,8 +155,8 @@ describe('CreateTaskModal', () => {
     renderModal({ canEstimate: false, canCreateSubtasks: false })
 
     expect(screen.queryByLabelText('More task properties')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Time estimate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Subtasks' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Time estimate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Subtasks' })).not.toBeInTheDocument()
   })
 
   it('uses configured default labels without duplicating their options', async () => {
@@ -156,6 +176,10 @@ describe('CreateTaskModal', () => {
       const menu = await screen.findByRole('listbox', { name: field })
       expect(within(menu).getAllByRole('option', { name: label })).toHaveLength(1)
       await actor.keyboard('{Escape}')
+      // Radix removes the listbox from the accessibility tree only once its
+      // dismissal effects finish; waiting here keeps the next trigger click
+      // from landing while the previous popup is still tearing down.
+      await waitFor(() => expect(screen.queryByRole('listbox', { name: field })).not.toBeInTheDocument())
     }
   })
 
@@ -174,8 +198,7 @@ describe('CreateTaskModal', () => {
     const actor = userEvent.setup()
     const { onSubmit } = renderModal({ canAttach: true })
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
+    await chooseMore(actor, 'Attachments')
 
     const storyboard = new File(['frame'], 'storyboard.png', { type: 'image/png' })
     await actor.upload(screen.getByLabelText('Attach files'), storyboard)
@@ -195,8 +218,7 @@ describe('CreateTaskModal', () => {
     const actor = userEvent.setup()
     renderModal({ canAttach: true })
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    await actor.click(screen.getByRole('button', { name: 'Attachments' }))
+    await chooseMore(actor, 'Attachments')
     await actor.upload(screen.getByLabelText('Attach files'), new File(['<?php'], 'payload.php', { type: 'text/x-php' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('payload.php is an executable or script file.')
@@ -208,15 +230,14 @@ describe('CreateTaskModal', () => {
     renderModal({ canAttach: false })
 
     await actor.click(screen.getByLabelText('More task properties'))
-    expect(screen.queryByRole('button', { name: 'Attachments' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Attachments' })).not.toBeInTheDocument()
   })
 
   it('stops inline drafting at the backend subtask limit', async () => {
     const actor = userEvent.setup()
     renderModal()
 
-    await actor.click(screen.getByLabelText('More task properties'))
-    await actor.click(screen.getByRole('button', { name: 'Subtasks' }))
+    await chooseMore(actor, 'Subtasks')
     const add = screen.getByRole('button', { name: 'Add subtask' })
     for (let index = 1; index < 50; index += 1) fireEvent.click(add)
 

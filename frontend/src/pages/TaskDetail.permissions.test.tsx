@@ -103,20 +103,20 @@ describe('task detail permission controls', () => {
     expect(await screen.findByRole('heading', { name: 'Prepare launch' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Emails' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Emails' })).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Share an update…')).not.toBeInTheDocument()
     expect(screen.queryByPlaceholderText('Add a subtask…')).not.toBeInTheDocument()
 
     await actor.click(screen.getByRole('button', { name: 'Edit task' }))
     expect(screen.getByLabelText('Assignee')).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Casey Worker' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Casey Worker')
     expect(screen.getByLabelText('Estimated minutes')).toBeInTheDocument()
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Status')).not.toBeInTheDocument()
 
     await actor.click(screen.getByRole('button', { name: 'Cancel' }))
-    await actor.click(screen.getByRole('button', { name: 'Emails' }))
+    await actor.click(screen.getByRole('tab', { name: 'Emails' }))
     expect(screen.getByRole('button', { name: /Send email/i })).toBeInTheDocument()
   })
 
@@ -124,7 +124,7 @@ describe('task detail permission controls', () => {
     renderTask()
 
     expect(await screen.findByRole('heading', { name: 'Prepare launch' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Emails' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Emails' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit task' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
   })

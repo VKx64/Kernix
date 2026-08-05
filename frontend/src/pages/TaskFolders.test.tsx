@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import type { Column } from '../components/ui'
+import type { ColumnDef } from '@tanstack/react-table'
 import type { Project, Task, User } from '../types/api'
 import { TaskQueueTable, TasksPage } from './TasksPage'
 
@@ -80,17 +80,18 @@ vi.mock('../lib/api', async (importOriginal) => {
   }
 })
 
-const columns: Column<Task>[] = [
-  { key: 'title', header: 'Task', render: (task) => task.title },
+const columns: ColumnDef<Task>[] = [
+  { id: 'title', header: 'Task', cell: ({ row }) => row.original.title },
 ]
 
 type Actor = ReturnType<typeof userEvent.setup>
 
-/** Scoped to the popup: the page's native filter selects expose options too. */
+/** Scoped to the popup: several selects on the page share option labels. */
 async function choose(actor: Actor, field: string, option: string) {
   await actor.click(screen.getByRole('combobox', { name: field }))
   const menu = await screen.findByRole('listbox', { name: field })
   await actor.click(await within(menu).findByRole('option', { name: option }))
+  await waitFor(() => expect(screen.queryByRole('listbox', { name: field })).not.toBeInTheDocument())
 }
 
 describe('TaskQueueTable', () => {
@@ -125,13 +126,13 @@ describe('TaskQueueTable', () => {
     }} />)
 
     await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
-    const dialog = screen.getByRole('dialog', { name: 'Change folder' })
-    expect(dialog).toHaveClass('modal-sm', 'task-folder-dialog')
-    expect(dialog.querySelector('form.entity-form')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Change folder' })).toBeInTheDocument()
     const launchMove = screen.getByRole('combobox', { name: 'Folder destination' })
-    expect(within(launchMove).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
-    expect(within(launchMove).queryByRole('option', { name: 'Content' })).not.toBeInTheDocument()
-    await actor.selectOptions(launchMove, '12')
+    await actor.click(launchMove)
+    const menu = await screen.findByRole('listbox', { name: 'Folder destination' })
+    expect(within(menu).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('option', { name: 'Content' })).not.toBeInTheDocument()
+    await actor.click(within(menu).getByRole('option', { name: 'Delivery' }))
     await actor.click(screen.getByRole('button', { name: 'Move task' }))
     expect(onMove).toHaveBeenCalledWith(tasks[0], '12')
   })
@@ -179,6 +180,7 @@ describe('TasksPage project folders', () => {
     await actor.click(screen.getByRole('button', { name: 'Create folder' }))
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/projects/5/task-folders', { name: 'Review' }))
 
+    await actor.click(screen.getByText('Folders'))
     await actor.click(screen.getByRole('button', { name: 'Rename Pre-production' }))
     const folderName = screen.getByLabelText(/^Folder name/)
     await actor.clear(folderName)
@@ -187,10 +189,11 @@ describe('TasksPage project folders', () => {
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/projects/5/task-folders/11', { name: 'Planning' }))
 
     await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
-    await actor.selectOptions(screen.getByRole('combobox', { name: 'Folder destination' }), '12')
+    await choose(actor, 'Folder destination', 'Delivery')
     await actor.click(screen.getByRole('button', { name: 'Move task' }))
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', { task_folder_id: '12', admin_override: undefined }))
 
+    await actor.click(screen.getByText('Folders'))
     await actor.click(screen.getByRole('button', { name: 'Delete Delivery' }))
     expect(confirm).toHaveBeenCalledWith('Delete “Delivery”? Its tasks will become Ungrouped.')
     await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/projects/5/task-folders/12', { admin_override: undefined }))
@@ -205,7 +208,7 @@ describe('TasksPage project folders', () => {
     const project = await screen.findByRole('combobox', { name: 'Project' })
     expect(project).toHaveTextContent('Launch')
     expect(project).toBeDisabled()
-    await actor.type(screen.getByLabelText(/^Task title/), 'Schedule review')
+    await actor.type(screen.getByLabelText('Task title'), 'Schedule review')
     await choose(actor, 'Folder', 'Delivery')
     await actor.click(screen.getByRole('button', { name: 'Create task' }))
 
@@ -234,7 +237,7 @@ describe('TasksPage project folders', () => {
     expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Ungrouped')
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Folder' })).toBeEnabled())
     await choose(actor, 'Folder', 'Content')
-    await actor.type(screen.getByLabelText(/^Task title/), 'Write homepage copy')
+    await actor.type(screen.getByLabelText('Task title'), 'Write homepage copy')
     await actor.click(screen.getByRole('button', { name: 'Create task' }))
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/tasks', expect.objectContaining({
@@ -262,28 +265,33 @@ describe('TasksPage project folders', () => {
 
     render(<MemoryRouter initialEntries={['/tasks']}><TasksPage /></MemoryRouter>)
 
-    const launchMove = await screen.findByRole('button', { name: 'Change folder for Book studio' })
-    const websiteMove = await screen.findByRole('button', { name: 'Change folder for Write copy' })
-    await waitFor(() => expect(launchMove).toBeEnabled())
-    expect(websiteMove).toBeDisabled()
+    // Each project's folder lookup resolves after the first paint and re-renders
+    // the table, so the row actions have to be read again on each assertion
+    // rather than held across the update.
+    await screen.findByRole('button', { name: 'Change folder for Book studio' })
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Change folder for Book studio' })).toBeEnabled(),
+      { timeout: 4000 },
+    )
+    expect(screen.getByRole('button', { name: 'Change folder for Write copy' })).toBeDisabled()
 
-    await actor.click(launchMove)
-    expect(within(screen.getByRole('combobox', { name: 'Folder destination' })).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
+    await actor.click(screen.getByRole('combobox', { name: 'Folder destination' }))
+    const menu = await screen.findByRole('listbox', { name: 'Folder destination' })
+    expect(within(menu).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
   })
 
-  it('persists column visibility and width preferences', async () => {
+  it('persists column visibility across reloads', async () => {
     const actor = userEvent.setup()
     render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
 
     expect(await screen.findByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
-    await actor.click(screen.getByText('Columns'))
+    await actor.click(screen.getByRole('button', { name: 'Table columns' }))
     await actor.click(screen.getByLabelText('Status'))
     expect(screen.queryByRole('columnheader', { name: 'Status' })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Task column width'), { target: { value: '360' } })
-    await waitFor(() => expect(JSON.parse(window.localStorage.getItem('kernix.task-columns.v1') ?? '{}')).toEqual(expect.objectContaining({
-      visible: expect.objectContaining({ status: false }),
-      widths: expect.objectContaining({ title: 360 }),
-    })))
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem('kernix.task-columns.v2') ?? '{}')).toEqual(
+      expect.objectContaining({ visible: expect.objectContaining({ status: false }) }),
+    ))
   })
 })
