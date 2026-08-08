@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Support\DefaultRoles;
 use App\Support\PermissionCatalog;
+use App\Support\TaskSignals;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -55,22 +56,45 @@ class DatabaseSeeder extends Seeder
                 DB::table('field_values')->insertOrIgnore(['id' => $id++, 'field_id' => $fieldId, 'label' => $label, 'key_name' => $key, 'color' => $color, 'status' => 'active', 'sort_order' => ($i + 1) * 10, 'created_at' => $now, 'updated_at' => $now]);
             }
         }
-        $taskStatuses = [
-            ['planning', 'Planning', '#8b5cf6', 10],
-            ['pending', 'Pending', '#64748b', 20],
-            ['in_progress', 'In Progress', '#3b82f6', 30],
-            ['quality_check', 'Quality Check', '#06b6d4', 40],
-            ['needs_correction', 'Needs Correction', '#f97316', 50],
-            ['blocked', 'Blocked', '#ef4444', 60],
-            ['complete', 'Complete', '#22c55e', 70],
+        // Colours track the fixed dark palette by semantic role
+        // (TaskSignals::STATUS_ROLES), not by slug, so a status added later
+        // through the field values UI still lands on a palette colour.
+        $roleColors = [
+            'open' => '#7a7a85', 'active' => '#7b7ff6', 'review' => '#e8a33d',
+            'blocked' => '#f2585b', 'done' => '#4cb963',
         ];
-        foreach ($taskStatuses as [$key, $label, $color, $sortOrder]) {
+        $taskStatuses = [
+            ['planning', 'Planning', 10],
+            ['pending', 'Pending', 20],
+            ['in_progress', 'In Progress', 30],
+            ['quality_check', 'Quality Check', 40],
+            ['needs_correction', 'Needs Correction', 50],
+            ['blocked', 'Blocked', 60],
+            ['complete', 'Complete', 70],
+        ];
+        foreach ($taskStatuses as [$key, $label, $sortOrder]) {
+            $color = $roleColors[TaskSignals::statusRole($key)];
             $statusQuery = DB::table('field_values')->where('field_id', 3)->where('key_name', $key);
             $values = ['label' => $label, 'color' => $color, 'status' => 'active', 'sort_order' => $sortOrder, 'deleted_at' => null, 'updated_at' => $now];
             if ($statusQuery->exists()) {
                 $statusQuery->update($values);
             } else {
                 DB::table('field_values')->insert($values + ['field_id' => 3, 'key_name' => $key, 'created_at' => $now]);
+            }
+        }
+        $taskUrgencies = [
+            ['urgent', 'Urgent', '#f2585b', 10],
+            ['high', 'High', '#e8a33d', 20],
+            ['normal', 'Normal', '#7a7a85', 30],
+            ['low', 'Low', '#3a3a42', 40],
+        ];
+        foreach ($taskUrgencies as [$key, $label, $color, $sortOrder]) {
+            $urgencyQuery = DB::table('field_values')->where('field_id', 4)->where('key_name', $key);
+            $values = ['label' => $label, 'color' => $color, 'status' => 'active', 'sort_order' => $sortOrder, 'deleted_at' => null, 'updated_at' => $now];
+            if ($urgencyQuery->exists()) {
+                $urgencyQuery->update($values);
+            } else {
+                DB::table('field_values')->insert($values + ['field_id' => 4, 'key_name' => $key, 'created_at' => $now]);
             }
         }
 

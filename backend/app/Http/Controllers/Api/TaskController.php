@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Services\TaskMutationService;
 use App\Support\SingleClient;
 use App\Support\TaskMutationGuard;
+use App\Support\TaskSignals;
 use App\Support\TaskStatuses;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,33 +25,49 @@ class TaskController extends ApiController
 {
     public function __construct(private readonly TaskMutationService $taskMutations) {}
 
+    private const VIEWS = ['triage', 'mine', 'all', 'unassigned', 'done'];
+
     public function index(Request $request): JsonResponse
     {
         $this->permission($request, 'tasks.view');
-        $query = $this->archived(Task::query()->with([
+        $request->validate(['view' => ['sometimes', 'nullable', Rule::in(self::VIEWS)]]);
+
+        $base = $this->archived(Task::query()->with([
             'project.client', 'folder', 'status', 'type', 'urgency', 'assignee',
         ])->withCount([
             'subtasks',
             'subtasks as completed_subtasks_count' => fn ($subtasks) => $subtasks->whereNotNull('completed_at'),
         ]), $request);
-        $this->scopeToClient($query);
+        $this->scopeToClient($base);
 
         if ($search = $request->string('search')->trim()->toString()) {
-            $query->where(fn ($q) => $q
+            $base->where(fn ($q) => $q
                 ->where('title', 'like', "%{$search}%")
                 ->orWhereHas('project', fn ($project) => $project->where('name', 'like', "%{$search}%")));
         }
         if ($request->boolean('mine')) {
-            $query->where('assignee_user_id', $request->user()->id);
+            $base->where('assignee_user_id', $request->user()->id);
         }
         if ($request->boolean('urgent')) {
-            $query->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', ['urgent', 'high']));
+            $base->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', ['urgent', 'high']));
         }
-        foreach (['project_id', 'task_folder_id', 'assignee_user_id', 'status_value_id', 'type_value_id', 'urgency_value_id'] as $filter) {
+        foreach (['project_id', 'task_folder_id', 'status_value_id', 'type_value_id', 'urgency_value_id'] as $filter) {
             if ($request->filled($filter)) {
-                $query->where($filter, $request->integer($filter));
+                $base->where($filter, $request->integer($filter));
             }
         }
+        if ($request->filled('assignee_user_id')) {
+            if (strtolower($request->string('assignee_user_id')->toString()) === 'none') {
+                $base->whereNull('assignee_user_id');
+            } else {
+                $base->where('assignee_user_id', $request->integer('assignee_user_id'));
+            }
+        }
+
+        $counts = $this->viewCounts($base, $request);
+
+        $query = clone $base;
+        $this->applyView($query, $request->string('view')->toString() ?: null, $request);
 
         [$sort, $direction] = $this->sort($request->string('sort', 'due_date')->toString());
         if ($sort === 'urgency') {
@@ -61,7 +79,51 @@ class TaskController extends ApiController
         $page = $query->orderBy('id')->paginate($this->perPage($request));
         $page->getCollection()->transform(fn (Task $task) => $this->presentListItem($task));
 
-        return $this->paginated($page);
+        return $this->paginated($page, $counts);
+    }
+
+    /** @return array<string, int> */
+    private function viewCounts(Builder $base, Request $request): array
+    {
+        $counts = [];
+        foreach (self::VIEWS as $view) {
+            $scoped = clone $base;
+            $this->applyView($scoped, $view, $request);
+            $counts[$view] = $scoped->count();
+        }
+
+        return $counts;
+    }
+
+    private function applyView(Builder $query, ?string $view, Request $request): void
+    {
+        $doneIds = TaskSignals::statusValueIdsForRoles(['done']);
+        match ($view) {
+            'all' => $query->whereNotIn('status_value_id', $doneIds),
+            'mine' => $query->whereNotIn('status_value_id', $doneIds)->where('assignee_user_id', $request->user()->id),
+            'unassigned' => $query->whereNotIn('status_value_id', $doneIds)->whereNull('assignee_user_id'),
+            'done' => $query->whereIn('status_value_id', $doneIds),
+            'triage' => $this->applyTriage($query, $doneIds),
+            default => null,
+        };
+    }
+
+    /** @param array<int, int> $doneIds */
+    private function applyTriage(Builder $query, array $doneIds): void
+    {
+        $today = today()->toDateString();
+        $blockedIds = TaskSignals::statusValueIdsForRoles(['blocked']);
+        $reviewIds = TaskSignals::statusValueIdsForRoles(['review']);
+        $urgentSlugs = array_keys(array_filter(TaskSignals::URGENCY_RANKS, fn (int $rank) => $rank <= 1));
+
+        $query->whereNotIn('status_value_id', $doneIds)
+            ->where(fn ($q) => $q
+                ->where('due_date', '<=', $today)
+                ->orWhereIn('status_value_id', $blockedIds)
+                ->orWhereIn('status_value_id', $reviewIds)
+                ->orWhere(fn ($unassignedUrgent) => $unassignedUrgent
+                    ->whereNull('assignee_user_id')
+                    ->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', $urgentSlugs))));
     }
 
     public function store(Request $request): JsonResponse

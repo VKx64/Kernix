@@ -19,15 +19,21 @@ use Illuminate\Validation\Rules\Exists;
 
 abstract class ApiController extends Controller
 {
-    protected function paginated(LengthAwarePaginator $page): JsonResponse
+    /** @param array<string, int>|null $counts additive per-tab totals, e.g. Task Triage view counts */
+    protected function paginated(LengthAwarePaginator $page, ?array $counts = null): JsonResponse
     {
-        return response()->json([
+        $payload = [
             'data' => $page->items(),
             'meta' => [
                 'current_page' => $page->currentPage(), 'last_page' => $page->lastPage(),
                 'per_page' => $page->perPage(), 'total' => $page->total(),
             ],
-        ]);
+        ];
+        if ($counts !== null) {
+            $payload['counts'] = $counts;
+        }
+
+        return response()->json($payload);
     }
 
     /**
