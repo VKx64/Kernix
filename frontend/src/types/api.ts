@@ -720,5 +720,64 @@ export interface CustomField {
   values?: FieldValue[]
 }
 
+/** The five breaks the timer offers, and how long each one is meant to last. */
+export const BREAK_KINDS = [
+  { kind: 'Short break', minutes: 5 },
+  { kind: 'Coffee', minutes: 15 },
+  { kind: 'Lunch', minutes: 45 },
+  { kind: 'Meeting', minutes: 30 },
+  { kind: 'Open-ended', minutes: 0 },
+] as const
+
+export type BreakKind = (typeof BREAK_KINDS)[number]['kind']
+
+export interface TimerTaskRef {
+  id: EntityId
+  title: string
+}
+
+export interface TimerEntry {
+  id: EntityId
+  task_id: EntityId | null
+  task: TimerTaskRef | null
+  kind: 'work' | 'break'
+  break_kind: BreakKind | null
+  /** 0 means an open-ended break — one with no expected return time. */
+  break_due_minutes: number | null
+  started_at: string
+}
+
+export interface TimerHour {
+  hour: number
+  work_minutes: number
+  break_minutes: number
+}
+
+export interface TimerDay {
+  date: string
+  work_minutes: number
+  break_minutes: number
+}
+
+export interface TimerStatus {
+  entry: TimerEntry | null
+  /** While on a break, the task that resuming returns to. */
+  paused_task: TimerTaskRef | null
+  /** Work already banked on `paused_task` this sitting, so the break can show it. */
+  paused_seconds: number
+  clocked_in: boolean
+  today: {
+    work_minutes: number
+    break_minutes: number
+    /** Ten buckets, 9am through 6pm, in the workspace timezone. */
+    hours: TimerHour[]
+  }
+  week: TimerDay[]
+}
+
+export interface TimerStopStatus extends TimerStatus {
+  logged: { minutes: number; task: TimerTaskRef | null }
+}
+
 export type FormValue = string | number | boolean | null | undefined
 export type FormPayload = Record<string, FormValue | FormValue[]>

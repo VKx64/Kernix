@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { TaskDetailPage } from './TasksPage'
+import { stubTimer } from '../lib/timerStub'
 import type { User } from '../types/api'
 
 const authState = vi.hoisted(() => ({ user: null as User | null }))
@@ -9,6 +10,9 @@ const workspaceState = vi.hoisted(() => ({ canMutateTasks: true, canAdminOverrid
 const timeAction = vi.hoisted(() => vi.fn(async () => undefined))
 const setAdminOverride = vi.hoisted(() => vi.fn())
 const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
+const timerState = vi.hoisted(() => ({ timer: null as unknown as import('../lib/useTimer').Timer }))
+
+vi.mock('../lib/useTimer', () => ({ useTimerContext: () => timerState.timer }))
 const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
   if (path === '/api/bootstrap') {
     return {
@@ -83,6 +87,7 @@ describe('task detail permission controls', () => {
     workspaceState.canAdminOverride = false
     workspaceState.isOnBreak = false
     workspaceState.adminOverride = false
+    timerState.timer = stubTimer()
     apiGet.mockClear()
     apiPost.mockClear()
     timeAction.mockClear()
@@ -136,7 +141,7 @@ describe('task detail permission controls', () => {
     workspaceState.canAdminOverride = true
     renderTask()
 
-    expect(await screen.findByText('Clock in to make task changes')).toBeInTheDocument()
+    expect(await screen.findByText('Start tracking to make task changes')).toBeInTheDocument()
     const overrideCheckbox = screen.getByLabelText('Work with administrator override')
     const overrideHelp = screen.getByRole('button', { name: 'About administrator override' })
     const overrideTooltip = screen.getByRole('tooltip')
@@ -160,8 +165,11 @@ describe('task detail permission controls', () => {
 
     expect(await screen.findByText('End your break to make task changes')).toBeInTheDocument()
     expect(screen.queryByLabelText('Work with administrator override')).not.toBeInTheDocument()
+    // Resuming the timer, not the bare attendance endpoint: a break holds a
+    // timer entry too, and ending one without the other strands the sidebar.
     await actor.click(screen.getByRole('button', { name: 'End break' }))
-    expect(timeAction).toHaveBeenCalledWith('break-end')
+    expect(timerState.timer.resume).toHaveBeenCalled()
+    expect(timeAction).not.toHaveBeenCalled()
   })
 
   it('lets the current assignee explain and submit an additional estimate request', async () => {

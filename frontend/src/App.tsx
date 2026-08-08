@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BRAND_MARK } from './lib/brand'
 import { useCan } from './lib/permissions'
+import { TimerProvider } from './lib/useTimer'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
 import { DashboardPage } from './pages/DashboardPage'
 import { DesignSystemPage } from './pages/DesignSystemPage'
@@ -38,7 +39,11 @@ function ProtectedApp() {
 
   return (
     <WorkspaceProvider>
-      <AppShell />
+      {/* The timer outlives every route, so it is owned above the shell and
+          read by the pages that start and stop it. */}
+      <TimerProvider>
+        <AppShell />
+      </TimerProvider>
     </WorkspaceProvider>
   )
 }

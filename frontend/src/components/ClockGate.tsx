@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
+import { useTimerContext } from '@/lib/useTimer'
 
 export function isClockGate(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 409) return false
@@ -21,19 +22,25 @@ export function isClockGate(error: unknown): boolean {
  * a modal opened from that page is already covered by it.
  */
 export function ClockGate({ compact = false, showOverride = true }: { compact?: boolean; showOverride?: boolean }) {
-  const { timeAction, timeBusy, canAdminOverride, isOnBreak, adminOverride, setAdminOverride } = useWorkspace()
+  const { timeBusy, canAdminOverride, isOnBreak, adminOverride, setAdminOverride } = useWorkspace()
+  const timer = useTimerContext()
   const tooltipId = useId()
+
+  // Both actions go through the timer rather than the attendance endpoints:
+  // a break holds a timer entry as well as an attendance break, and ending
+  // only one of the two would leave the sidebar claiming you are still away.
+  const unblock = () => void (isOnBreak ? timer.resume() : timer.start(null))
 
   return (
     <Card className={cn('gap-3', adminOverride && 'border-warning', !compact && 'py-4')}>
       <CardContent className="flex flex-wrap items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"><Clock className="size-4" /></span>
         <div className="min-w-0 flex-1">
-          <strong className="block text-sm">{isOnBreak ? 'End your break to make task changes' : 'Clock in to make task changes'}</strong>
+          <strong className="block text-sm">{isOnBreak ? 'End your break to make task changes' : 'Start tracking to make task changes'}</strong>
           <p className="text-sm text-muted-foreground">{isOnBreak ? 'Task activity is paused while your break is active.' : 'Task updates and logged note time are tied to an active work session.'}</p>
         </div>
-        <Button disabled={timeBusy} onClick={() => void timeAction(isOnBreak ? 'break-end' : 'clock-in')}>
-          <Play /> {isOnBreak ? 'End break' : 'Clock in'}
+        <Button disabled={timeBusy || timer.busy} onClick={unblock}>
+          <Play /> {isOnBreak ? 'End break' : 'Start tracking'}
         </Button>
         {/* The only place the override is offered; it then applies workspace-wide. */}
         {canAdminOverride && showOverride && (

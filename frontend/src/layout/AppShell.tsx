@@ -8,8 +8,6 @@ import {
   Inbox,
   LayoutDashboard,
   LogOut,
-  Pause,
-  Play,
   Search,
   Settings,
   SquareCheck,
@@ -19,7 +17,6 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useWorkspace } from '@/auth/WorkspaceProvider'
 import { Avatar } from '@/components/shared'
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { TimerBox } from '@/components/timer/TimerBox'
 import {
   Sidebar,
   SidebarContent,
@@ -49,6 +46,7 @@ import {
 import { Toaster } from '@/components/ui/sonner'
 import { api, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
+import { useTimerContext } from '@/lib/useTimer'
 import { cn } from '@/lib/utils'
 import { PageActionsSlotContext } from '@/layout/page-actions'
 import { PageFillProvider } from '@/layout/page-fill'
@@ -70,20 +68,12 @@ const navigation: NavigationItem[] = [
   { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
 ]
 
-function formatElapsed(seconds: number) {
-  const safe = Math.max(0, Math.floor(seconds))
-  const hours = Math.floor(safe / 3600)
-  const minutes = Math.floor((safe % 3600) / 60)
-  const secs = safe % 60
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-}
-
 export function AppShell() {
   const { user, logout } = useAuth()
-  const { time, timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
+  const { timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
+  const timer = useTimerContext()
   const [query, setQuery] = useState('')
   const [unread, setUnread] = useState(0)
-  const [now, setNow] = useState(() => Date.now())
   const location = useLocation()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -122,24 +112,10 @@ export function AppShell() {
     return !item.permission || can(item.permission)
   })
 
-  const state = time?.state ?? time?.status ?? 'clocked_out'
-  const clockedIn = Boolean(time?.clockedIn ?? time?.clocked_in ?? time?.isClockedIn ?? time?.is_clocked_in ?? time?.session ?? ['working', 'clocked_in'].includes(state))
-  const onBreak = Boolean(time?.onBreak ?? time?.on_break ?? time?.isOnBreak ?? time?.is_on_break ?? time?.currentBreak ?? time?.current_break ?? state === 'break')
-  const started = time?.startedAt ?? time?.started_at ?? time?.session?.clockInAt ?? time?.session?.clock_in_at
-  const initialElapsed = time?.elapsedSeconds ?? time?.elapsed_seconds ?? 0
-  const breakMilliseconds = (time?.session?.breaks ?? []).reduce((total, entry) => {
-    const breakStarted = entry.startAt ?? entry.start_at
-    if (!breakStarted) return total
-    const breakEnded = entry.endAt ?? entry.end_at
-    return total + Math.max(0, (breakEnded ? new Date(breakEnded).getTime() : now) - new Date(breakStarted).getTime())
-  }, 0)
-  const elapsed = started ? Math.max(0, Math.floor((now - new Date(started).getTime() - breakMilliseconds) / 1000)) : initialElapsed
-
-  useEffect(() => {
-    if (!clockedIn) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [clockedIn])
+  // Attendance is now a consequence of tracking rather than a thing the user
+  // manages, so the shell only needs to know whether there is a day to close.
+  // It outlives the timer: stopping at noon does not clock you out.
+  const clockedIn = timer.clockedIn
 
   useEffect(() => {
     if (!can('messages.view')) {
@@ -202,35 +178,7 @@ export function AppShell() {
         </SidebarContent>
 
         <SidebarFooter>
-          {can('time.track') && (
-            <div className="flex items-center gap-2 rounded-md border p-2 group-data-[collapsible=icon]:hidden">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'size-2 shrink-0 rounded-full',
-                  onBreak ? 'bg-warning' : clockedIn ? 'bg-success animate-pulse' : 'bg-muted-foreground/40',
-                )}
-              />
-              <div className="min-w-0 flex-1 leading-tight">
-                <p className="truncate text-xs text-muted-foreground">
-                  {onBreak ? 'On break' : clockedIn ? 'Clocked in' : 'Not clocked in'}
-                </p>
-                <p className="font-mono text-sm tabular-nums">{clockedIn ? formatElapsed(elapsed) : '--:--:--'}</p>
-              </div>
-              {!clockedIn && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  aria-label="Clock in"
-                  disabled={timeBusy}
-                  onClick={() => void timeAction('clock-in')}
-                >
-                  <Play />
-                </Button>
-              )}
-            </div>
-          )}
+          {can('time.track') && <TimerBox timer={timer} />}
 
           <SidebarMenu>
             <SidebarMenuItem>
@@ -261,6 +209,18 @@ export function AppShell() {
                         Settings
                       </NavLink>
                     </DropdownMenuItem>
+                  )}
+                  {/* Clocking in happens by starting the timer, so clocking out
+                      is the only attendance control left, and it belongs with
+                      the other end-of-day action rather than in the header. */}
+                  {can('time.track') && clockedIn && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem disabled={timeBusy} onSelect={() => void timeAction('clock-out')}>
+                        <LogOut />
+                        Clock out
+                      </DropdownMenuItem>
+                    </>
                   )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => void logout()}>
@@ -315,58 +275,6 @@ export function AppShell() {
 
           <div ref={setActionSlot} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
 
-          <div className="flex items-center gap-2">
-            {/* Clocking in lives in the sidebar footer. The header only carries the
-                live timer, which opens the break and clock-out controls the footer
-                has no room for. */}
-            {can('time.track') && clockedIn && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={onBreak ? 'On break, open time tracking' : 'Clocked in, open time tracking'}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn('size-2 rounded-full', onBreak ? 'bg-warning' : 'bg-success animate-pulse')}
-                    />
-                    <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 space-y-3">
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                      {onBreak ? 'Break in progress' : 'Work session'}
-                    </p>
-                    <p className="font-mono text-2xl tabular-nums">{formatElapsed(elapsed)}</p>
-                    <p className="text-sm text-muted-foreground text-pretty">
-                      {onBreak
-                        ? 'Your work timer is paused. Resume to keep changing task work.'
-                        : 'Task changes and logged note time are recorded against this session.'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {onBreak ? (
-                      <Button size="sm" disabled={timeBusy} onClick={() => void timeAction('break-end')}>
-                        <Play />
-                        Resume work
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" disabled={timeBusy} onClick={() => void timeAction('break-start')}>
-                        <Pause />
-                        Take a break
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={timeBusy} onClick={() => void timeAction('clock-out')}>
-                      Clock out
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-
-          </div>
         </header>
 
         <PageFillProvider>

@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { stubTimer } from '../lib/timerStub'
 import type { FieldValue, Task, User } from '../types/api'
 import { TasksTriagePage } from './TasksTriagePage'
 
@@ -59,6 +60,7 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string, query?: Record<string
   return { data: [] }
 }))
 const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: { id: 99 } })))
+const timerState = vi.hoisted(() => ({ timer: null as unknown as import('../lib/useTimer').Timer }))
 const apiPatch = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 
 vi.mock('../auth/AuthProvider', () => ({
@@ -80,6 +82,8 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
   return { ...actual, api: { ...actual.api, get: apiGet, post: apiPost, patch: apiPatch } }
 })
+
+vi.mock('../lib/useTimer', () => ({ useTimerContext: () => timerState.timer }))
 
 function iso(dayOffset: number): string {
   const date = new Date()
@@ -118,9 +122,10 @@ beforeEach(() => {
   authState.user = {
     id: 2,
     username: 'producer',
-    permissions: ['tasks.view', 'tasks.edit', 'tasks.create', 'tasks.change_status', 'tasks.assign', 'projects.view'],
+    permissions: ['tasks.view', 'tasks.edit', 'tasks.create', 'tasks.change_status', 'tasks.assign', 'projects.view', 'time.track'],
   }
   seed()
+  timerState.timer = stubTimer()
   requests.tasks = []
   apiGet.mockClear()
   apiPost.mockClear()
@@ -208,6 +213,65 @@ describe('keyboard', () => {
     // `d` would complete a task if the list were still listening.
     await actor.keyboard('d')
     expect(apiPatch).not.toHaveBeenCalled()
+  })
+
+  it('opens the break menu on b while the timer runs', async () => {
+    const actor = userEvent.setup()
+    timerState.timer = stubTimer({ state: 'working', clockedIn: true, task: { id: 1, title: 'Awaiting legal sign-off' } })
+    renderPage()
+    await screen.findByText('Awaiting legal sign-off')
+
+    await actor.keyboard('b')
+    expect(timerState.timer.setBreakMenuOpen).toHaveBeenCalledWith(true)
+  })
+
+  it('returns to work on b while on a break', async () => {
+    const actor = userEvent.setup()
+    timerState.timer = stubTimer({ state: 'break', clockedIn: true, breakKind: 'Lunch' })
+    renderPage()
+    await screen.findByText('Awaiting legal sign-off')
+
+    await actor.keyboard('b')
+    expect(timerState.timer.resume).toHaveBeenCalled()
+  })
+
+  it('leaves b alone when there is nothing to pause', async () => {
+    const actor = userEvent.setup()
+    renderPage()
+    await screen.findByText('Awaiting legal sign-off')
+
+    await actor.keyboard('b')
+    expect(timerState.timer.setBreakMenuOpen).not.toHaveBeenCalled()
+    expect(timerState.timer.resume).not.toHaveBeenCalled()
+  })
+})
+
+describe('the drawer timer', () => {
+  it('starts the timer on the open task', async () => {
+    const actor = userEvent.setup()
+    renderPage('/tasks?open=1')
+    await screen.findByRole('dialog', { name: 'Awaiting legal sign-off' })
+
+    await actor.click(screen.getByRole('button', { name: /Start timer/ }))
+    expect(timerState.timer.start).toHaveBeenCalledWith(1)
+  })
+
+  it('offers to stop instead once this task is the one being tracked', async () => {
+    const actor = userEvent.setup()
+    timerState.timer = stubTimer({ state: 'working', clockedIn: true, task: { id: 1, title: 'Awaiting legal sign-off' } })
+    renderPage('/tasks?open=1')
+    await screen.findByRole('dialog', { name: 'Awaiting legal sign-off' })
+
+    await actor.click(screen.getByRole('button', { name: /Stop timer/ }))
+    expect(timerState.timer.stop).toHaveBeenCalled()
+  })
+
+  it('still offers to start when the timer is running on some other task', async () => {
+    timerState.timer = stubTimer({ state: 'working', clockedIn: true, task: { id: 99, title: 'Something else' } })
+    renderPage('/tasks?open=1')
+    await screen.findByRole('dialog', { name: 'Awaiting legal sign-off' })
+
+    expect(screen.getByRole('button', { name: /Start timer/ })).toBeInTheDocument()
   })
 })
 

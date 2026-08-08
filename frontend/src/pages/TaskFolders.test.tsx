@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
+import { stubTimer } from '../lib/timerStub'
 import type { Task, User } from '../types/api'
 import { TasksTriagePage } from './TasksTriagePage'
 
@@ -47,6 +48,9 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
 const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: { id: 99 } })))
 const apiPatch = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 const apiDelete = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
+const timerState = vi.hoisted(() => ({ timer: null as unknown as import('../lib/useTimer').Timer }))
+
+vi.mock('../lib/useTimer', () => ({ useTimerContext: () => timerState.timer }))
 
 vi.mock('../auth/AuthProvider', () => ({
   useAuth: () => ({ user: authState.user, status: 'authenticated', login: vi.fn(), logout: vi.fn(), refresh: vi.fn() }),
@@ -97,6 +101,7 @@ describe('moving a task to a folder from the Triage row menu', () => {
     }
     workspaceState.canMutateTasks = true
     workspaceState.canAdminOverride = false
+    timerState.timer = stubTimer()
     taskState.tasks = [bookStudio()]
     folderFailures.clear()
     apiGet.mockClear()

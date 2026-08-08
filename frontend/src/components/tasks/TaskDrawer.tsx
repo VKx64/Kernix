@@ -64,6 +64,10 @@ export function TaskDrawer({
   onToggleSubtask,
   onComment,
   onComplete,
+  timerRunning,
+  timerBusy,
+  canTrackTime,
+  onToggleTimer,
 }: {
   task: Task | null
   loading: boolean
@@ -83,6 +87,11 @@ export function TaskDrawer({
   onToggleSubtask: (subtask: Subtask) => void
   onComment: (body: string) => Promise<void>
   onComplete: () => void
+  /** True only when the timer is running against *this* task. */
+  timerRunning: boolean
+  timerBusy: boolean
+  canTrackTime: boolean
+  onToggleTimer: () => void
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -319,17 +328,14 @@ export function TaskDrawer({
             <Button disabled={!canComplete} onClick={onComplete}>
               {done ? 'Reopen' : 'Complete'}
             </Button>
-            {/* The timer is Phase 2. Shown disabled rather than hidden so the
-                footer is the shape the design specifies and the gap is honest. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" disabled>
-                  <Timer className="size-[13px]" />
-                  Start timer
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Task timers arrive with the sidebar timer</TooltipContent>
-            </Tooltip>
+            {/* Starting from here also clocks the user in, which is why there
+                is no separate clock-in step anywhere in the app. */}
+            {canTrackTime && (
+              <Button variant="outline" disabled={timerBusy} onClick={onToggleTimer}>
+                <Timer className="size-[13px]" />
+                {timerRunning ? 'Stop timer' : 'Start timer'}
+              </Button>
+            )}
             <span className="flex-1" />
             <span className="font-mono text-[10.5px] text-t4">Esc</span>
           </div>

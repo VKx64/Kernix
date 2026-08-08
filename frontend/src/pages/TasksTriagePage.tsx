@@ -18,6 +18,7 @@ import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
 import { uploadTaskAttachments } from '@/lib/attachments'
 import { useCan } from '@/lib/permissions'
+import { useTimerContext } from '@/lib/useTimer'
 import { activityPhrase } from '@/lib/taskActivity'
 import {
   dueMeta,
@@ -111,6 +112,7 @@ export function TasksTriagePage() {
   const { user } = useAuth()
   const can = useCan()
   const { canMutateTasks, canAdminOverride, adminOverride } = useWorkspace()
+  const timer = useTimerContext()
   const [params, setParams] = useSearchParams()
 
   const view = (params.get('view') as TaskView) ?? 'triage'
@@ -533,6 +535,14 @@ export function TasksTriagePage() {
       if (key === 'n' && can('tasks.create')) {
         event.preventDefault()
         setCreateOpen(true)
+        return
+      }
+      // Break and resume are the same key: on a break it returns you to work,
+      // otherwise it opens the sidebar's break menu to pick a kind.
+      if (key === 'b' && timer.state !== 'idle') {
+        event.preventDefault()
+        if (timer.state === 'break') void timer.resume()
+        else timer.setBreakMenuOpen(!timer.breakMenuOpen)
         return
       }
       if (key === 'j' || event.key === 'ArrowDown') {
@@ -1008,6 +1018,10 @@ function TaskDrawerConnected({
 }) {
   const can = useCan()
   const { adminOverride } = useWorkspace()
+  const timer = useTimerContext()
+  // The footer button acts on this task only. A timer running on some other
+  // task still reads as "Start timer" here, and starting moves it across.
+  const timerRunning = timer.state === 'working' && String(timer.task?.id ?? '') === String(listTask.id)
   const [detail, setDetail] = useState<Task | null>(null)
   const [activity, setActivity] = useState<Array<Record<string, unknown>>>([])
   const [showEvents, setShowEvents] = useState(true)
@@ -1161,6 +1175,10 @@ function TaskDrawerConnected({
       onToggleSubtask={(subtask) => void toggleSubtask(subtask)}
       onComment={comment}
       onComplete={() => onToggleDone(task)}
+      timerRunning={timerRunning}
+      timerBusy={timer.busy}
+      canTrackTime={can('time.track')}
+      onToggleTimer={() => void (timerRunning ? timer.stop() : timer.start(task.id))}
     />
   )
 }

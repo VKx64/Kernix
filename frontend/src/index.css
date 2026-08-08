@@ -67,6 +67,7 @@
   --color-danger: var(--danger);
   --color-warn: var(--warn);
   --color-good: var(--good);
+  --color-good-dim: var(--good-dim);
 
   /* shadcn's semantic names, mapped onto the same token set. */
   --color-background: var(--background);
@@ -172,6 +173,9 @@
   --danger: #f2585b;
   --warn: #e8a33d;
   --good: #4cb963;
+  /* Hours already tracked, as opposed to the one being tracked right now —
+     the day chart needs a resting green that does not read as live. */
+  --good-dim: #2f4a37;
 
   --background: var(--bg);
   --foreground: var(--t1);
