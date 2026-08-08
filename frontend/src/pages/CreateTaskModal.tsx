@@ -256,11 +256,12 @@ export function CreateTaskModal({
     dismissErrors()
   }
 
-  // Recognises @assignee / !priority / due-date tokens as the title is typed and
-  // lifts anything understood into its real field, leaving unmatched text alone.
+  // Recognises @assignee / !priority / #project / due-date tokens as the title
+  // is typed and lifts anything understood into its real field, leaving
+  // unmatched text alone.
   const setTitle = (value: string, settled = false) => {
     dismissErrors()
-    const parsed = parseTaskDraftTitle(value, { users, urgencyOptions, now: new Date(), settled })
+    const parsed = parseTaskDraftTitle(value, { users, urgencyOptions, projects, now: new Date(), settled })
     setDraft((current) => ({
       ...current,
       title: parsed.title,
@@ -268,6 +269,9 @@ export function CreateTaskModal({
       urgency_value_id: parsed.urgencyValueId ?? current.urgency_value_id,
       due_date: parsed.dueDate ?? current.due_date,
     }))
+    // Routed through setProject so a `#project` token loads that project's
+    // folders and is remembered, exactly as picking one from the menu would.
+    if (parsed.projectId && parsed.projectId !== draft.project_id) setProject(parsed.projectId)
     return parsed
   }
 

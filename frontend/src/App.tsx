@@ -8,6 +8,7 @@ import { BRAND_MARK } from './lib/brand'
 import { useCan } from './lib/permissions'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
 import { DashboardPage } from './pages/DashboardPage'
+import { DesignSystemPage } from './pages/DesignSystemPage'
 import { InviteAcceptPage } from './pages/InviteAcceptPage'
 import { LoginPage } from './pages/LoginPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -15,7 +16,8 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { TaskDetailPage, TasksPage } from './pages/TasksPage'
+import { TaskDetailPage } from './pages/TasksPage'
+import { TasksTriagePage } from './pages/TasksTriagePage'
 
 function ProtectedApp() {
   const { status } = useAuth()
@@ -74,11 +76,15 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
+      {/* The primitive gallery. Unauthenticated and outside the shell so it can
+          be opened without a backend, which is also why it never ships: it is
+          registered in development builds only. */}
+      {import.meta.env.DEV && <Route path="/design" element={<DesignSystemPage />} />}
       <Route element={<ProtectedApp />}>
         <Route index element={<PermissionRoute permission="dashboard.view"><DashboardPage /></PermissionRoute>} />
         <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
         <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
-        <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksPage /></PermissionRoute>} />
+        <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksTriagePage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
         <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />

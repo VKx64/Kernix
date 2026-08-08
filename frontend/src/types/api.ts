@@ -30,11 +30,20 @@ export interface FieldValue {
   fieldId?: EntityId
   field_id?: EntityId
   key?: string
+  key_name?: string
   label: string
   color?: string | null
   sortOrder?: number
   sort_order?: number
   active?: boolean
+  /**
+   * What this value *means*, independent of its label. The server resolves it
+   * from the slug (`App\Support\TaskSignals`) so grouping and colouring never
+   * key on a workspace's own wording. Only task_status values carry it.
+   */
+  role?: 'open' | 'active' | 'review' | 'blocked' | 'done' | null
+  /** Urgency ordering, lower being more urgent. Only task_urgency values carry it. */
+  rank?: number | null
 }
 
 export interface UserSummary {

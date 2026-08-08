@@ -1,42 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import {
   ArrowLeft,
   Calendar,
   Check,
   Clock,
-  Folder,
   Inbox,
   Pencil,
   Play,
   Plus,
   Send,
-  SlidersHorizontal,
   Sparkles,
-  SquareCheck,
   Trash2,
   User,
 } from 'lucide-react'
-import type { ColumnDef } from '@tanstack/react-table'
 import { useAuth } from '../auth/AuthProvider'
 import { useWorkspace } from '../auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '../components/ClockGate'
 import { CompletionProofCard, CompletionProofModal } from '../components/CompletionProof'
 import { TaskAttachments } from '../components/TaskAttachments'
 import { Avatar, EmptyState, ErrorBanner, Minutes, StatusBadge } from '@/components/shared'
-import { PageActions } from '@/layout/page-actions'
-import { usePageFill } from '@/layout/page-fill'
-import { DataTable } from '@/components/data-table'
 import { EntityForm, type FormFieldSpec } from '@/components/entity-form'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import {
   Select,
@@ -47,23 +38,16 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { api, displayName, fieldLabel, normalizePage, unwrap } from '../lib/api'
-import { uploadTaskAttachments } from '../lib/attachments'
+import { api, displayName, fieldLabel, unwrap } from '../lib/api'
 import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
-import { useCollection } from '../lib/useCollection'
 import { isAdministrator, useCan } from '../lib/permissions'
-import type { ApiEnvelope, CustomField, EntityId, EstimateRequest, FieldValue, FormPayload, Note, Paginated, Project, Subtask, Task, TaskFolder, TaskWorkRequest, UserSummary } from '../types/api'
-import { CreateTaskModal, type CreateTaskPayload } from './CreateTaskModal'
-import { AiCreateTaskModal } from './AiCreateTaskModal'
+import { taskDueDate, taskLoggedMinutes, taskProjectId, taskStatusValue, taskUrgencyValue } from '../lib/taskSignals'
+import { useTaskFolderCatalog } from '../lib/useTaskFolders'
+import { useTaskLookups } from '../lib/useTaskLookups'
+import type { ApiEnvelope, EntityId, EstimateRequest, FieldValue, FormPayload, Note, Subtask, Task, TaskWorkRequest, UserSummary } from '../types/api'
 
-function taskStatus(task: Task) { return task.statusValue ?? task.status_value ?? task.status }
-function taskUrgency(task: Task) { return task.urgencyValue ?? task.urgency_value ?? task.urgency }
-function dueDate(task: Task) { return task.dueDate ?? task.due_date }
 function estimated(task: Task) { return task.estimatedMinutes ?? task.estimated_minutes ?? 0 }
-function actual(task: Task) { return task.actualMinutes ?? task.actual_minutes ?? 0 }
-function taskProjectId(task: Task) { return task.projectId ?? task.project_id ?? task.project?.id }
 function taskFolderId(task: Task) { return task.taskFolderId ?? task.task_folder_id ?? task.folder?.id ?? null }
-function folderSort(folder: TaskFolder) { return folder.sortOrder ?? folder.sort_order ?? 0 }
 
 /**
  * Task work is restricted to the assignee server-side. This mirrors the
@@ -77,681 +61,6 @@ function isAssignmentGranted(task: Task, userId: EntityId | undefined, can: (per
     || String(task.creator?.id ?? '') === String(userId ?? '')
     || String(task.assignee?.id ?? '') === String(userId ?? '')
     || (task.subtasks ?? []).some((subtask) => String(subtask.assignee?.id ?? '') === String(userId ?? '')),
-  )
-}
-
-interface TaskLookups {
-  projects: Project[]
-  users: UserSummary[]
-  fields: CustomField[]
-}
-
-interface BootstrapLookups {
-  projects?: Project[]
-  assignees?: UserSummary[]
-  coworkers?: UserSummary[]
-  fields?: CustomField[]
-}
-
-function lookupValues(fields: CustomField[], key: string) {
-  return fields.find((field) => (field.key ?? (field as CustomField & { key_name?: string }).key_name) === key)?.values ?? []
-}
-
-function useTaskLookups(enabled = true) {
-  const can = useCan()
-  const [lookups, setLookups] = useState<TaskLookups>({ projects: [], users: [], fields: [] })
-  useEffect(() => {
-    if (!enabled) return
-    let active = true
-    void Promise.allSettled([
-      api.get<ApiEnvelope<BootstrapLookups> | BootstrapLookups>('/api/bootstrap'),
-      can('projects.view') ? api.get<Paginated<Project> | ApiEnvelope<Paginated<Project>> | Project[]>('/api/projects', { per_page: 100 }) : Promise.resolve(null),
-    ]).then(([bootstrapResult, projectResult]) => {
-      if (!active) return
-      const bootstrap = bootstrapResult.status === 'fulfilled' ? unwrap(bootstrapResult.value) : {}
-      setLookups({
-        projects: bootstrap.projects?.length
-          ? bootstrap.projects
-          : projectResult.status === 'fulfilled' && projectResult.value ? normalizePage(projectResult.value).data : [],
-        users: bootstrap.assignees ?? bootstrap.coworkers ?? [],
-        fields: bootstrap.fields ?? [],
-      })
-    })
-    return () => { active = false }
-  }, [can, enabled])
-  return lookups
-}
-
-type TaskFolderCatalog = Record<string, TaskFolder[]>
-
-function useTaskFolderCatalog(projectIds: EntityId[]) {
-  const projectKey = [...new Set(projectIds.map(String).filter(Boolean))].sort().join(',')
-  const [foldersByProject, setFoldersByProject] = useState<TaskFolderCatalog>({})
-  const [errorsByProject, setErrorsByProject] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(Boolean(projectKey))
-  const loadedProjects = useRef(new Set<string>())
-
-  // Only fetch projects that are not cached yet: opening the create modal or
-  // picking a project used to refetch folders for every project on screen.
-  const load = useCallback(async (isCurrent: () => boolean = () => true, force = false) => {
-    const ids = projectKey ? projectKey.split(',') : []
-    if (force) loadedProjects.current.clear()
-    if (!ids.length) {
-      loadedProjects.current.clear()
-      if (isCurrent()) {
-        setFoldersByProject({})
-        setErrorsByProject({})
-        setLoading(false)
-      }
-      return
-    }
-
-    const pending = ids.filter((projectId) => !loadedProjects.current.has(projectId))
-    if (!pending.length) {
-      if (isCurrent()) setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    const results = await Promise.allSettled(pending.map(async (projectId) => {
-      const response = await api.get<ApiEnvelope<TaskFolder[]> | TaskFolder[]>(`/api/projects/${projectId}/task-folders`)
-      const folders = unwrap(response)
-      return (Array.isArray(folders) ? folders : []).slice().sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name))
-    }))
-    if (!isCurrent()) return
-
-    const nextFolders: TaskFolderCatalog = {}
-    const nextErrors: Record<string, string> = {}
-    results.forEach((result, index) => {
-      const projectId = pending[index]
-      if (result.status === 'fulfilled') {
-        nextFolders[projectId] = result.value
-        loadedProjects.current.add(projectId)
-      } else {
-        nextErrors[projectId] = result.reason instanceof Error ? result.reason.message : 'Unable to load task folders.'
-      }
-    })
-    setFoldersByProject((current) => ({ ...current, ...nextFolders }))
-    setErrorsByProject((current) => {
-      const merged = { ...current, ...nextErrors }
-      pending.forEach((projectId) => { if (!nextErrors[projectId]) delete merged[projectId] })
-      return merged
-    })
-    setLoading(false)
-  }, [projectKey])
-
-  useEffect(() => {
-    let current = true
-    void load(() => current)
-    return () => { current = false }
-  }, [load])
-
-  return { foldersByProject, errorsByProject, loading, error: Object.values(errorsByProject)[0] ?? '', reload: () => load(() => true, true) }
-}
-
-type TaskColumnKey = 'title' | 'status' | 'urgency' | 'assignee' | 'due' | 'time'
-
-interface TaskColumnPreferences {
-  visible: Record<TaskColumnKey, boolean>
-}
-
-const TASK_COLUMN_STORAGE_KEY = 'kernix.task-columns.v2'
-const TASK_COLUMN_OPTIONS: Array<{ key: TaskColumnKey; label: string }> = [
-  { key: 'title', label: 'Task' },
-  { key: 'status', label: 'Status' },
-  { key: 'urgency', label: 'Urgency' },
-  { key: 'assignee', label: 'Assignee' },
-  { key: 'due', label: 'Due date' },
-  { key: 'time', label: 'Logged time' },
-]
-const DEFAULT_TASK_COLUMNS: TaskColumnPreferences = {
-  visible: { title: true, status: true, urgency: true, assignee: true, due: true, time: true },
-}
-
-function taskColumnPreferences(): TaskColumnPreferences {
-  try {
-    const stored = window.localStorage.getItem(TASK_COLUMN_STORAGE_KEY)
-    if (!stored) return structuredClone(DEFAULT_TASK_COLUMNS)
-    const parsed = JSON.parse(stored) as Partial<TaskColumnPreferences>
-    return { visible: { ...DEFAULT_TASK_COLUMNS.visible, ...parsed.visible, title: true } }
-  } catch {
-    return structuredClone(DEFAULT_TASK_COLUMNS)
-  }
-}
-
-function persistTaskColumnPreferences(preferences: TaskColumnPreferences) {
-  try {
-    window.localStorage?.setItem(TASK_COLUMN_STORAGE_KEY, JSON.stringify(preferences))
-  } catch {
-    // Preferences are optional when storage is disabled or unavailable.
-  }
-}
-
-export function TaskQueueTable({
-  tasks,
-  columns,
-  foldersByProject = {},
-  folderErrorsByProject = {},
-  loading = false,
-  foldersLoading = false,
-  canMove = false,
-  movingTaskId = null,
-  onTaskClick,
-  onMoveTask,
-}: {
-  tasks: Task[]
-  columns: ColumnDef<Task>[]
-  foldersByProject?: TaskFolderCatalog
-  folderErrorsByProject?: Record<string, string>
-  loading?: boolean
-  foldersLoading?: boolean
-  canMove?: boolean
-  movingTaskId?: EntityId | null
-  onTaskClick?: (task: Task) => void
-  onMoveTask?: (task: Task, folderId: EntityId | null) => void
-}) {
-  const [folderTask, setFolderTask] = useState<Task | null>(null)
-  const [folderChoice, setFolderChoice] = useState('')
-
-  const tableColumns = useMemo<ColumnDef<Task>[]>(() => canMove && onMoveTask ? [
-    ...columns,
-    {
-      id: 'folder-move',
-      header: 'Folder',
-      cell: ({ row }) => {
-        const task = row.original
-        const projectId = taskProjectId(task)
-        const currentFolderId = taskFolderId(task)
-        const unavailable = foldersLoading || (projectId !== undefined && Boolean(folderErrorsByProject[String(projectId)])) || String(movingTaskId ?? '') === String(task.id)
-        return (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={`Change folder for ${task.title}`}
-            disabled={unavailable}
-            onClick={(event) => {
-              event.stopPropagation()
-              setFolderChoice(currentFolderId === null || currentFolderId === undefined ? '' : String(currentFolderId))
-              setFolderTask(task)
-            }}
-          >
-            <Folder /> Change
-          </Button>
-        )
-      },
-    },
-  ] : columns, [canMove, columns, folderErrorsByProject, foldersLoading, movingTaskId, onMoveTask])
-
-  const folderTaskProjectId = folderTask ? taskProjectId(folderTask) : undefined
-  const folderTaskOptions = (folderTaskProjectId === undefined ? [] : foldersByProject[String(folderTaskProjectId)] ?? []).slice()
-  if (folderTask?.folder && !folderTaskOptions.some((folder) => String(folder.id) === String(folderTask.folder?.id))) folderTaskOptions.push(folderTask.folder)
-  folderTaskOptions.sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name))
-  const currentFolderChoice = folderTask ? String(taskFolderId(folderTask) ?? '') : ''
-
-  return (
-    <>
-      <DataTable
-        columns={tableColumns}
-        data={tasks}
-        loading={loading}
-        emptyTitle="No tasks match this view"
-        emptyDescription="Try changing a filter or create the next piece of work."
-        onRowClick={onTaskClick}
-        showViewOptions={false}
-      />
-      <Dialog open={Boolean(folderTask)} onOpenChange={(open) => { if (!open) setFolderTask(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Change folder</DialogTitle>
-            {folderTask && <DialogDescription>Choose where “{folderTask.title}” belongs.</DialogDescription>}
-          </DialogHeader>
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (!folderTask || folderChoice === currentFolderChoice) return
-              onMoveTask?.(folderTask, folderChoice || null)
-              setFolderTask(null)
-            }}
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="task-folder-destination">Folder</Label>
-              <Select value={folderChoice || '__unset__'} onValueChange={(next) => setFolderChoice(next === '__unset__' ? '' : next)}>
-                <SelectTrigger id="task-folder-destination" aria-label="Folder destination" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent aria-label="Folder destination">
-                  <SelectItem value="__unset__">Ungrouped</SelectItem>
-                  {folderTaskOptions.map((folder) => <SelectItem value={String(folder.id)} key={folder.id}>{folder.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setFolderTask(null)}>Cancel</Button>
-              <Button type="submit" disabled={!folderTask || folderChoice === currentFolderChoice}>Move task</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
-
-export function TasksPage() {
-  // The queue fills the viewport and scrolls its own rows, so the table keeps
-  // its column header and pagination in view.
-  usePageFill()
-  const navigate = useNavigate()
-  const [params, setParams] = useSearchParams()
-  const search = params.get('search') ?? ''
-  const mine = params.get('mine') === '1'
-  const urgent = params.get('urgent') === '1'
-  const archived = params.get('archived') === '1'
-  const sort = params.get('sort') ?? 'due_date'
-  const projectId = params.get('project_id') ?? ''
-  const [createOpen, setCreateOpen] = useState(false)
-  const [aiCreateOpen, setAiCreateOpen] = useState(false)
-  const [formBusy, setFormBusy] = useState(false)
-  const [formError, setFormError] = useState('')
-  const [clockBlocked, setClockBlocked] = useState(false)
-  const [folderOpen, setFolderOpen] = useState(false)
-  const [editingFolder, setEditingFolder] = useState<TaskFolder | null>(null)
-  const [folderBusy, setFolderBusy] = useState(false)
-  const [folderActionError, setFolderActionError] = useState('')
-  const [movingTaskId, setMovingTaskId] = useState<EntityId | null>(null)
-  const [createProjectId, setCreateProjectId] = useState<EntityId | ''>('')
-  const [columnPreferences, setColumnPreferences] = useState<TaskColumnPreferences>(taskColumnPreferences)
-  const { canMutateTasks, canAdminOverride, adminOverride } = useWorkspace()
-  const can = useCan()
-  const lookups = useTaskLookups(true)
-  const statusOptions = lookupValues(lookups.fields, 'task_status')
-  const typeOptions = lookupValues(lookups.fields, 'task_type')
-  const urgencyOptions = lookupValues(lookups.fields, 'task_urgency')
-  const { data, loading, error, reload } = useCollection<Task>('/api/tasks', {
-    search,
-    all: true,
-    filters: {
-      project_id: projectId || undefined,
-      mine: mine ? 1 : undefined,
-      urgent: urgent ? 1 : undefined,
-      archived: archived ? 'only' : undefined,
-      sort,
-    },
-  })
-  const folderProjectIds = useMemo<EntityId[]>(() => {
-    const ids: EntityId[] = []
-    if (projectId) ids.push(projectId)
-    else if (can('tasks.edit')) ids.push(...data.map(taskProjectId).filter((id): id is EntityId => id !== undefined))
-    if (createOpen && createProjectId !== '') ids.push(createProjectId)
-    return [...new Set(ids.map(String))]
-  }, [can, createOpen, createProjectId, data, projectId])
-  const folderCatalog = useTaskFolderCatalog(folderProjectIds)
-  const selectedProject = (projectId
-    ? lookups.projects.find((project) => String(project.id) === projectId)
-      ?? data.find((task) => String(taskProjectId(task)) === projectId)?.project
-    : null) ?? null
-  const selectedProjectFolders = projectId ? folderCatalog.foldersByProject[projectId] ?? [] : []
-  const createFolders = createProjectId === '' ? [] : folderCatalog.foldersByProject[String(createProjectId)] ?? []
-  const createFolderError = createProjectId === '' ? '' : folderCatalog.errorsByProject[String(createProjectId)] ?? ''
-
-  useEffect(() => {
-    if (canMutateTasks) setClockBlocked(false)
-  }, [canMutateTasks])
-
-  useEffect(() => {
-    persistTaskColumnPreferences(columnPreferences)
-  }, [columnPreferences])
-
-  const setFilter = (key: string, value?: string) => {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setParams(next, { replace: true })
-  }
-
-  // Sorting counts as narrowing here only when it is not the default, so the
-  // badge means "this view is not showing you everything, in default order".
-  const activeFilterCount = [mine, urgent, archived, Boolean(projectId), sort !== 'due_date']
-    .filter(Boolean).length
-
-  const clearFilters = () => {
-    const next = new URLSearchParams(params)
-    for (const key of ['mine', 'urgent', 'archived', 'project_id', 'sort']) next.delete(key)
-    setParams(next, { replace: true })
-  }
-
-  const columnRenderers: Record<TaskColumnKey, (task: Task) => React.ReactNode> = {
-    title: (task) => {
-      const projectName = task.project?.name ?? 'No project'
-      const clientName = task.project?.client?.name
-      return (
-        <div>
-          <strong className="block">{task.title}</strong>
-          <span className="text-xs text-muted-foreground">{[projectName, clientName && clientName !== projectName ? clientName : null].filter(Boolean).join(' · ')}</span>
-        </div>
-      )
-    },
-    status: (task) => <StatusBadge value={taskStatus(task)} />,
-    urgency: (task) => <StatusBadge value={taskUrgency(task)} />,
-    assignee: (task) => <span>{displayName(task.assignee)}</span>,
-    due: (task) => dueDate(task) ? <time className={new Date(dueDate(task)!) < new Date() ? 'text-destructive' : undefined}>{new Date(dueDate(task)!).toLocaleDateString()}</time> : '—',
-    time: (task) => <Minutes value={actual(task)} />,
-  }
-  const columns: ColumnDef<Task>[] = TASK_COLUMN_OPTIONS
-    .filter((column) => columnPreferences.visible[column.key])
-    .map((column) => ({
-      id: column.key,
-      header: column.label,
-      cell: ({ row }) => columnRenderers[column.key](row.original),
-    }))
-
-  const create = async (values: CreateTaskPayload, files: File[] = []) => {
-    if (!canMutateTasks && !(canAdminOverride && adminOverride)) { setClockBlocked(true); return }
-    setFormBusy(true)
-    setFormError('')
-    try {
-      const response = await api.post<ApiEnvelope<Task> | Task>('/api/tasks', { ...values, admin_override: adminOverride ? 1 : undefined } as Record<string, unknown>)
-      const task = unwrap(response)
-      // The task exists from here on: a failed upload must not discard it.
-      let uploadError = ''
-      if (files.length) {
-        try {
-          await uploadTaskAttachments(task.id, files, adminOverride)
-        } catch (reason) {
-          uploadError = reason instanceof Error ? reason.message : 'The task was created, but its files could not be uploaded.'
-        }
-      }
-      setClockBlocked(false)
-      setCreateOpen(false)
-      setCreateProjectId('')
-      await reload()
-      navigate(`/tasks/${task.id}`, uploadError ? { state: { attachmentError: uploadError } } : undefined)
-    } catch (reason) {
-      if (isClockGate(reason)) setClockBlocked(true)
-      setFormError(reason instanceof Error ? reason.message : 'Unable to create the task.')
-    } finally {
-      setFormBusy(false)
-    }
-  }
-
-  const moveTask = async (task: Task, folderId: EntityId | null) => {
-    if (!canMutateTasks && !(canAdminOverride && adminOverride)) {
-      setClockBlocked(true)
-      setFolderActionError('Clock in to move tasks between folders, or enable the administrator override.')
-      return
-    }
-    setMovingTaskId(task.id)
-    setFolderActionError('')
-    try {
-      await api.patch(`/api/tasks/${task.id}`, { task_folder_id: folderId, admin_override: adminOverride ? 1 : undefined })
-    } catch (reason) {
-      if (isClockGate(reason)) setClockBlocked(true)
-      setFolderActionError(reason instanceof Error ? reason.message : 'Unable to move this task.')
-      setMovingTaskId(null)
-      return
-    }
-    setClockBlocked(false)
-    const [refreshed] = await Promise.allSettled([reload()])
-    if (refreshed.status === 'rejected') {
-      setFolderActionError('The task was moved, but the list could not be refreshed.')
-    }
-    setMovingTaskId(null)
-  }
-
-  const refreshFolderView = async (successMessage: string) => {
-    const results = await Promise.allSettled([folderCatalog.reload(), reload()])
-    if (results.some((result) => result.status === 'rejected')) {
-      setFolderActionError(`${successMessage}, but this view could not be refreshed.`)
-    }
-  }
-
-  const openTaskCreator = () => {
-    setCreateProjectId(projectId || '')
-    setFormError('')
-    setCreateOpen(true)
-    setClockBlocked(false)
-  }
-
-  const closeTaskCreator = () => {
-    setCreateOpen(false)
-    setCreateProjectId('')
-    setFormError('')
-  }
-
-  const openNewFolder = () => {
-    setEditingFolder(null)
-    setFolderActionError('')
-    setFolderOpen(true)
-  }
-
-  const openRenameFolder = (folder: TaskFolder) => {
-    setEditingFolder(folder)
-    setFolderActionError('')
-    setFolderOpen(true)
-  }
-
-  const saveFolder = async (values: FormPayload) => {
-    if (!projectId) return
-    const name = String(values.name ?? '').trim()
-    if (!name) return
-    setFolderBusy(true)
-    setFolderActionError('')
-    const action = editingFolder ? 'renamed' : 'created'
-    try {
-      if (editingFolder) await api.patch(`/api/projects/${projectId}/task-folders/${editingFolder.id}`, { name })
-      else await api.post(`/api/projects/${projectId}/task-folders`, { name })
-    } catch (reason) {
-      setFolderActionError(reason instanceof Error ? reason.message : `Unable to ${editingFolder ? 'rename' : 'create'} this folder.`)
-      setFolderBusy(false)
-      return
-    }
-    setFolderOpen(false)
-    setEditingFolder(null)
-    await refreshFolderView(`The folder was ${action}`)
-    setFolderBusy(false)
-  }
-
-  const deleteFolder = async (folder: TaskFolder) => {
-    if (!projectId || !window.confirm(`Delete “${folder.name}”? Its tasks will become Ungrouped.`)) return
-    setFolderBusy(true)
-    setFolderActionError('')
-    try {
-      await api.delete(`/api/projects/${projectId}/task-folders/${folder.id}`, { admin_override: adminOverride ? 1 : undefined })
-    } catch (reason) {
-      if (isClockGate(reason)) setClockBlocked(true)
-      setFolderActionError(reason instanceof Error ? reason.message : 'Unable to delete this folder.')
-      setFolderBusy(false)
-      return
-    }
-    setClockBlocked(false)
-    await refreshFolderView('The folder was deleted')
-    setFolderBusy(false)
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-6">
-      {/* No page heading: the header already names the view, and the table
-          carries its own count. */}
-      <PageActions>
-        <>
-          {projectId && can('projects.edit') && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="sm"><Folder /> Folders</Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-72">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <strong className="text-sm">Project folders</strong>
-                    <p className="text-xs text-muted-foreground">{selectedProject?.name ?? 'Selected project'}</p>
-                  </div>
-                  <Button type="button" size="sm" aria-label="New folder" disabled={folderBusy} onClick={openNewFolder}>
-                    <Plus /> New
-                  </Button>
-                </div>
-                <div className="mt-3 space-y-1">
-                  {selectedProjectFolders.length ? selectedProjectFolders.map((folder) => (
-                    <div key={folder.id} className="flex items-center justify-between rounded-md px-1.5 py-1 hover:bg-accent">
-                      <span className="flex items-center gap-2 text-sm"><Folder className="size-3.5 text-muted-foreground" /> {folder.name}</span>
-                      <div className="flex gap-1">
-                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Rename ${folder.name}`} onClick={() => openRenameFolder(folder)}><Pencil /></Button>
-                        <Button type="button" variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" aria-label={`Delete ${folder.name}`} onClick={() => void deleteFolder(folder)}><Trash2 /></Button>
-                      </div>
-                    </div>
-                  )) : <p className="text-sm text-muted-foreground">No folders yet.</p>}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-          {/* Filters and sorting live behind one control so the header stays a
-              single row whatever the viewport. The count keeps a narrowed view
-              from looking like an empty one. */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                <SlidersHorizontal />
-                Filters
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-0.5 rounded-sm px-1 font-mono">{activeFilterCount}</Badge>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm">Filters</strong>
-                {activeFilterCount > 0 && (
-                  <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Reset</Button>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-1">
-                <Button type="button" variant={mine ? 'default' : 'outline'} size="sm" aria-pressed={mine} onClick={() => setFilter('mine', mine ? undefined : '1')}>Mine</Button>
-                <Button type="button" variant={urgent ? 'default' : 'outline'} size="sm" aria-pressed={urgent} onClick={() => setFilter('urgent', urgent ? undefined : '1')}>Urgent</Button>
-                <Button type="button" variant={archived ? 'default' : 'outline'} size="sm" aria-pressed={archived} onClick={() => setFilter('archived', archived ? undefined : '1')}>Archived</Button>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Project</span>
-                <Select value={projectId || '__unset__'} onValueChange={(next) => setFilter('project_id', next === '__unset__' ? undefined : next)}>
-                  <SelectTrigger size="sm" aria-label="Project filter" className="w-full">
-                    <SelectValue placeholder="All projects" />
-                  </SelectTrigger>
-                  <SelectContent aria-label="Project filter">
-                    <SelectItem value="__unset__">All projects</SelectItem>
-                    {lookups.projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Sort by</span>
-                <Select value={sort} onValueChange={(next) => setFilter('sort', next === 'due_date' ? undefined : next)}>
-                  <SelectTrigger size="sm" aria-label="Sort tasks" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent aria-label="Sort tasks">
-                    <SelectItem value="due_date">Due date</SelectItem>
-                    <SelectItem value="-created_at">Newest</SelectItem>
-                    <SelectItem value="urgency">Urgency</SelectItem>
-                    <SelectItem value="title">Title</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </PopoverContent>
-          </Popover>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="outline" size="sm"><SquareCheck /> Table columns</Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-56">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Table columns</p>
-              <div className="space-y-2">
-                {TASK_COLUMN_OPTIONS.map((column) => (
-                  <label key={column.key} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      aria-label={column.label}
-                      checked={columnPreferences.visible[column.key]}
-                      disabled={column.key === 'title'}
-                      onCheckedChange={(checked) => setColumnPreferences((current) => ({
-                        ...current,
-                        visible: { ...current.visible, [column.key]: checked === true },
-                      }))}
-                    />
-                    {column.label}
-                  </label>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {/* Creation sits apart from the view controls, hard against the end
-              of the header, so the primary action is always in the same place. */}
-          <div className="ml-auto flex items-center gap-2">
-            {can('tasks.create_with_ai') && <Button type="button" variant="outline" size="sm" onClick={() => setAiCreateOpen(true)}><Sparkles /> Create with AI</Button>}
-            {can('tasks.create') && <Button type="button" size="sm" onClick={openTaskCreator}><Plus /> New task</Button>}
-          </div>
-        </>
-      </PageActions>
-      {error && <ErrorBanner message={error} onRetry={() => void reload()} />}
-      {folderCatalog.error && <ErrorBanner message={folderCatalog.error} onRetry={() => void folderCatalog.reload()} />}
-      {folderActionError && !folderOpen && <ErrorBanner message={folderActionError} />}
-      {clockBlocked && !createOpen && <ClockGate compact />}
-      <TaskQueueTable
-        tasks={data}
-        columns={columns}
-        foldersByProject={folderCatalog.foldersByProject}
-        folderErrorsByProject={folderCatalog.errorsByProject}
-        loading={loading}
-        foldersLoading={folderCatalog.loading}
-        canMove={!archived && can('tasks.edit')}
-        movingTaskId={movingTaskId}
-        onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
-        onMoveTask={(task, folderId) => void moveTask(task, folderId)}
-      />
-      <CreateTaskModal
-        open={createOpen}
-        busy={formBusy}
-        error={formError}
-        initialProjectId={projectId || undefined}
-        projects={lookups.projects}
-        folders={createFolders}
-        foldersLoading={folderCatalog.loading && createProjectId !== '' && createFolders.length === 0 && !createFolderError}
-        folderError={createFolderError}
-        users={lookups.users}
-        statusOptions={statusOptions}
-        typeOptions={typeOptions}
-        urgencyOptions={urgencyOptions}
-        canAssign={can('tasks.assign')}
-        canChangeStatus={can('tasks.change_status')}
-        canEstimate={can('tasks.estimate')}
-        canCreateSubtasks={can('tasks.subtasks')}
-        canAttach={can('tasks.attachments')}
-        notice={clockBlocked ? <ClockGate compact showOverride={false} /> : undefined}
-        onProjectChange={setCreateProjectId}
-        onErrorDismiss={() => setFormError('')}
-        onClose={closeTaskCreator}
-        onSubmit={create}
-      />
-      <AiCreateTaskModal open={aiCreateOpen} projects={lookups.projects} initialProjectId={projectId || undefined} onClose={() => setAiCreateOpen(false)} onCreated={reload} />
-      <Dialog open={folderOpen} onOpenChange={(open) => { if (!open && !folderBusy) { setFolderOpen(false); setEditingFolder(null) } }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingFolder ? 'Rename folder' : 'Create a folder'}</DialogTitle>
-            <DialogDescription>Folders organize tasks inside this project.</DialogDescription>
-          </DialogHeader>
-          <EntityForm
-            key={`${editingFolder?.id ?? 'new'}-${folderOpen}`}
-            fields={[{ name: 'name', label: 'Folder name', required: true, wide: true, placeholder: 'For example, Pre-production' }]}
-            initialValues={editingFolder ? { name: editingFolder.name } : undefined}
-            busy={folderBusy}
-            error={folderActionError}
-            submitLabel={editingFolder ? 'Save folder' : 'Create folder'}
-            onCancel={() => { setFolderOpen(false); setEditingFolder(null) }}
-            onSubmit={saveFolder}
-          />
-        </DialogContent>
-      </Dialog>
-    </div>
   )
 }
 
@@ -800,9 +109,9 @@ export function TaskDetailPage() {
   const [decliningWorkRequest, setDecliningWorkRequest] = useState<TaskWorkRequest | null>(null)
   const [declineWorkReason, setDeclineWorkReason] = useState('')
   const lookups = useTaskLookups(Boolean(taskId))
-  const statusOptions = lookupValues(lookups.fields, 'task_status')
-  const typeOptions = lookupValues(lookups.fields, 'task_type')
-  const urgencyOptions = lookupValues(lookups.fields, 'task_urgency')
+  const statusOptions = lookups.statusOptions
+  const typeOptions = lookups.typeOptions
+  const urgencyOptions = lookups.urgencyOptions
   const detailProjectId = task ? taskProjectId(task) : undefined
   const detailFolderCatalog = useTaskFolderCatalog(editOpen && can('tasks.edit') && editProjectId !== '' ? [editProjectId] : [])
   const detailFolders = editProjectId === '' ? [] : detailFolderCatalog.foldersByProject[String(editProjectId)] ?? []
@@ -914,7 +223,7 @@ export function TaskDetailPage() {
   const emails = task?.emails ?? []
   const totals = task?.timeTotals
   // `taskActual`/`totalActual` is already inclusive of note time. Never add subtask actual again.
-  const actualTotal = totals?.taskActual ?? totals?.totalActual ?? (task ? actual(task) : 0)
+  const actualTotal = totals?.taskActual ?? totals?.totalActual ?? (task ? taskLoggedMinutes(task) : 0)
   const estimatedTotal = totals?.totalEstimated ?? totals?.taskEstimated ?? (task ? estimated(task) : 0)
   const progress = estimatedTotal > 0 ? Math.min(100, Math.round(actualTotal / estimatedTotal * 100)) : 0
   const isArchived = Boolean(task?.archivedAt ?? task?.archived_at)
@@ -925,7 +234,7 @@ export function TaskDetailPage() {
   const proof = latestProof(task)
   const proofDetail = proofState(proof)
   const statusKey = (() => {
-    const value = taskStatus(task ?? ({} as Task))
+    const value = taskStatusValue(task ?? ({} as Task))
     return typeof value === 'object' && value ? (value.key ?? (value as FieldValue & { key_name?: string }).key_name ?? '') : ''
   })()
   const isComplete = statusKey === 'complete'
@@ -990,7 +299,7 @@ export function TaskDetailPage() {
     status_value_id: task.statusValue?.id ?? task.status_value?.id,
     type_value_id: task.typeValue?.id ?? task.type_value?.id,
     urgency_value_id: task.urgencyValue?.id ?? task.urgency_value?.id,
-    due_date: dueDate(task) ?? '',
+    due_date: taskDueDate(task) ?? '',
     estimated_minutes: estimated(task),
     description: task.description ?? '',
   }
@@ -1223,13 +532,13 @@ export function TaskDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge value={taskStatus(task)} />
-          <StatusBadge value={taskUrgency(task)} />
+          <StatusBadge value={taskStatusValue(task)} />
+          <StatusBadge value={taskUrgencyValue(task)} />
           {isArchived && <Badge variant="outline" className="gap-1"><Inbox className="size-3" /> Archived</Badge>}
           <Badge variant="outline" className="gap-1"><User className="size-3" /> {displayName(task.assignee)}</Badge>
-          {dueDate(task) && (
-            <Badge variant="outline" className={new Date(dueDate(task)!) < new Date() && !isArchived ? 'gap-1 border-destructive text-destructive' : 'gap-1'}>
-              <Calendar className="size-3" /> {new Date(dueDate(task)!).toLocaleDateString()}
+          {taskDueDate(task) && (
+            <Badge variant="outline" className={new Date(taskDueDate(task)!) < new Date() && !isArchived ? 'gap-1 border-destructive text-destructive' : 'gap-1'}>
+              <Calendar className="size-3" /> {new Date(taskDueDate(task)!).toLocaleDateString()}
             </Badge>
           )}
           {(task.aiTaskGenerationId ?? task.ai_task_generation_id) && <Badge variant="outline" className="gap-1"><Sparkles className="size-3" /> AI batch #{task.aiTaskGenerationId ?? task.ai_task_generation_id}</Badge>}
@@ -1354,7 +663,7 @@ export function TaskDetailPage() {
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Folder</dt><dd>{detailFolder?.name ?? 'Ungrouped'}</dd></div>
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Type</dt><dd>{fieldLabel(task.typeValue ?? task.type_value ?? task.type)}</dd></div>
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Assignee</dt><dd className="flex items-center gap-1.5"><Avatar user={task.assignee} className="size-5" /> {displayName(task.assignee)}</dd></div>
-                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Due</dt><dd>{dueDate(task) ? new Date(dueDate(task)!).toLocaleDateString() : '—'}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Due</dt><dd>{taskDueDate(task) ? new Date(taskDueDate(task)!).toLocaleDateString() : '—'}</dd></div>
                 <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Created by</dt><dd className="flex items-center gap-1.5"><Avatar user={task.creator} className="size-5" /> {displayName(task.creator)}</dd></div>
               </dl>
             </CardContent>

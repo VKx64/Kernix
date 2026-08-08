@@ -1,5 +1,5 @@
 import { parseTaskDraftTitle } from './taskDraft'
-import type { FieldValue, UserSummary } from '../types/api'
+import type { FieldValue, Project, UserSummary } from '../types/api'
 
 const users: UserSummary[] = [
   { id: 9, first_name: 'Casey', last_name: 'Worker', username: 'caseyw' },
@@ -7,6 +7,11 @@ const users: UserSummary[] = [
 const urgencyOptions: FieldValue[] = [
   { id: 41, label: 'High' },
   { id: 42, label: 'Low' },
+]
+const projects: Project[] = [
+  { id: 3, name: 'Website Relaunch' },
+  { id: 4, name: 'Website Audit' },
+  { id: 5, name: 'Investor Deck' },
 ]
 // A Wednesday, so weekday math is unambiguous.
 const now = new Date(2026, 7, 5)
@@ -16,8 +21,10 @@ const now = new Date(2026, 7, 5)
  * The unsettled behaviour — a token still being typed at the end of the string
  * — is covered on its own further down.
  */
-function context(overrides: Partial<{ users: UserSummary[]; urgencyOptions: FieldValue[]; settled: boolean }> = {}) {
-  return { users, urgencyOptions, now, settled: true, ...overrides }
+function context(
+  overrides: Partial<{ users: UserSummary[]; urgencyOptions: FieldValue[]; projects: Project[]; settled: boolean }> = {},
+) {
+  return { users, urgencyOptions, projects, now, settled: true, ...overrides }
 }
 
 describe('parseTaskDraftTitle', () => {
@@ -30,6 +37,31 @@ describe('parseTaskDraftTitle', () => {
   it('lifts an @mention matched by username', () => {
     const result = parseTaskDraftTitle('Call the client @caseyw', context())
     expect(result.assigneeUserId).toBe('9')
+  })
+
+  it('lifts a #project matched on its name with the spaces removed', () => {
+    const result = parseTaskDraftTitle('Fix the nav #websiterelaunch', context())
+    expect(result.title).toBe('Fix the nav')
+    expect(result.projectId).toBe('3')
+  })
+
+  it('refuses a #project prefix that two projects share', () => {
+    // "Website Relaunch" and "Website Audit" both match, so filing it either
+    // way would put the task somewhere nobody chose.
+    const result = parseTaskDraftTitle('Fix the nav #website', context())
+    expect(result.title).toBe('Fix the nav #website')
+    expect(result.projectId).toBeUndefined()
+  })
+
+  it('accepts a #project prefix only one project shares', () => {
+    const result = parseTaskDraftTitle('Fix the nav #investor', context())
+    expect(result.projectId).toBe('5')
+  })
+
+  it('leaves a #project token alone when no project list is supplied', () => {
+    const result = parseTaskDraftTitle('Fix the nav #websiterelaunch', context({ projects: undefined }))
+    expect(result.title).toBe('Fix the nav #websiterelaunch')
+    expect(result.projectId).toBeUndefined()
   })
 
   it('leaves an @mention that matches nobody untouched', () => {

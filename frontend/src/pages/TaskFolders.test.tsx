@@ -1,23 +1,29 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import type { ColumnDef } from '@tanstack/react-table'
-import type { Project, Task, User } from '../types/api'
-import { TaskQueueTable, TasksPage } from './TasksPage'
+import type { Task, User } from '../types/api'
+import { TasksTriagePage } from './TasksTriagePage'
+
+/**
+ * Moving a task between folders used to be a column in the task queue table.
+ * That table is gone; the same contract now lives behind a row's "⋯" menu on
+ * the Triage screen, so this file follows the behaviour there instead.
+ */
 
 const authState = vi.hoisted(() => ({ user: null as User | null }))
 const workspaceState = vi.hoisted(() => ({ canMutateTasks: true, canAdminOverride: false }))
-const reload = vi.hoisted(() => vi.fn(async () => undefined))
 const folderFailures = vi.hoisted(() => new Set<string>())
-const collectionState = vi.hoisted(() => ({
-  data: [] as Task[],
-  meta: { page: 1, perPage: 20, total: 0, lastPage: 1 },
-  loading: false,
-  error: '',
-  reload,
-}))
+const taskState = vi.hoisted(() => ({ tasks: [] as Task[] }))
+
 const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
   if (folderFailures.has(path)) throw new Error('This project’s folders could not be loaded.')
+  if (path === '/api/tasks') {
+    return {
+      data: taskState.tasks,
+      counts: { triage: taskState.tasks.length, mine: 0, all: taskState.tasks.length, unassigned: 0, done: 0 },
+      total: taskState.tasks.length,
+    }
+  }
   if (path === '/api/bootstrap') {
     return {
       data: {
@@ -30,7 +36,6 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
       },
     }
   }
-  if (path === '/api/projects') return { data: [{ id: 5, name: 'Launch' }], current_page: 1, last_page: 1, total: 1 }
   if (path === '/api/projects/5/task-folders') {
     return { data: [{ id: 11, project_id: 5, name: 'Pre-production', sort_order: 10 }, { id: 12, project_id: 5, name: 'Delivery', sort_order: 20 }] }
   }
@@ -39,19 +44,9 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
   }
   return { data: [] }
 }))
-const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: { id: 13, project_id: 5, name: 'New folder' } })))
+const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: { id: 99 } })))
 const apiPatch = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 const apiDelete = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
-const preferenceStorage = new Map<string, string>()
-const localStorageMock = {
-  getItem: (key: string) => preferenceStorage.get(key) ?? null,
-  setItem: (key: string, value: string) => { preferenceStorage.set(key, value) },
-  removeItem: (key: string) => { preferenceStorage.delete(key) },
-  clear: () => { preferenceStorage.clear() },
-  key: (index: number) => [...preferenceStorage.keys()][index] ?? null,
-  get length() { return preferenceStorage.size },
-} as Storage
-Object.defineProperty(window, 'localStorage', { configurable: true, value: localStorageMock })
 
 vi.mock('../auth/AuthProvider', () => ({
   useAuth: () => ({ user: authState.user, status: 'authenticated', login: vi.fn(), logout: vi.fn(), refresh: vi.fn() }),
@@ -68,10 +63,6 @@ vi.mock('../auth/WorkspaceProvider', () => ({
   }),
 }))
 
-vi.mock('../lib/useCollection', () => ({
-  useCollection: () => collectionState,
-}))
-
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
   return {
@@ -80,228 +71,83 @@ vi.mock('../lib/api', async (importOriginal) => {
   }
 })
 
-const columns: ColumnDef<Task>[] = [
-  { id: 'title', header: 'Task', cell: ({ row }) => row.original.title },
-]
-
-type Actor = ReturnType<typeof userEvent.setup>
-
-/** Scoped to the popup: several selects on the page share option labels. */
-async function choose(actor: Actor, field: string, option: string) {
-  await actor.click(screen.getByRole('combobox', { name: field }))
-  const menu = await screen.findByRole('listbox', { name: field })
-  await actor.click(await within(menu).findByRole('option', { name: option }))
-  await waitFor(() => expect(screen.queryByRole('listbox', { name: field })).not.toBeInTheDocument())
+function bookStudio(): Task {
+  return {
+    id: 1,
+    project_id: 5,
+    project: { id: 5, name: 'Launch', client: { id: 4, name: 'Acme' } },
+    title: 'Book studio',
+    status_value: { id: 100, key: 'in_progress', label: 'In progress', role: 'active' },
+    urgency_value: { id: 200, key: 'normal', label: 'Normal', rank: 2 },
+    task_folder_id: 11,
+    folder: { id: 11, project_id: 5, name: 'Pre-production', sort_order: 10 },
+  }
 }
 
-describe('TaskQueueTable', () => {
-  it('renders tasks in one flat table without project or folder group sections', () => {
-    const project: Project = { id: 5, name: 'Launch' }
-    const tasks: Task[] = [
-      { id: 1, project_id: 5, project, title: 'Book studio', task_folder_id: 11, folder: { id: 11, project_id: 5, name: 'Pre-production', sort_order: 10 } },
-      { id: 2, project_id: 5, project, title: 'Confirm delivery', task_folder_id: null },
-    ]
+async function openRowMenu(actor: ReturnType<typeof userEvent.setup>) {
+  await actor.click(await screen.findByRole('button', { name: 'Task actions' }))
+}
 
-    render(<TaskQueueTable tasks={tasks} columns={columns} />)
-
-    expect(screen.getByText('Book studio')).toBeInTheDocument()
-    expect(screen.getByText('Confirm delivery')).toBeInTheDocument()
-    expect(screen.getAllByRole('table')).toHaveLength(1)
-    expect(screen.queryByRole('button', { name: /Collapse/ })).not.toBeInTheDocument()
-  })
-
-  it('offers a focused folder-change action without grouping the queue', async () => {
-    const actor = userEvent.setup()
-    const onMove = vi.fn()
-    const launch: Project = { id: 5, name: 'Launch' }
-    const website: Project = { id: 6, name: 'Website' }
-    const tasks: Task[] = [
-      { id: 1, project_id: 5, project: launch, title: 'Book studio', task_folder_id: 11, folder: { id: 11, project_id: 5, name: 'Pre-production' } },
-      { id: 2, project_id: 6, project: website, title: 'Write copy', task_folder_id: 21, folder: { id: 21, project_id: 6, name: 'Content' } },
-    ]
-
-    render(<TaskQueueTable tasks={tasks} columns={columns} canMove onMoveTask={onMove} foldersByProject={{
-      5: [{ id: 11, project_id: 5, name: 'Pre-production' }, { id: 12, project_id: 5, name: 'Delivery' }],
-      6: [{ id: 21, project_id: 6, name: 'Content' }],
-    }} />)
-
-    await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
-    expect(screen.getByRole('dialog', { name: 'Change folder' })).toBeInTheDocument()
-    const launchMove = screen.getByRole('combobox', { name: 'Folder destination' })
-    await actor.click(launchMove)
-    const menu = await screen.findByRole('listbox', { name: 'Folder destination' })
-    expect(within(menu).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
-    expect(within(menu).queryByRole('option', { name: 'Content' })).not.toBeInTheDocument()
-    await actor.click(within(menu).getByRole('option', { name: 'Delivery' }))
-    await actor.click(screen.getByRole('button', { name: 'Move task' }))
-    expect(onMove).toHaveBeenCalledWith(tasks[0], '12')
-  })
-})
-
-describe('TasksPage project folders', () => {
+describe('moving a task to a folder from the Triage row menu', () => {
   beforeEach(() => {
     authState.user = {
       id: 2,
       username: 'producer',
-      permissions: ['tasks.view', 'tasks.create', 'tasks.edit', 'projects.view', 'projects.edit', 'time.track'],
+      permissions: ['tasks.view', 'tasks.edit', 'tasks.create', 'projects.view'],
     }
     workspaceState.canMutateTasks = true
     workspaceState.canAdminOverride = false
-    collectionState.data = [{
-      id: 1,
-      project_id: 5,
-      project: { id: 5, name: 'Launch', client: { id: 4, name: 'Acme' } },
-      title: 'Book studio',
-      task_folder_id: 11,
-      folder: { id: 11, project_id: 5, name: 'Pre-production' },
-    }]
-    collectionState.meta = { page: 1, perPage: 20, total: 1, lastPage: 1 }
-    reload.mockClear()
+    taskState.tasks = [bookStudio()]
+    folderFailures.clear()
     apiGet.mockClear()
     apiPost.mockClear()
     apiPatch.mockClear()
     apiDelete.mockClear()
-    folderFailures.clear()
-    window.localStorage.clear()
   })
 
-  it('creates, renames, deletes, and moves within the selected project folder contract', async () => {
+  it('sends the chosen folder as a task patch', async () => {
     const actor = userEvent.setup()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
+    render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
-    // The heading lives in the app header, which this page is rendered without,
-    // so the filter control standing in for the toolbar is what proves the
-    // page mounted.
-    expect(await screen.findByRole('button', { name: /Filters/ })).toBeInTheDocument()
+    await openRowMenu(actor)
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'Delivery' }))
 
-    // Filters and sorting are behind one header control now.
-    await actor.click(screen.getByRole('button', { name: /Filters/ }))
-    expect(await screen.findByRole('combobox', { name: 'Project filter' })).toHaveTextContent('Launch')
-    await actor.keyboard('{Escape}')
-
-    expect(screen.queryByRole('button', { name: /Collapse/ })).not.toBeInTheDocument()
-
-    await actor.click(screen.getByText('Folders'))
-    await actor.click(screen.getByRole('button', { name: 'New folder' }))
-    await actor.type(screen.getByLabelText(/^Folder name/), 'Review')
-    await actor.click(screen.getByRole('button', { name: 'Create folder' }))
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/projects/5/task-folders', { name: 'Review' }))
-
-    await actor.click(screen.getByText('Folders'))
-    await actor.click(screen.getByRole('button', { name: 'Rename Pre-production' }))
-    const folderName = screen.getByLabelText(/^Folder name/)
-    await actor.clear(folderName)
-    await actor.type(folderName, 'Planning')
-    await actor.click(screen.getByRole('button', { name: 'Save folder' }))
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/projects/5/task-folders/11', { name: 'Planning' }))
-
-    await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
-    await choose(actor, 'Folder destination', 'Delivery')
-    await actor.click(screen.getByRole('button', { name: 'Move task' }))
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', { task_folder_id: '12', admin_override: undefined }))
-
-    await actor.click(screen.getByText('Folders'))
-    await actor.click(screen.getByRole('button', { name: 'Delete Delivery' }))
-    expect(confirm).toHaveBeenCalledWith('Delete “Delivery”? Its tasks will become Ungrouped.')
-    await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/api/projects/5/task-folders/12', { admin_override: undefined }))
-    confirm.mockRestore()
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', expect.objectContaining({ task_folder_id: 12 })))
   })
 
-  it('prefills and locks the filtered project while offering that project folders on task creation', async () => {
+  it('clears the folder when "No folder" is chosen', async () => {
     const actor = userEvent.setup()
-    render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
+    render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
-    await actor.click(await screen.findByRole('button', { name: 'New task' }))
-    const project = await screen.findByRole('combobox', { name: 'Project' })
-    expect(project).toHaveTextContent('Launch')
-    expect(project).toBeDisabled()
-    await actor.type(screen.getByLabelText('Task title'), 'Schedule review')
-    await actor.click(screen.getByRole('button', { name: 'More details' }))
-    await choose(actor, 'Folder', 'Delivery')
-    await actor.click(screen.getByRole('button', { name: 'Create task' }))
+    await openRowMenu(actor)
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'No folder' }))
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/tasks', expect.objectContaining({
-      title: 'Schedule review',
-      project_id: '5',
-      task_folder_id: '12',
-    })))
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', expect.objectContaining({ task_folder_id: null })))
   })
 
-  it('loads folders on global creation and clears a folder when the project changes', async () => {
+  it('surfaces a failed folder fetch inside the submenu instead of blanking the list', async () => {
+    folderFailures.add('/api/projects/5/task-folders')
     const actor = userEvent.setup()
-    render(<MemoryRouter initialEntries={['/tasks']}><TasksPage /></MemoryRouter>)
+    render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
-    await actor.click(screen.getByRole('button', { name: 'New task' }))
-    await screen.findByRole('combobox', { name: 'Project' })
-    await actor.click(screen.getByRole('button', { name: 'More details' }))
-    const folder = screen.getByRole('combobox', { name: 'Folder' })
-    expect(folder).toBeDisabled()
+    // The row itself must still be there: one project's folders failing must
+    // not blank the task list around it.
+    expect(await screen.findByText('Book studio')).toBeInTheDocument()
 
-    await choose(actor, 'Project', 'Launch')
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Folder' })).toBeEnabled())
-    await choose(actor, 'Folder', 'Delivery')
-    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Delivery')
-
-    await choose(actor, 'Project', 'Website')
-    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Ungrouped')
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Folder' })).toBeEnabled())
-    await choose(actor, 'Folder', 'Content')
-    await actor.type(screen.getByLabelText('Task title'), 'Write homepage copy')
-    await actor.click(screen.getByRole('button', { name: 'Create task' }))
-
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/tasks', expect.objectContaining({
-      title: 'Write homepage copy',
-      project_id: '6',
-      task_folder_id: '21',
-    })))
+    await openRowMenu(actor)
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
+    expect(await screen.findByText('This project’s folders could not be loaded.')).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Delivery' })).not.toBeInTheDocument()
   })
 
-  it('keeps successful project folder moves available when another project fails to load', async () => {
+  it('hides the move-to-folder action without tasks.edit', async () => {
+    authState.user = { id: 2, username: 'producer', permissions: ['tasks.view'] }
     const actor = userEvent.setup()
-    folderFailures.add('/api/projects/6/task-folders')
-    collectionState.data = [
-      collectionState.data[0],
-      {
-        id: 2,
-        project_id: 6,
-        project: { id: 6, name: 'Website', client: { id: 4, name: 'Acme' } },
-        title: 'Write copy',
-        task_folder_id: 21,
-        folder: { id: 21, project_id: 6, name: 'Content' },
-      },
-    ]
-    collectionState.meta = { page: 1, perPage: 20, total: 2, lastPage: 1 }
+    render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
-    render(<MemoryRouter initialEntries={['/tasks']}><TasksPage /></MemoryRouter>)
-
-    // Each project's folder lookup resolves after the first paint and re-renders
-    // the table, so the row actions have to be read again on each assertion
-    // rather than held across the update.
-    await screen.findByRole('button', { name: 'Change folder for Book studio' })
-    await waitFor(
-      () => expect(screen.getByRole('button', { name: 'Change folder for Book studio' })).toBeEnabled(),
-      { timeout: 4000 },
-    )
-    expect(screen.getByRole('button', { name: 'Change folder for Write copy' })).toBeDisabled()
-
-    await actor.click(screen.getByRole('button', { name: 'Change folder for Book studio' }))
-    await actor.click(screen.getByRole('combobox', { name: 'Folder destination' }))
-    const menu = await screen.findByRole('listbox', { name: 'Folder destination' })
-    expect(within(menu).getByRole('option', { name: 'Delivery' })).toBeInTheDocument()
-  })
-
-  it('persists column visibility across reloads', async () => {
-    const actor = userEvent.setup()
-    render(<MemoryRouter initialEntries={['/tasks?project_id=5']}><TasksPage /></MemoryRouter>)
-
-    expect(await screen.findByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
-    await actor.click(screen.getByRole('button', { name: 'Table columns' }))
-    await actor.click(screen.getByLabelText('Status'))
-    expect(screen.queryByRole('columnheader', { name: 'Status' })).not.toBeInTheDocument()
-
-    await waitFor(() => expect(JSON.parse(window.localStorage.getItem('kernix.task-columns.v2') ?? '{}')).toEqual(
-      expect.objectContaining({ visible: expect.objectContaining({ status: false }) }),
-    ))
+    await openRowMenu(actor)
+    expect(screen.queryByRole('menuitem', { name: /Move to folder/ })).not.toBeInTheDocument()
   })
 })

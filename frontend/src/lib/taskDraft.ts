@@ -1,10 +1,11 @@
-import type { FieldValue, UserSummary } from '../types/api'
+import type { FieldValue, Project, UserSummary } from '../types/api'
 
 export interface ParsedTaskDraft {
   /** The title with every recognised token removed and whitespace collapsed. */
   title: string
   assigneeUserId?: string
   urgencyValueId?: string
+  projectId?: string
   /** ISO `YYYY-MM-DD`. */
   dueDate?: string
 }
@@ -12,6 +13,8 @@ export interface ParsedTaskDraft {
 export interface ParseTaskDraftContext {
   users: UserSummary[]
   urgencyOptions: FieldValue[]
+  /** Omit to leave `#project` tokens in the title untouched. */
+  projects?: Project[]
   now: Date
   /** The value is final, so a token at the end of the string may resolve. */
   settled?: boolean
@@ -44,6 +47,22 @@ function findUser(token: string, users: UserSummary[]): UserSummary | undefined 
     const full = normalize(fullName(user))
     return needle === username || needle === first || needle === full
   })
+}
+
+/**
+ * `#project` matches on the whole name with punctuation and spaces stripped, so
+ * `#websiterelaunch` finds "Website Relaunch". A prefix match is accepted only
+ * when exactly one project starts with the token — two candidates mean the
+ * person is still typing, and guessing between them would file the task
+ * somewhere they did not choose.
+ */
+function findProject(token: string, projects: Project[]): Project | undefined {
+  const needle = normalize(token)
+  if (!needle) return undefined
+  const exact = projects.find((project) => normalize(project.name) === needle)
+  if (exact) return exact
+  const prefixed = projects.filter((project) => normalize(project.name).startsWith(needle))
+  return prefixed.length === 1 ? prefixed[0] : undefined
 }
 
 // "!urgent" has no matching label most of the time, so it also accepts "high" —
@@ -168,7 +187,8 @@ function removeSpans(title: string, spans: Span[], settled: boolean): string {
 }
 
 /**
- * Pulls `@assignee`, `!priority`, and due-date tokens out of a task title.
+ * Pulls `@assignee`, `!priority`, `#project`, and due-date tokens out of a task
+ * title.
  * Only ever removes a token it can actually resolve — an `@name` matching no
  * one, or an unrecognised `!word`, is left in the title untouched.
  *
@@ -200,6 +220,16 @@ export function parseTaskDraftTitle(rawTitle: string, context: ParseTaskDraftCon
     if (urgency && finished(end)) {
       result.urgencyValueId = String(urgency.id)
       spans.push({ start: priority.index, end })
+    }
+  }
+
+  const project = /#([A-Za-z0-9_.'-]+)/.exec(rawTitle)
+  if (project && context.projects?.length) {
+    const end = project.index + project[0].length
+    const match = findProject(project[1], context.projects)
+    if (match && finished(end)) {
+      result.projectId = String(match.id)
+      spans.push({ start: project.index, end })
     }
   }
 
