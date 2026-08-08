@@ -8,13 +8,11 @@ import {
   Inbox,
   LayoutDashboard,
   LogOut,
-  Moon,
   Pause,
   Play,
   Search,
   Settings,
   SquareCheck,
-  Sun,
   UserRound,
 } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
@@ -51,7 +49,6 @@ import {
 import { Toaster } from '@/components/ui/sonner'
 import { api, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
-import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { PageActionsSlotContext } from '@/layout/page-actions'
 import { PageFillProvider } from '@/layout/page-fill'
@@ -87,7 +84,6 @@ export function AppShell() {
   const [query, setQuery] = useState('')
   const [unread, setUnread] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const { theme, toggleTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -267,18 +263,6 @@ export function AppShell() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  {/* Theme lives in this menu rather than the header, which
-                      keeps the header free for whatever the page puts there. */}
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault()
-                      toggleTheme()
-                    }}
-                  >
-                    {theme === 'dark' ? <Sun /> : <Moon />}
-                    {theme === 'dark' ? 'Light theme' : 'Dark theme'}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => void logout()}>
                     <LogOut />
                     Sign out
@@ -295,7 +279,9 @@ export function AppShell() {
           scrolling, so the header stays put and a page can pin its own footer
           to the bottom of the scroll container. */}
       <SidebarInset className="h-svh overflow-hidden">
-        <header className="z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
+        {/* 28px page gutter, matched by the content below so a header control
+            and the first row under it share an edge. */}
+        <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b border-line-soft bg-background px-4 md:px-7">
           {/* Below md the sidebar is a sheet and this is the only way to open
               it, so the trigger stays there and only the desktop one goes. */}
           <SidebarTrigger className="-ml-1 md:hidden" />
@@ -387,7 +373,7 @@ export function AppShell() {
           {(fill) => (
             <main
               className={cn(
-                'flex min-h-0 flex-1 flex-col gap-6 p-4 md:p-6',
+                'flex min-h-0 flex-1 flex-col gap-5 px-4 py-4 md:px-7 md:pt-[18px] md:pb-14',
                 fill ? 'overflow-hidden' : 'overflow-y-auto',
               )}
             >

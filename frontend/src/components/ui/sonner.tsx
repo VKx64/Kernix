@@ -7,15 +7,17 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { THEME } from "@/lib/theme"
 
+// Toasts sit bottom-right and last four seconds, per the design spec. Undo is
+// attached by the caller, and only where the undo is real.
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={THEME}
+      position="bottom-right"
+      duration={4000}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

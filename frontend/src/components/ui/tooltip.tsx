@@ -18,10 +18,17 @@ function TooltipProvider({
   )
 }
 
+// Carries its own provider so a single tooltip works anywhere without the page
+// having to know it needs one. Nesting providers is harmless — the sidebar
+// keeps its outer one for the shared delay across a whole column of tooltips.
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  )
 }
 
 function TooltipTrigger({

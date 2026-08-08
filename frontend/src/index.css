@@ -1,14 +1,74 @@
-@import '@fontsource-variable/geist';
-@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/jetbrains-mono';
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: 'Geist Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  --font-sans: 'Instrument Sans Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
 
+  /*
+   * Type scale from the design handoff, in px-equivalent rem so the values in
+   * the spec can be read straight off the class name. Modifiers ride along on
+   * the size, so `text-label` already carries its weight and tracking.
+   */
+  --text-label: 0.65625rem; /* 10.5px */
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.1em;
+  --text-label--font-weight: 600;
+  --text-meta-sm: 0.71875rem; /* 11.5px */
+  --text-meta-sm--line-height: 1.45;
+  --text-meta: 0.75rem; /* 12px */
+  --text-meta--line-height: 1.45;
+  --text-body-sm: 0.78125rem; /* 12.5px */
+  --text-body-sm--line-height: 1.5;
+  --text-body: 0.8125rem; /* 13px */
+  --text-body--line-height: 1.54;
+  --text-body-lg: 0.84375rem; /* 13.5px */
+  --text-body-lg--line-height: 1.62;
+  --text-title: 0.84375rem; /* 13.5px */
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+  --text-metric: 1.4375rem; /* 23px */
+  --text-metric--line-height: 1.1;
+  --text-h1: 1.3125rem; /* 21px */
+  --text-h1--line-height: 1.2;
+  --text-h1--letter-spacing: -0.026em;
+  --text-h1--font-weight: 600;
+
+  /* Design token set, exposed under the handoff's own names. */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-elev: var(--elev);
+  --color-elev-low: var(--elev-low);
+  --color-soft: var(--soft);
+  --color-fill: var(--fill);
+  --color-rail: var(--rail);
+  --color-row-hover: var(--row-hover);
+  --color-row-selected: var(--row-selected);
+  --color-title: var(--title);
+  --color-title-strong: var(--title-strong);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-line-strong: var(--line-strong);
+  --color-label-fg: var(--label-fg);
+  --color-t1: var(--t1);
+  --color-t2: var(--t2);
+  --color-t3: var(--t3);
+  --color-t4: var(--t4);
+  --color-t5: var(--t5);
+  --color-t6: var(--t6);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-good: var(--good);
+
+  /* shadcn's semantic names, mapped onto the same token set. */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -46,103 +106,131 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* Chips and small buttons 5–7px, buttons and rows 8–9px, cards and
+     popovers 10–12px. */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 2px);
+
+  /* Floating layers only — nothing in the flow of the page casts a shadow. */
+  --shadow-layer: 0 14px 32px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 18px 40px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 20px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.02);
+
+  --animate-live-pulse: live-pulse 1.6s ease-in-out infinite;
 }
 
 /*
- * Monochrome theme. Every surface, text, and border token is achromatic
- * (chroma 0 in oklch). The only hues left in the palette are the three status
- * colors below, kept because a greyscale error state is not readable at a
- * glance. Charts use a lightness ramp instead of a categorical hue scale, so
- * series are distinguished by value rather than color.
+ * One theme. The product is dark-only, so the token set below is the single
+ * source of colour in the app — no light counterpart to keep in sync, and no
+ * `dark:` variants anywhere in the component layer.
+ *
+ * Raw tokens come first and carry the handoff's names; the semantic layer
+ * underneath is only aliases, so changing a hex here changes it everywhere.
  */
 :root {
-  --radius: 0.625rem;
+  --radius: 10px;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Surfaces, darkest to lightest. `inset` is the one that goes *below* the
+     page: the composer box and other sunken wells. */
+  --bg: #0b0b0c;
+  --inset: #101013;
+  --surface: #0f0f12;
+  --elev-low: #141417;
+  --elev: #151518;
+  --soft: #17171a;
+  --line-soft: #1a1a1e;
+  --fill: #1c1c21;
+  --rail: #1c1c20;
+  --line: #1f1f23;
+  --line-strong: #232329;
 
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.527 0.154 150.069);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.666 0.146 70.08);
-  --warning-foreground: oklch(0.145 0 0);
+  /* List rows. Hover and keyboard cursor share one fill; a selected row is the
+     only place a row takes on the brand hue. */
+  --row-hover: #131315;
+  --row-selected: #181926;
 
-  --chart-1: oklch(0.205 0 0);
-  --chart-2: oklch(0.371 0 0);
-  --chart-3: oklch(0.556 0 0);
-  --chart-4: oklch(0.708 0 0);
-  --chart-5: oklch(0.87 0 0);
+  /* Text, brightest to faintest. `label-fg` is the uppercase label row only —
+     it sits a shade under t3 so a label never competes with its content. */
+  --label-fg: #7a7a85;
+  /* Row and card titles sit just under t1, and lift above it when the task is
+     critical — the only weight the list gives urgency beyond the rail. */
+  --title-strong: #f6f6f8;
+  --t1: #ececee;
+  --title: #d8d8de;
+  --t2: #9c9ca4;
+  --t3: #82828d;
+  --t4: #6a6a74;
+  --t5: #5f5f68;
+  --t6: #4e4e57;
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Signal colour. `brand` carries AI, links and identity; the other three
+     are reserved for state and never used decoratively. */
+  --brand: #7b7ff6;
+  --brand-hover: #9b9ef8;
+  --danger: #f2585b;
+  --warn: #e8a33d;
+  --good: #4cb963;
+
+  --background: var(--bg);
+  --foreground: var(--t1);
+  --card: var(--surface);
+  --card-foreground: var(--t1);
+  --popover: var(--elev);
+  --popover-foreground: var(--t1);
+  /* The primary action is a light fill on dark text, not a brand fill —
+     brand is reserved for AI and links. */
+  --primary: var(--t1);
+  --primary-foreground: var(--bg);
+  --secondary: var(--soft);
+  --secondary-foreground: var(--t1);
+  --muted: var(--soft);
+  --muted-foreground: var(--t3);
+  /* shadcn reads `accent` as the hover fill, not the brand colour. */
+  --accent: var(--elev);
+  --accent-foreground: var(--t1);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--brand);
+
+  --destructive: var(--danger);
+  --destructive-foreground: var(--bg);
+  --success: var(--good);
+  --success-foreground: var(--bg);
+  --warning: var(--warn);
+  --warning-foreground: var(--bg);
+
+  --chart-1: var(--brand);
+  --chart-2: var(--t2);
+  --chart-3: var(--good);
+  --chart-4: var(--warn);
+  --chart-5: var(--danger);
+
+  --sidebar: var(--bg);
+  --sidebar-foreground: var(--t2);
+  --sidebar-primary: var(--t1);
+  --sidebar-primary-foreground: var(--bg);
+  --sidebar-accent: #151517;
+  --sidebar-accent-foreground: var(--t1);
+  --sidebar-border: var(--soft);
+  --sidebar-ring: var(--brand);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+@theme {
+  /* Sidebar is a fixed 236px rail; reading columns cap at 1040px. */
+  --spacing-sidebar: 236px;
+  --container-reading: 1040px;
+}
 
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.145 0 0);
-  --success: oklch(0.696 0.17 162.48);
-  --success-foreground: oklch(0.145 0 0);
-  --warning: oklch(0.769 0.188 70.08);
-  --warning-foreground: oklch(0.145 0 0);
-
-  --chart-1: oklch(0.985 0 0);
-  --chart-2: oklch(0.83 0 0);
-  --chart-3: oklch(0.68 0 0);
-  --chart-4: oklch(0.53 0 0);
-  --chart-5: oklch(0.38 0 0);
-
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.922 0 0);
-  --sidebar-primary-foreground: oklch(0.205 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @layer base {
@@ -150,7 +238,46 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground text-body;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  p,
+  li,
+  blockquote {
+    text-wrap: pretty;
+  }
+
+  /* Numerics, dates, durations and IDs are mono and tabular everywhere, so
+     a column of them never shifts as values change. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #232327;
+    border: 4px solid transparent;
+    border-radius: 10px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #34343a;
+    border: 4px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 }

@@ -7,23 +7,33 @@ import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { LabelRow } from '@/components/kernix/label-row'
+import { initialsOf } from '@/components/kernix/monogram'
 import { cn } from '@/lib/utils'
 import { displayName, fieldLabel } from '@/lib/api'
+import { personColor, tint } from '@/lib/identity'
 import type { UserSummary } from '@/types/api'
 
+/**
+ * A person. Their picture when they have uploaded one, otherwise initials at
+ * weight 700 over a tint of the colour derived from their identity — the
+ * design's avatar, which stays legible down to 21px.
+ */
 export function Avatar({ user, className, ...props }: { user?: UserSummary | null } & ComponentProps<typeof AvatarRoot>) {
   const image = user?.avatar ?? user?.profileImage ?? user?.profile_image
-  const initials = displayName(user)
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
+  const name = displayName(user)
+  const initials = initialsOf(name)
+  const color = personColor(user?.id ?? name)
 
   return (
-    <AvatarRoot className={cn('size-8', className)} {...props}>
+    <AvatarRoot className={cn('size-7', className)} {...props}>
       {image && <AvatarImage src={image} alt="" />}
-      <AvatarFallback className="text-[0.7rem] font-medium">{initials || '?'}</AvatarFallback>
+      <AvatarFallback
+        className="text-[9.5px] font-bold"
+        style={{ background: tint(color, 16), color }}
+      >
+        {initials || '?'}
+      </AvatarFallback>
     </AvatarRoot>
   )
 }
@@ -41,12 +51,10 @@ export function PageHeader({
 }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="space-y-1">
-        {eyebrow && (
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{eyebrow}</p>
-        )}
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground text-pretty">{description}</p>}
+      <div className="space-y-1.5">
+        {eyebrow && <LabelRow>{eyebrow}</LabelRow>}
+        <h1 className="text-h1 text-balance">{title}</h1>
+        {description && <p className="text-body text-t3">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
@@ -118,13 +126,13 @@ export function EmptyState({
   icon?: React.ComponentType<{ className?: string }>
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
-      <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <IconComponent className="size-5" />
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line px-6 py-12 text-center">
+      <span className="flex size-10 items-center justify-center rounded-full bg-soft text-t4">
+        <IconComponent className="size-[15px]" />
       </span>
-      <div className="space-y-1">
-        <h3 className="font-medium">{title}</h3>
-        {description && <p className="text-sm text-muted-foreground text-pretty">{description}</p>}
+      <div className="max-w-80 space-y-1">
+        <h3 className="text-title">{title}</h3>
+        {description && <p className="text-meta text-t3">{description}</p>}
       </div>
       {action}
     </div>

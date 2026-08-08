@@ -1,18 +1,18 @@
-import { createContext, use, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { createContext, use, type ReactNode } from 'react'
 
-export type Theme = 'dark' | 'light'
+/**
+ * The product has one theme. It is kept behind this module rather than
+ * hard-coded at the call sites so the surfaces that still need to know
+ * (the toaster, the legacy stylesheets) have one signal to read, and so
+ * reintroducing a second theme is a change here and nowhere else.
+ */
+export type Theme = 'dark'
 
-const STORAGE_KEY = 'theme'
+export const THEME: Theme = 'dark'
 
-/** Dark is the product default: an unset preference opens dark, not the OS setting. */
-export function readStoredTheme(): Theme {
-  if (typeof localStorage === 'undefined') return 'dark'
-  return localStorage.getItem(STORAGE_KEY) === 'light' ? 'light' : 'dark'
-}
-
-export function applyTheme(theme: Theme) {
+export function applyTheme(theme: Theme = THEME) {
   const root = document.documentElement
-  root.classList.toggle('dark', theme === 'dark')
+  root.classList.add('dark')
   // Mirrored onto the attribute so plain CSS and the legacy screens can branch
   // on the same signal Tailwind's `dark` variant uses.
   root.dataset.theme = theme
@@ -21,24 +21,12 @@ export function applyTheme(theme: Theme) {
 
 interface ThemeContextValue {
   theme: Theme
-  setTheme: (theme: Theme) => void
-  toggleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readStoredTheme)
-
-  useEffect(() => {
-    applyTheme(theme)
-    localStorage.setItem(STORAGE_KEY, theme)
-  }, [theme])
-
-  const setTheme = useCallback((next: Theme) => setThemeState(next), [])
-  const toggleTheme = useCallback(() => setThemeState((current) => (current === 'dark' ? 'light' : 'dark')), [])
-
-  return <ThemeContext value={{ theme, setTheme, toggleTheme }}>{children}</ThemeContext>
+  return <ThemeContext value={{ theme: THEME }}>{children}</ThemeContext>
 }
 
 export function useTheme(): ThemeContextValue {
