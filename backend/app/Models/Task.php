@@ -93,6 +93,11 @@ class Task extends DomainModel
         return $this->hasMany(TaskEmail::class);
     }
 
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class);
+    }
+
     public function auditLogs(): HasMany
     {
         return $this->hasMany(AuditLog::class, 'entity_id')->where('entity_type', 'Task');

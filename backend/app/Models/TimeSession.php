@@ -21,4 +21,9 @@ class TimeSession extends DomainModel
     {
         return $this->hasMany(TimeBreak::class, 'session_id');
     }
+
+    public function entries(): HasMany
+    {
+        return $this->hasMany(TimeEntry::class, 'session_id');
+    }
 }

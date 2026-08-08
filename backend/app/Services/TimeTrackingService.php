@@ -62,7 +62,9 @@ class TimeTrackingService
     {
         $session = $this->openSession($user);
         abort_unless($session, 409, 'You are not clocked in.');
-        DB::transaction(function () use ($session) {
+        DB::transaction(function () use ($user, $session) {
+            // A task timer must not outlive the session it was started in.
+            app(TimeEntryService::class)->closeOpen($user);
             $session->breaks()->whereNull('end_at')->update(['end_at' => now(), 'updated_at' => now()]);
             $session->update(['clock_out_at' => now()]);
         });
@@ -87,6 +89,29 @@ class TimeTrackingService
         $break->update(['end_at' => now()]);
 
         return $break->fresh();
+    }
+
+    /**
+     * The task timer pauses and resumes attendance alongside itself, so unlike
+     * the endpoints above these are no-ops when there is nothing to do rather
+     * than a 409.
+     */
+    public function ensureBreakStarted(User $user): ?TimeBreak
+    {
+        $session = $this->openSession($user);
+        if (! $session || $session->breaks()->whereNull('end_at')->exists()) {
+            return null;
+        }
+
+        return $session->breaks()->create(['start_at' => now()]);
+    }
+
+    public function ensureBreakEnded(User $user): ?TimeBreak
+    {
+        $break = $this->openSession($user)?->breaks()->whereNull('end_at')->latest('start_at')->first();
+        $break?->update(['end_at' => now()]);
+
+        return $break?->fresh();
     }
 
     public function openSession(User $user): ?TimeSession

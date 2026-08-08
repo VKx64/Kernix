@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\TaskNoteController;
 use App\Http\Controllers\Api\TaskSubtaskController;
 use App\Http\Controllers\Api\TaskWorkRequestController;
 use App\Http\Controllers\Api\TimeController;
+use App\Http\Controllers\Api\TimerController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -70,6 +71,11 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::post('/time/clock-out', [TimeController::class, 'clockOut']);
     Route::post('/time/break-start', [TimeController::class, 'breakStart']);
     Route::post('/time/break-end', [TimeController::class, 'breakEnd']);
+    Route::get('/time/timer', [TimerController::class, 'status']);
+    Route::post('/time/timer/start', [TimerController::class, 'start']);
+    Route::post('/time/timer/break', [TimerController::class, 'break']);
+    Route::post('/time/timer/resume', [TimerController::class, 'resume']);
+    Route::post('/time/timer/stop', [TimerController::class, 'stop']);
     Route::get('/time/clocked-users', [TimeController::class, 'clockedUsers']);
     Route::get('/time/summary', [TimeController::class, 'summary']);
 
