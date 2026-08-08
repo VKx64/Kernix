@@ -779,5 +779,113 @@ export interface TimerStopStatus extends TimerStatus {
   logged: { minutes: number; task: TimerTaskRef | null }
 }
 
+// --- dashboard -------------------------------------------------------------
+
+export type DashboardRange = 'today' | 'week'
+
+export interface DashboardMetric {
+  count?: number
+  minutes?: number
+  percent?: number
+  /** Where the value came from — empty when there is nothing to explain. */
+  note: string
+}
+
+export interface DashboardStatus {
+  label: string
+  role?: string
+}
+
+export interface DashboardUrgency {
+  label: string
+  rank?: number
+  color?: string | null
+}
+
+export interface DashboardTask {
+  id: EntityId
+  title: string
+  project?: string | null
+  client?: string | null
+  status?: DashboardStatus | null
+  urgency?: DashboardUrgency | null
+  due_date?: string | null
+  logged_minutes?: number
+}
+
+export interface DashboardFocusTask extends DashboardTask {
+  rank: number
+  overdue?: boolean
+}
+
+export type DashboardRiskReason = 'blocked' | 'overdue' | 'not_started'
+
+export interface DashboardRiskTask extends DashboardTask {
+  /** The sentence shown under the title, already phrased by the server. */
+  why: string
+  reason: DashboardRiskReason
+}
+
+export interface DashboardUpcomingDay {
+  date: string
+  label: string
+  tasks: DashboardTask[]
+}
+
+export interface DashboardWeekDay {
+  date: string
+  label: string
+  work_minutes: number
+  break_minutes: number
+  is_today: boolean
+}
+
+export interface DashboardRetainerClient {
+  id: EntityId
+  name: string
+  used_minutes: number
+  retainer_minutes: number
+}
+
+export interface DashboardRetainer {
+  month_label: string
+  capacity_minutes: number
+  used_minutes: number
+  projected_minutes: number
+  day_of_month: number
+  days_in_month: number
+  /** Cumulative minutes used, one point per elapsed day of the month. */
+  series: Array<{ day: number; used_minutes: number }>
+  clients: DashboardRetainerClient[]
+}
+
+export interface DashboardActivity {
+  id: EntityId
+  user?: UserSummary | null
+  text: string
+  at: string
+}
+
+export interface Dashboard {
+  range: DashboardRange
+  date: string
+  greeting_name: string
+  metrics: {
+    due_today: DashboardMetric
+    overdue: DashboardMetric
+    tracked_today: DashboardMetric
+    retainer_burn: DashboardMetric | null
+  }
+  focus: DashboardFocusTask[]
+  needs_attention: DashboardRiskTask[]
+  upcoming: DashboardUpcomingDay[]
+  week: DashboardWeekDay[]
+  week_total_minutes: number
+  last_week_total_minutes: number
+  daily_target_minutes: number
+  retainer: DashboardRetainer | null
+  activity: DashboardActivity[]
+}
+
 export type FormValue = string | number | boolean | null | undefined
 export type FormPayload = Record<string, FormValue | FormValue[]>
