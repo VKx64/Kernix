@@ -286,11 +286,16 @@ class RbacCoreTest extends TestCase
             ->assertJsonPath('data.time', null)
             ->assertJsonPath('data.clients.0.id', $client->id);
 
+        // The dashboard is the employee's own queue: it carries no studio-wide
+        // counts to leak, and this user has neither tasks nor tracked time.
         $this->getJson('/api/dashboard')
             ->assertOk()
-            ->assertJsonPath('data.counts', [])
-            ->assertJsonPath('data.team_time.clocked_in_count', 1)
-            ->assertJsonMissingPath('data.today_minutes');
+            ->assertJsonPath('data.focus', [])
+            ->assertJsonPath('data.needs_attention', [])
+            ->assertJsonPath('data.activity', [])
+            ->assertJsonPath('data.retainer', null)
+            ->assertJsonPath('data.metrics.tracked_today.minutes', 0)
+            ->assertJsonCount(7, 'data.week');
 
         $this->getJson('/api/settings')
             ->assertOk()

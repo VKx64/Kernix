@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\Task;
 use App\Models\TaskNote;
 use App\Models\TaskSubtask;
+use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
@@ -33,6 +34,17 @@ class DemoWorkspaceSeeder extends Seeder
     // invoked by the default seed path.
     private const DEMO_PASSWORD = 'DemoPass123!Demo';
 
+    /**
+     * Monthly allowances in minutes. The two clients left out deliberately have
+     * no retainer, so the dashboard's burn list has something to exclude.
+     */
+    private const RETAINER_MINUTES = [
+        'Northwind Creative' => 4800,
+        'Bluepeak Studios' => 2400,
+        'Ironclad Media' => 6000,
+        'Lumen Digital' => 3600,
+    ];
+
     public function run(): void
     {
         $admin = User::query()->find(1);
@@ -49,6 +61,7 @@ class DemoWorkspaceSeeder extends Seeder
         $projects = $this->seedProjects($clients, $admin);
         $employees = $this->seedEmployees($employeeRoleId);
         $this->seedTasks($projects, array_merge([$admin], $employees), $admin);
+        $this->seedTimeEntries($employees);
     }
 
     /** @return array<string, Client> keyed by client name */
@@ -66,6 +79,11 @@ class DemoWorkspaceSeeder extends Seeder
                 ['name' => $name],
                 ['status_value_id' => $activeStatusId, 'created_by' => $admin->id],
             );
+        }
+        // Set outside firstOrCreate so an existing demo database picks the
+        // allowances up too.
+        foreach (self::RETAINER_MINUTES as $name => $minutes) {
+            $clients[$name]->update(['retainer_minutes' => $minutes]);
         }
 
         return $clients;
@@ -250,6 +268,57 @@ class DemoWorkspaceSeeder extends Seeder
                     'body' => "Discussion started on \"{$title}\".",
                     'created_by' => $assignee?->id ?? $admin->id,
                 ]);
+            }
+        }
+    }
+
+    /**
+     * Closed timer entries across the current week and the current month, so
+     * the dashboard's week chart and retainer burn line are not flat. Shapes
+     * are derived from the calendar date rather than randomised, so two runs on
+     * the same day produce byte-identical rows.
+     *
+     * @param  array<int, User>  $employees
+     */
+    private function seedTimeEntries(array $employees): void
+    {
+        $now = Carbon::now();
+        // Far enough back to cover the current month and the week before this
+        // one, so the dashboard has a previous-week total to compare against.
+        $start = $now->copy()->startOfMonth()->min($now->copy()->startOfWeek(Carbon::MONDAY)->subWeek());
+
+        foreach (array_slice($employees, 0, 3) as $index => $employee) {
+            $taskIds = Task::query()->where('assignee_user_id', $employee->id)->orderBy('id')->pluck('id')->all();
+            if ($taskIds === []) {
+                continue;
+            }
+
+            for ($day = $start->copy(); $day->lte($now); $day->addDay()) {
+                if (! $day->isWeekday()) {
+                    continue;
+                }
+                $offset = $day->day + $index * 7;
+                $blocks = [
+                    ['work', 9, 90 + ($offset % 5) * 15],
+                    ['break', 12, 30],
+                    ['work', 13, 120 + (($day->day * 3 + $index) % 4) * 20],
+                ];
+                foreach ($blocks as $slot => [$kind, $hour, $minutes]) {
+                    $startedAt = $day->copy()->setTime($hour, 0);
+                    if ($startedAt->gte($now)) {
+                        continue;
+                    }
+                    TimeEntry::query()->firstOrCreate(
+                        ['user_id' => $employee->id, 'started_at' => $startedAt],
+                        [
+                            'task_id' => $kind === 'work' ? $taskIds[($offset + $slot) % count($taskIds)] : null,
+                            'kind' => $kind,
+                            'break_kind' => $kind === 'break' ? 'Lunch' : null,
+                            'break_due_minutes' => $kind === 'break' ? 30 : null,
+                            'ended_at' => $startedAt->copy()->addMinutes($minutes)->min($now),
+                        ],
+                    );
+                }
             }
         }
     }
