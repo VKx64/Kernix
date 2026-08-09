@@ -61,6 +61,7 @@ final class DefaultRoles
                     'dashboard.view',
                     'messages.view',
                     'time.track',
+                    'projects.view',
                     'tasks.view',
                     'tasks.change_status',
                     'tasks.comment',
