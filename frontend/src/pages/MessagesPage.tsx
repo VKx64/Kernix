@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Inbox, Plus, Search, SquareCheckBig } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { EmptyState, ErrorBanner, Avatar } from '@/components/shared'
-import { OliverChat } from '@/components/OliverChat'
 import { ConversationRow } from '@/components/messages/ConversationRow'
 import { EstimateDecision, type DecisionMode } from '@/components/messages/EstimateDecision'
 import { MessageComposer } from '@/components/messages/MessageComposer'
@@ -21,7 +20,6 @@ import {
   requestedMinutes,
   reviewMode,
 } from '@/components/messages/signals'
-import { Monogram } from '@/components/kernix/monogram'
 import { Tag } from '@/components/kernix/chip'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -91,7 +89,6 @@ export function MessagesPage() {
   const { messageId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const oliverOpen = messageId === 'oliver'
   const view = (searchParams.get('view') as ViewKey | null) ?? 'all'
   const scope = (searchParams.get('scope') as ScopeKey | null) ?? 'all'
   const [search, setSearch] = useState(searchParams.get('search') ?? '')
@@ -483,21 +480,8 @@ export function MessagesPage() {
           {error && <div className="px-3 pb-2"><ErrorBanner message={error} onRetry={() => void reload()} /></div>}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-            <button
-              type="button"
-              onClick={() => navigate('/messages/oliver')}
-              className={cn(
-                'mb-1 flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-[9px] text-left transition-colors',
-                oliverOpen ? 'bg-row-selected' : 'hover:bg-[#16161a]',
-              )}
-            >
-              <Monogram name="Oliver" color="var(--brand)" size="md" className="rounded-full" />
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-body font-[550] text-title">Oliver</span>
-                <span className="truncate text-meta-sm text-t3">Your AI project manager</span>
-              </span>
-            </button>
-
+            {/* Oliver used to sit at the top of this list. It is its own place
+                in the nav now, as the design has it. */}
             {loading ? (
               <div className="flex flex-col gap-3 p-2.5">
                 {Array.from({ length: 6 }, (_, index) => (
@@ -553,7 +537,7 @@ export function MessagesPage() {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {oliverOpen ? <OliverChat /> : detailLoading ? (
+          {detailLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-body-sm text-t3">
               <Skeleton className="size-4 rounded-full" /> Opening conversation…
             </div>

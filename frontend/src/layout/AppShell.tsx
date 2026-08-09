@@ -72,7 +72,7 @@ const navigation: NavigationItem[] = [
   { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
   // Oliver is a place in the design's nav, not a row inside Messages. The dot
   // is presence, not a count — it says the assistant is watching.
-  { to: '/messages/oliver', label: 'Oliver', icon: Sparkles, permission: 'messages.view', live: true },
+  { to: '/oliver', label: 'Oliver', icon: Sparkles, permission: 'messages.view', live: true },
   { to: '/timesheet', label: 'Timesheet', icon: Clock, permission: 'time.track' },
   { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
 ]

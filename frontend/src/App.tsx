@@ -16,6 +16,7 @@ import { LoginPage } from './pages/LoginPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { OliverPage } from './pages/OliverPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -91,8 +92,10 @@ export default function App() {
       <Route element={<ProtectedApp />}>
         <Route index element={<PermissionRoute permission="dashboard.view"><DashboardPage /></PermissionRoute>} />
         <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
+        <Route path="messages/oliver" element={<Navigate to="/oliver" replace />} />
         <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
         <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksTriagePage /></PermissionRoute>} />
+        <Route path="oliver" element={<PermissionRoute permission="messages.view"><OliverPage /></PermissionRoute>} />
         <Route path="timesheet" element={<PermissionRoute permission="time.track"><TimesheetPage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />

@@ -54,7 +54,20 @@ describe('OliverChat', () => {
     apiGet.mockResolvedValue({ data: { available: false, messages: [] } })
     render(<OliverChat />)
 
+    // The page owns the header now, so the composer itself has to say why it
+    // will not take anything.
     await waitFor(() => expect(screen.getByLabelText('Message Oliver')).toBeDisabled())
-    expect(screen.getByText(/Unavailable until AI is configured/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/switched off in Settings/)).toBeInTheDocument()
+  })
+
+  it('asks the question a tool chip stands for', async () => {
+    const actor = userEvent.setup()
+    apiGet.mockResolvedValue({ data: { available: true, messages: [] } })
+    apiPost.mockResolvedValue({ data: { message: { id: 2, role: 'assistant', body: 'Two are late.', actions: [] } } })
+    render(<OliverChat prompts={['What is on me?']} />)
+
+    await actor.click(await screen.findByRole('button', { name: 'What is on me?' }))
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'What is on me?' }))
   })
 })

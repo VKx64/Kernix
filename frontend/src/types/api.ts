@@ -942,5 +942,60 @@ export interface Timesheet {
   lanes: TimesheetLane[]
 }
 
+// --- Oliver ----------------------------------------------------------------
+
+export interface OliverRisk {
+  task_id: EntityId
+  title: string
+  reason: string
+  why: string
+  severity: 'high' | 'medium' | 'low'
+}
+
+export interface OliverWorkload {
+  open: number
+  overdue: number
+  tracked_week_minutes: number
+  target_week_minutes: number
+  committed_minutes: number
+  over_committed: boolean
+}
+
+export interface OliverRetainer {
+  client_id: EntityId
+  name: string
+  used_minutes: number
+  retainer_minutes: number
+  percent: number
+  projected_minutes: number
+  over: boolean
+}
+
+export interface OliverTimeGap {
+  date: string
+  tracked_minutes: number
+  target_minutes: number
+  note: string
+}
+
+export interface OliverInsights {
+  watching: { projects: number; tasks: number; clients: number }
+  risk: OliverRisk[]
+  workload: OliverWorkload
+  retainer: OliverRetainer[]
+  time_gaps: OliverTimeGap[]
+}
+
+/** What Oliver did, and whether it has since been reversed. */
+export interface OliverActionRecord {
+  id: EntityId
+  type: string
+  summary: string
+  entity_type: string
+  entity_id: EntityId
+  undone_at?: string | null
+  created_at: string
+}
+
 export type FormValue = string | number | boolean | null | undefined
 export type FormPayload = Record<string, FormValue | FormValue[]>
