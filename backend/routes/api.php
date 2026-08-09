@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\TaskSubtaskController;
 use App\Http\Controllers\Api\TaskWorkRequestController;
 use App\Http\Controllers\Api\TimeController;
 use App\Http\Controllers\Api\TimerController;
+use App\Http\Controllers\Api\TimesheetController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -78,6 +79,8 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::post('/time/timer/stop', [TimerController::class, 'stop']);
     Route::get('/time/clocked-users', [TimeController::class, 'clockedUsers']);
     Route::get('/time/summary', [TimeController::class, 'summary']);
+    Route::get('/timesheet', [TimesheetController::class, 'index']);
+    Route::put('/timesheet/description', [TimesheetController::class, 'updateDescription']);
 
     Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
     Route::post('/messages/mark-all-read', [MessageController::class, 'markAllRead']);
