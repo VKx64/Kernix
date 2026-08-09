@@ -52,6 +52,23 @@ export const TASK_SORT_OPTIONS: ReadonlyArray<{ value: TaskSort; label: string }
   { value: 'title', label: 'Title' },
 ]
 
+/**
+ * How the same view is laid out. All three share the view, filters, grouping
+ * and ordering — only the shape on screen changes, so switching is never a
+ * change of what you are looking at.
+ */
+export type TaskLayout = 'grouped' | 'list' | 'board'
+
+export const TASK_LAYOUT_OPTIONS: ReadonlyArray<{ value: TaskLayout; label: string }> = [
+  { value: 'grouped', label: 'Groups' },
+  { value: 'list', label: 'List' },
+  { value: 'board', label: 'Board' },
+]
+
+export function asTaskLayout(value: string | null | undefined): TaskLayout {
+  return TASK_LAYOUT_OPTIONS.some((option) => option.value === value) ? (value as TaskLayout) : 'grouped'
+}
+
 export interface TaskGroup {
   key: string
   label: string
@@ -231,6 +248,69 @@ function sameValue(value: unknown, option: FieldValue): boolean {
     return String(record.key ?? '') === String(option.key ?? '')
   }
   return String(value) === String(option.key ?? option.id)
+}
+
+// --- saved views -----------------------------------------------------------
+
+/**
+ * A saved view is the whole question — which view, filtered how, grouped and
+ * ordered how, laid out how — under a name. The design tried these as places in
+ * the sidebar and rejected it: they are not places, so they live in a menu on
+ * the screen they belong to.
+ *
+ * There is no server for them. They are one person's shortcuts on one machine,
+ * and nothing else in the product reads them.
+ */
+export interface SavedTaskView {
+  id: string
+  name: string
+  view: TaskView
+  group: TaskGroupBy
+  sort: TaskSort
+  layout: TaskLayout
+  /** Filter params exactly as the URL carries them, `archived` included. */
+  filters: Record<string, string>
+}
+
+/** The filter params a saved view captures, and the ones applying one clears. */
+export const TASK_FILTER_PARAMS = ['project_id', 'assignee_user_id', 'status_value_id', 'urgency_value_id', 'archived'] as const
+
+const SAVED_VIEWS_STORAGE_KEY = 'kernix.tasks.saved-views'
+
+function isSavedView(value: unknown): value is SavedTaskView {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Partial<SavedTaskView>
+  return typeof record.id === 'string' && typeof record.name === 'string' && typeof record.filters === 'object'
+}
+
+export function readSavedViews(): SavedTaskView[] {
+  try {
+    const raw = window.localStorage?.getItem(SAVED_VIEWS_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter(isSavedView) : []
+  } catch {
+    // Unreadable or unavailable storage means no saved views, never a crash.
+    return []
+  }
+}
+
+export function writeSavedViews(views: SavedTaskView[]): void {
+  try {
+    window.localStorage?.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views))
+  } catch {
+    // Private browsing and full quotas both land here; the views stay for this session only.
+  }
+}
+
+/** True when the screen is currently showing exactly what this view saved. */
+export function savedViewMatches(saved: SavedTaskView, current: Omit<SavedTaskView, 'id' | 'name'>): boolean {
+  if (saved.view !== current.view || saved.group !== current.group) return false
+  if (saved.sort !== current.sort || saved.layout !== current.layout) return false
+  const keys = new Set([...Object.keys(saved.filters), ...Object.keys(current.filters)])
+  for (const key of keys) {
+    if (saved.filters[key] !== current.filters[key]) return false
+  }
+  return true
 }
 
 /** Flat id order across open groups — what `j`/`k` walk. */

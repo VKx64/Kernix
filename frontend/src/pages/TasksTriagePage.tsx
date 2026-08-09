@@ -6,10 +6,14 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useWorkspace } from '@/auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '@/components/ClockGate'
 import { InlineMenu, type InlineMenuItem, type InlineMenuState } from '@/components/tasks/InlineMenu'
+import { PinnedViewTab } from '@/components/tasks/PinnedViewTab'
+import { SaveViewForm } from '@/components/tasks/SaveViewForm'
+import { TaskBoard } from '@/components/tasks/TaskBoard'
 import { TaskBulkBar, type TaskBulkAction } from '@/components/tasks/TaskBulkBar'
 import { TaskDrawer, type FeedEntry, type TaskDrawerField } from '@/components/tasks/TaskDrawer'
 import { TaskGroupHeader } from '@/components/tasks/TaskGroupHeader'
 import { TaskRow, type TaskRowDensity } from '@/components/tasks/TaskRow'
+import { Segmented } from '@/components/kernix/segmented'
 import { EmptyState, ErrorBanner } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -31,13 +35,21 @@ import {
   urgencyColor,
 } from '@/lib/taskSignals'
 import {
+  TASK_FILTER_PARAMS,
   TASK_GROUP_OPTIONS,
+  TASK_LAYOUT_OPTIONS,
   TASK_SORT_OPTIONS,
   TASK_VIEWS,
+  asTaskLayout,
   flatTaskIds,
   groupTasks,
+  readSavedViews,
+  savedViewMatches,
   sortTasks,
+  writeSavedViews,
+  type SavedTaskView,
   type TaskGroupBy,
+  type TaskLayout,
   type TaskSort,
   type TaskView,
 } from '@/lib/taskTriage'
@@ -83,6 +95,9 @@ type MenuKind =
   | 'filter-assignee'
   | 'filter-status'
   | 'filter-urgency'
+  | 'pinned'
+  | 'pinned-save'
+  | 'pinned-remove'
 
 interface OpenMenu extends InlineMenuState {
   kind: MenuKind
@@ -116,6 +131,7 @@ export function TasksTriagePage() {
   const view = (params.get('view') as TaskView) ?? 'triage'
   const groupBy = (params.get('group') as TaskGroupBy) ?? 'smart'
   const sort = (params.get('sort') as TaskSort) ?? 'smart'
+  const layout: TaskLayout = asTaskLayout(params.get('layout'))
   const density: TaskRowDensity = params.get('density') === 'compact' ? 'compact' : 'comfortable'
   const search = params.get('search') ?? ''
   const archived = params.get('archived') === '1'
@@ -189,17 +205,84 @@ export function TasksTriagePage() {
     }, { replace: true })
   }, [setParams])
 
+  // `/tasks?new=1` is how anything outside this screen — the command palette —
+  // asks for the create form. The param is spent on arrival so a reload or a
+  // back does not reopen it.
+  useEffect(() => {
+    if (params.get('new') !== '1') return
+    if (can('tasks.create')) setCreateOpen(true)
+    setParam('new', null)
+  }, [params, can, setParam])
+
+  // --- saved views ---------------------------------------------------------
+
+  const [savedViews, setSavedViews] = useState<SavedTaskView[]>(() => readSavedViews())
+
+  const snapshot = useMemo(() => ({
+    view,
+    group: groupBy,
+    sort,
+    layout,
+    filters: Object.fromEntries(
+      TASK_FILTER_PARAMS.map((key) => [key, params.get(key) ?? '']).filter(([, value]) => value),
+    ) as Record<string, string>,
+  }), [view, groupBy, sort, layout, params])
+
+  const activeSavedView = savedViews.find((saved) => savedViewMatches(saved, snapshot)) ?? null
+
+  const applySavedView = useCallback((saved: SavedTaskView) => {
+    setSelected([])
+    setCursor(0)
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const key of ['view', 'group', 'sort', 'layout', ...TASK_FILTER_PARAMS]) next.delete(key)
+      if (saved.view !== 'triage') next.set('view', saved.view)
+      if (saved.group !== 'smart') next.set('group', saved.group)
+      if (saved.sort !== 'smart') next.set('sort', saved.sort)
+      if (saved.layout !== 'grouped') next.set('layout', saved.layout)
+      for (const [key, value] of Object.entries(saved.filters)) next.set(key, value)
+      return next
+    }, { replace: true })
+  }, [setParams])
+
+  const saveCurrentView = useCallback((name: string) => {
+    setSavedViews((current) => {
+      const next = [...current, { id: `${Date.now()}`, name, ...snapshot }]
+      writeSavedViews(next)
+      return next
+    })
+    toast(`Saved “${name}”`)
+  }, [snapshot])
+
+  const removeSavedView = useCallback((id: string) => {
+    setSavedViews((current) => {
+      const next = current.filter((saved) => saved.id !== id)
+      writeSavedViews(next)
+      return next
+    })
+  }, [])
+
   const groups = useMemo(() => {
     const sorted = sortTasks(data, sort)
-    return groupTasks(sorted, groupBy, {
+    const all = groupTasks(sorted, groupBy, {
       statusOptions: lookups.statusOptions,
       urgencyOptions: lookups.urgencyOptions,
       people: lookups.users,
-    }).filter((group) => group.tasks.length > 0)
-  }, [data, sort, groupBy, lookups.statusOptions, lookups.urgencyOptions, lookups.users])
+    })
+    // A list drops the groups nothing landed in; a board keeps them, because an
+    // empty column is the thing you are looking for.
+    return layout === 'board' ? all : all.filter((group) => group.tasks.length > 0)
+  }, [data, sort, groupBy, layout, lookups.statusOptions, lookups.urgencyOptions, lookups.users])
 
-  const orderedIds = useMemo(() => flatTaskIds(groups, collapsed), [groups, collapsed])
+  // Only the grouped list can hide rows behind a collapsed heading.
+  const orderedIds = useMemo(
+    () => flatTaskIds(groups, layout === 'grouped' ? collapsed : {}),
+    [groups, collapsed, layout],
+  )
   const taskById = useMemo(() => new Map(data.map((task) => [String(task.id), task])), [data])
+  // The board keeps empty columns, so "are there groups" is not the same
+  // question as "is there anything to show".
+  const hasRows = data.length > 0
 
   // The cursor is an index, so it has to be pulled back in bounds whenever the
   // list shrinks — switching view, applying a filter, completing the last row.
@@ -264,6 +347,18 @@ export function TasksTriagePage() {
     const id = String(task.id)
     setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
   }, [])
+
+  /** A row and a card open the same way, modifier-click included. */
+  const openRow = useCallback((task: Task, event: MouseEvent) => {
+    const id = String(task.id)
+    if (event.metaKey || event.ctrlKey || event.shiftKey) {
+      event.preventDefault()
+      toggleSelected(task)
+      return
+    }
+    setCursor(Math.max(0, orderedIds.indexOf(id)))
+    setParam('open', id)
+  }, [orderedIds, setParam, toggleSelected])
 
   // --- menus ---------------------------------------------------------------
 
@@ -464,13 +559,50 @@ export function TasksTriagePage() {
             onSelect: () => { closeMenu(); setParam('urgency_value_id', String(option.id)) },
           })),
         }
+      case 'pinned':
+        return {
+          title: 'Views',
+          items: [
+            ...savedViews.map((saved) => ({
+              key: saved.id,
+              label: saved.name,
+              color: 'var(--brand)',
+              hint: saved.id === activeSavedView?.id ? '✓' : undefined,
+              onSelect: () => { closeMenu(); applySavedView(saved) },
+            })),
+            {
+              key: 'save',
+              label: 'Save current view',
+              hint: '+',
+              separated: savedViews.length > 0,
+              keepOpen: true,
+              onSelect: () => setMenu({ ...menu, kind: 'pinned-save' }),
+            },
+            ...(savedViews.length
+              ? [{ key: 'remove', label: 'Remove a view', hint: '›', keepOpen: true, onSelect: () => setMenu({ ...menu, kind: 'pinned-remove' }) }]
+              : []),
+          ],
+        }
+      case 'pinned-save':
+        // The form is passed to the menu as children; there are no items.
+        return { title: 'Save current view', items: [] }
+      case 'pinned-remove':
+        return {
+          title: 'Remove a view',
+          items: savedViews.map((saved) => ({
+            key: saved.id,
+            label: saved.name,
+            danger: true,
+            onSelect: () => { closeMenu(); removeSavedView(saved.id) },
+          })),
+        }
       default:
         return { items: [] }
     }
     // The menu builders close over render-scope helpers that are stable for a
     // given menu and lookup set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu, bulk, lookups, groupBy, sort, archived, taskById, user?.id])
+  }, [menu, bulk, lookups, groupBy, sort, archived, taskById, user?.id, savedViews, activeSavedView])
 
   const archiveTasks = async (ids: EntityId[]) => {
     if (!guardClock()) return
@@ -742,6 +874,11 @@ export function TasksTriagePage() {
                 </button>
               )
             })}
+            <PinnedViewTab
+              label={activeSavedView?.name ?? 'Views'}
+              active={Boolean(activeSavedView)}
+              onOpen={(anchor) => openMenu('pinned', anchor)}
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-0.5 gap-y-1.5 py-1.5">
@@ -776,6 +913,19 @@ export function TasksTriagePage() {
 
             <span className="flex-1" />
 
+            {/* One view, three shapes. The layout rides in the URL beside the
+                view, the grouping and the sort, so a board is linkable. */}
+            <Segmented
+              label="Task layout"
+              options={TASK_LAYOUT_OPTIONS}
+              value={layout}
+              onChange={(next) => {
+                setCursor(0)
+                setParam('layout', next === 'grouped' ? null : next)
+              }}
+              className="mr-1 bg-transparent p-0"
+            />
+
             <button
               type="button"
               aria-label={density === 'compact' ? 'Use comfortable rows' : 'Use compact rows'}
@@ -797,7 +947,7 @@ export function TasksTriagePage() {
             </div>
           )}
 
-          {!loading && !groups.length && !error && (
+          {!loading && !hasRows && !error && (
             <div className="pt-24">
               <EmptyState
                 title={activeFilters.length ? 'Nothing matches' : view === 'triage' ? 'All clear' : 'Nothing here'}
@@ -815,7 +965,7 @@ export function TasksTriagePage() {
                         onClick={() => {
                           setParams((current) => {
                             const next = new URLSearchParams(current)
-                            for (const key of ['project_id', 'assignee_user_id', 'status_value_id', 'urgency_value_id', 'archived']) next.delete(key)
+                            for (const key of TASK_FILTER_PARAMS) next.delete(key)
                             return next
                           }, { replace: true })
                         }}
@@ -828,12 +978,24 @@ export function TasksTriagePage() {
             </div>
           )}
 
-          {groups.map((group, index) => {
+          {layout === 'board' && hasRows && (
+            <TaskBoard
+              groups={groups}
+              cursorId={orderedIds[cursor] ?? null}
+              selectedIds={selected}
+              onOpen={openRow}
+              onAdd={can('tasks.create') ? () => setCreateOpen(true) : undefined}
+            />
+          )}
+
+          {layout !== 'board' && groups.map((group, index) => {
             const groupIds = group.tasks.map((task) => String(task.id))
             const allSelected = groupIds.length > 0 && groupIds.every((id) => selected.includes(id))
             return (
               <section key={group.key}>
-                {groupBy !== 'none' && (
+                {/* A flat list is the same rows without the reasons above
+                    them — the grouping stays, so going back to it is free. */}
+                {groupBy !== 'none' && layout === 'grouped' && (
                   <TaskGroupHeader
                     label={group.label}
                     count={group.tasks.length}
@@ -849,7 +1011,7 @@ export function TasksTriagePage() {
                     onAdd={can('tasks.create') ? () => setCreateOpen(true) : undefined}
                   />
                 )}
-                {!collapsed[group.key] && (
+                {(layout === 'list' || !collapsed[group.key]) && (
                   <div className="flex flex-col">
                     {group.tasks.map((task) => {
                       const id = String(task.id)
@@ -862,15 +1024,7 @@ export function TasksTriagePage() {
                             selected={selected.includes(id)}
                             showStatus={showStatus}
                             showMeta={showMeta}
-                            onOpen={(row, event: MouseEvent) => {
-                              if (event.metaKey || event.ctrlKey || event.shiftKey) {
-                                event.preventDefault()
-                                toggleSelected(row)
-                                return
-                              }
-                              setCursor(Math.max(0, orderedIds.indexOf(id)))
-                              setParam('open', id)
-                            }}
+                            onOpen={openRow}
                             onToggleDone={toggleDone}
                             onToggleSelected={toggleSelected}
                             onStatusMenu={(row, anchor) => openMenu('status', anchor, [row.id])}
@@ -906,7 +1060,14 @@ export function TasksTriagePage() {
 
       <TaskBulkBar count={selected.length} actions={bulkActions} onClear={() => setSelected([])} />
 
-      <InlineMenu state={menu} title={menuContent.title} items={menuContent.items} onClose={closeMenu} />
+      <InlineMenu state={menu} title={menuContent.title} items={menuContent.items} onClose={closeMenu}>
+        {menu?.kind === 'pinned-save' && (
+          <SaveViewForm
+            onCancel={closeMenu}
+            onSave={(name) => { closeMenu(); saveCurrentView(name) }}
+          />
+        )}
+      </InlineMenu>
 
       {openTask && (
         <TaskDrawerConnected
