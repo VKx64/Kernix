@@ -2,7 +2,7 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { Avatar, ErrorBanner } from '@/components/shared'
 import { RetainerBurn } from '@/components/dashboard/RetainerBurn'
 import { WeekChart } from '@/components/dashboard/WeekChart'
-import { LabelRow } from '@/components/kernix/label-row'
+import { PanelSection } from '@/components/kernix/panel-section'
 import { MetricTile } from '@/components/kernix/metric-tile'
 import { urgencyRail } from '@/components/kernix/rail'
 import { Segmented } from '@/components/kernix/segmented'
@@ -129,7 +129,7 @@ export function DashboardPage() {
 
           <div className="grid grid-cols-1 items-start gap-3 @[880px]:grid-cols-[minmax(0,1fr)_minmax(300px,352px)]">
             <div className="flex min-w-0 flex-col gap-3">
-              <Section
+              <PanelSection
                 label="Work on next"
                 meta={range === 'today' ? 'today and anything late' : 'this week and anything late'}
                 empty={!data.focus.length && 'Nothing is waiting on you.'}
@@ -155,9 +155,9 @@ export function DashboardPage() {
                     </button>
                   )
                 })}
-              </Section>
+              </PanelSection>
 
-              <Section
+              <PanelSection
                 label="Needs attention"
                 meta={data.needs_attention.length ? `${data.needs_attention.length}` : ''}
                 empty={!data.needs_attention.length && 'Nothing is late, blocked or untouched.'}
@@ -188,9 +188,9 @@ export function DashboardPage() {
                     <span className="flex-none whitespace-nowrap text-meta text-t4">{task.project}</span>
                   </button>
                 ))}
-              </Section>
+              </PanelSection>
 
-              <Section
+              <PanelSection
                 label="Upcoming"
                 meta="next 14 days"
                 empty={!data.upcoming.length && 'Nothing due in the next fortnight.'}
@@ -218,11 +218,11 @@ export function DashboardPage() {
                     </span>
                   </div>
                 ))}
-              </Section>
+              </PanelSection>
             </div>
 
             <div className="flex min-w-0 flex-col gap-3">
-              <Section
+              <PanelSection
                 label="Tracked this week"
                 meta={<span className="font-mono text-body-lg text-t1">{formatMinutes(data.week_total_minutes) || '0m'}</span>}
               >
@@ -231,15 +231,15 @@ export function DashboardPage() {
                   total={data.week_total_minutes}
                   lastWeek={data.last_week_total_minutes}
                 />
-              </Section>
+              </PanelSection>
 
               {data.retainer && (
-                <Section label="Retainer burn" meta={data.retainer.month_label}>
+                <PanelSection label="Retainer burn" meta={data.retainer.month_label}>
                   <RetainerBurn retainer={data.retainer} />
-                </Section>
+                </PanelSection>
               )}
 
-              <Section label="Recent activity" empty={!data.activity.length && 'Nothing has happened yet today.'}>
+              <PanelSection label="Recent activity" empty={!data.activity.length && 'Nothing has happened yet today.'}>
                 <div className="flex flex-col gap-3">
                   {data.activity.map((entry) => (
                     <div key={entry.id} className="flex items-start gap-2.5">
@@ -251,39 +251,12 @@ export function DashboardPage() {
                     </div>
                   ))}
                 </div>
-              </Section>
+              </PanelSection>
             </div>
           </div>
         </div>
       )}
     </>
-  )
-}
-
-/** Every panel on this screen is a bordered card with a label row on top. */
-function Section({
-  label,
-  meta,
-  empty,
-  children,
-}: {
-  label: string
-  meta?: React.ReactNode
-  /** A sentence when the panel has nothing to show, or false to always render children. */
-  empty?: string | false
-  children?: React.ReactNode
-}) {
-  return (
-    <section className="flex flex-col rounded-xl border border-line-soft px-[15px] pb-3 pt-3.5">
-      <div className="mb-[9px] flex items-baseline gap-2.5">
-        <LabelRow>{label}</LabelRow>
-        <span className="flex-1" />
-        {typeof meta === 'string' ? <span className="text-meta text-t4">{meta}</span> : meta}
-      </div>
-      {/* A quiet sentence, not the bordered empty state — inside a panel that
-          already has a border, the full treatment reads as an error. */}
-      {empty ? <p className="pb-1 text-meta text-t4">{empty}</p> : children}
-    </section>
   )
 }
 

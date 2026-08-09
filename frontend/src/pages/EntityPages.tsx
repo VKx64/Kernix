@@ -309,12 +309,9 @@ export function ProjectsPage() {
     <div className="@container space-y-4">
       <PageHeader eyebrow="Delivery" title="Projects" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} projects in your workspace.`} actions={!archived && can('projects.create') ? <Button onClick={mutation.create}><Plus /> New project</Button> : undefined} />
       {(collection.error || (!mutation.open && mutation.error)) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
-      <SearchToolbar
-        value={search}
-        onChange={setSearch}
-        placeholder="Search projects…"
-        actions={<ArchivedToggle archived={archived} onChange={setArchived} />}
-      />
+      <SearchToolbar search={search} onSearch={setSearch} placeholder="Search projects…">
+        <ArchivedToggle archived={archived} onChange={setArchived} />
+      </SearchToolbar>
       {collection.loading && !collection.data.length && <LoadingRows rows={4} columns={1} />}
       {!collection.loading && !collection.data.length && (
         <EmptyState
@@ -340,7 +337,7 @@ export function ProjectsPage() {
                 stats={projectStats(project)}
                 stateLabel={projectStateLabel(project)}
                 team={project.team ?? []}
-                onOpen={can('tasks.view') ? () => navigate(`/tasks?project_id=${project.id}`) : undefined}
+                onOpen={() => navigate(`/projects/${project.id}`)}
                 actions={
                   <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                     {!archived && (
@@ -445,12 +442,9 @@ export function ClientsPage() {
     <div className="@container space-y-4">
       <PageHeader eyebrow="Relationships" title="Clients" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client accounts.`} actions={!archived && can('clients.create') ? <Button onClick={mutation.create}><Plus /> New client</Button> : undefined} />
       {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
-      <SearchToolbar
-        value={search}
-        onChange={setSearch}
-        placeholder="Search clients…"
-        actions={<ArchivedToggle archived={archived} onChange={setArchived} />}
-      />
+      <SearchToolbar search={search} onSearch={setSearch} placeholder="Search clients…">
+        <ArchivedToggle archived={archived} onChange={setArchived} />
+      </SearchToolbar>
       {collection.loading && !collection.data.length && <LoadingRows rows={3} columns={1} />}
       {!collection.loading && !collection.data.length && (
         <EmptyState
@@ -464,7 +458,7 @@ export function ClientsPage() {
             key={client.id}
             name={client.name}
             stats={clientStats(client)}
-            onOpen={can('projects.view') ? () => navigate(`/projects?client_id=${client.id}`) : undefined}
+            onOpen={() => navigate(`/clients/${client.id}`)}
             actions={
               <RowActions
                 onEdit={!archived && can('clients.edit') ? () => mutation.edit(client) : undefined}

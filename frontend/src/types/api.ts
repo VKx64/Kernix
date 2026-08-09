@@ -815,6 +815,8 @@ export interface DashboardTask {
   title: string
   project?: string | null
   client?: string | null
+  /** Present on project lists, where whose task it is matters. */
+  assignee?: UserSummary | null
   status?: DashboardStatus | null
   urgency?: DashboardUrgency | null
   due_date?: string | null

@@ -44,7 +44,9 @@ export function ProjectCard({
         onClick={onOpen}
         className="flex flex-col gap-2.5 rounded-[11px] px-[17px] pb-[15px] pt-4 text-left hover:bg-elev-low/40"
       >
-        <div className="flex items-center gap-2.5">
+        {/* Right padding keeps the title and state pill clear of the actions,
+            which float over the card rather than sitting in its flow. */}
+        <div className={cn('flex items-center gap-2.5', actions && 'pr-16')}>
           <span className="min-w-0 flex-1 truncate text-card-title text-t1">{name}</span>
           {stateLabel && (
             <span className="inline-flex h-5 flex-none items-center rounded-md bg-[#1f1a12] px-2 text-[11px] font-[550] text-warn">

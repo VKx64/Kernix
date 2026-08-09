@@ -8,6 +8,7 @@ import { BRAND_MARK } from './lib/brand'
 import { useCan } from './lib/permissions'
 import { TimerProvider } from './lib/useTimer'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
+import { ClientDetailPage } from './pages/ClientDetailPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DesignSystemPage } from './pages/DesignSystemPage'
 import { InviteAcceptPage } from './pages/InviteAcceptPage'
@@ -15,6 +16,7 @@ import { LoginPage } from './pages/LoginPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TaskDetailPage } from './pages/TasksPage'
@@ -94,8 +96,10 @@ export default function App() {
         <Route path="timesheet" element={<PermissionRoute permission="time.track"><TimesheetPage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
+        <Route path="projects/:projectId" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
         <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />
         <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
+        <Route path="clients/:clientId" element={<PermissionRoute permission="clients.view"><ClientDetailPage /></PermissionRoute>} />
         <Route path="contacts" element={<PermissionRoute permission="contacts.view"><ContactsPage /></PermissionRoute>} />
         <Route path="analytics" element={<Navigate to="/" replace />} />
         <Route path="settings" element={<PermissionRoute permission="settings.view"><SettingsPage /></PermissionRoute>} />
