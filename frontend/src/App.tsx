@@ -19,6 +19,7 @@ import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TaskDetailPage } from './pages/TasksPage'
 import { TasksTriagePage } from './pages/TasksTriagePage'
+import { TimesheetPage } from './pages/TimesheetPage'
 
 function ProtectedApp() {
   const { status } = useAuth()
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
         <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
         <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksTriagePage /></PermissionRoute>} />
+        <Route path="timesheet" element={<PermissionRoute permission="time.track"><TimesheetPage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
         <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />

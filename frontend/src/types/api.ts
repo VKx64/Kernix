@@ -887,5 +887,50 @@ export interface Dashboard {
   activity: DashboardActivity[]
 }
 
+// --- timesheet -------------------------------------------------------------
+
+export type TimesheetCutoff = 'semi' | 'month'
+
+/** How a date is written in the copied rows. `8-3`, `08-03`, `Aug 3`. */
+export type SheetDateFormat = 'short' | 'pad' | 'mon'
+
+export interface TimesheetRow {
+  task_id: EntityId
+  date: string
+  /** The override when one exists, otherwise `generated`. */
+  description: string
+  generated: string
+  edited: boolean
+  minutes: number
+  hours: number
+  task_title: string
+}
+
+export interface TimesheetLane {
+  client_id: EntityId | null
+  client: string
+  minutes: number
+  entry_count: number
+  rows: TimesheetRow[]
+}
+
+export interface TimesheetPeriod {
+  start: string
+  end: string
+  label: string
+}
+
+export interface Timesheet {
+  cutoff: TimesheetCutoff
+  offset: number
+  period: TimesheetPeriod
+  total_minutes: number
+  entry_count: number
+  days_worked: number
+  /** Time tracked without a task, which cannot be attributed to a client. */
+  unassigned_minutes: number
+  lanes: TimesheetLane[]
+}
+
 export type FormValue = string | number | boolean | null | undefined
 export type FormPayload = Record<string, FormValue | FormValue[]>

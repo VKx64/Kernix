@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'reac
 import {
   Briefcase,
   Building2,
+  Clock,
   Contact,
   ChevronsUpDown,
   Inbox,
@@ -65,6 +66,7 @@ const navigation: NavigationItem[] = [
   { to: '/tasks', label: 'Tasks', icon: SquareCheck, permission: 'tasks.view' },
   { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view' },
   { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
+  { to: '/timesheet', label: 'Timesheet', icon: Clock, permission: 'time.track' },
   { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
 ]
 
