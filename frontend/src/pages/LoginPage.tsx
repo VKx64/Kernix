@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { ArrowRight, Clock, SquareCheck } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -147,8 +147,14 @@ export function LoginPage() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="lg:hidden">
-            <p className="text-xs text-muted-foreground">Protected by secure, cookie-based authentication.</p>
+          <CardFooter className="flex-col items-start gap-2">
+            <p className="text-sm text-muted-foreground">
+              No account yet?{' '}
+              <Link className="font-medium text-foreground underline-offset-4 hover:underline" to="/register">
+                Create one
+              </Link>
+            </p>
+            <p className="text-xs text-muted-foreground lg:hidden">Protected by secure, cookie-based authentication.</p>
           </CardFooter>
         </Card>
       </section>
