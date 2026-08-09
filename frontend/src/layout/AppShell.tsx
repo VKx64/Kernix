@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import {
   Briefcase,
   Building2,
@@ -9,7 +9,6 @@ import {
   Inbox,
   LayoutDashboard,
   LogOut,
-  Search,
   Settings,
   SquareCheck,
   UserRound,
@@ -25,7 +24,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import { TimerBox } from '@/components/timer/TimerBox'
 import {
   Sidebar,
@@ -49,7 +47,6 @@ import { api, unwrap } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { cn } from '@/lib/utils'
-import { PageActionsSlotContext } from '@/layout/page-actions'
 import { PageFillProvider } from '@/layout/page-fill'
 import type { ApiEnvelope } from '@/types/api'
 
@@ -74,30 +71,10 @@ export function AppShell() {
   const { user, logout } = useAuth()
   const { timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
   const timer = useTimerContext()
-  const [query, setQuery] = useState('')
   const [unread, setUnread] = useState(0)
   const location = useLocation()
   const navigate = useNavigate()
-  const [params, setParams] = useSearchParams()
   const can = useCan()
-  // Page actions render into the header through this slot, so a page never
-  // stacks a second bar of chrome under the shell's own.
-  const [actionSlot, setActionSlot] = useState<HTMLDivElement | null>(null)
-
-  // On the task list this input *is* the task search — it drives the same
-  // `search` param the page reads, so there is only ever one search box.
-  const onTaskList = location.pathname === '/tasks'
-  const searchValue = onTaskList ? params.get('search') ?? '' : query
-  const updateSearch = (value: string) => {
-    if (!onTaskList) {
-      setQuery(value)
-      return
-    }
-    const next = new URLSearchParams(params)
-    if (value) next.set('search', value)
-    else next.delete('search')
-    setParams(next, { replace: true })
-  }
   // Settings lives under the profile menu only — it is account/admin plumbing,
   // not one of the workspace areas the sidebar lists.
   const settingsTarget = can('settings.view')
@@ -237,47 +214,13 @@ export function AppShell() {
         <SidebarRail />
       </Sidebar>
 
-      {/* The shell owns the viewport height and the content area does the
-          scrolling, so the header stays put and a page can pin its own footer
-          to the bottom of the scroll container. */}
+      {/* No shell header: in the design the sidebar runs full height and every
+          screen owns its own top area — Messages has none at all. A global bar
+          would sit above all of them carrying one screen's search. */}
       <SidebarInset className="h-svh overflow-hidden">
-        {/* 28px page gutter, matched by the content below so a header control
-            and the first row under it share an edge. */}
-        <header className="z-10 flex h-14 shrink-0 items-center gap-2 border-b border-line-soft bg-background px-4 md:px-7">
-          {/* Below md the sidebar is a sheet and this is the only way to open
-              it, so the trigger stays there and only the desktop one goes. */}
-          <SidebarTrigger className="-ml-1 md:hidden" />
-
-          {can('tasks.view') && (
-            <form
-              className="hidden items-center gap-2 sm:flex"
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (!onTaskList && query.trim()) navigate(`/tasks?search=${encodeURIComponent(query.trim())}`)
-              }}
-            >
-              {/* Names what the input searches, which is only ever tasks. On
-                  the task list it is also that page's heading — the page itself
-                  no longer renders one. */}
-              {onTaskList
-                ? <h1 className="text-sm font-medium">Tasks</h1>
-                : <span className="text-sm font-medium">Tasks</span>}
-              <div className="relative w-56 lg:w-72">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-8"
-                  value={searchValue}
-                  onChange={(event) => updateSearch(event.target.value)}
-                  placeholder={onTaskList ? 'Search task title or project…' : 'Search tasks and projects…'}
-                  aria-label={onTaskList ? 'Search task title or project…' : 'Search tasks and projects'}
-                />
-              </div>
-            </form>
-          )}
-
-          <div ref={setActionSlot} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
-
-        </header>
+        {/* Below md the sidebar is a sheet, so the only way to open it is a
+            trigger floating over the page rather than a bar reserved for it. */}
+        <SidebarTrigger className="absolute left-2 top-2 z-20 md:hidden" />
 
         <PageFillProvider>
           {(fill) => (
@@ -287,9 +230,7 @@ export function AppShell() {
                 fill ? 'overflow-hidden' : 'overflow-y-auto',
               )}
             >
-              <PageActionsSlotContext.Provider value={actionSlot}>
-                <Outlet />
-              </PageActionsSlotContext.Provider>
+              <Outlet />
             </main>
           )}
         </PageFillProvider>

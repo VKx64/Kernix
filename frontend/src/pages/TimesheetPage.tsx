@@ -7,7 +7,6 @@ import { Monogram, initialsOf } from '@/components/kernix/monogram'
 import { Segmented } from '@/components/kernix/segmented'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PageActions } from '@/layout/page-actions'
 import { copyText, countRows, formatSheetDate, hoursLabel, timesheetText } from '@/lib/timesheet'
 import { useTimesheet } from '@/lib/useTimesheet'
 import { cn } from '@/lib/utils'
@@ -64,8 +63,20 @@ export function TimesheetPage() {
 
   return (
     <>
-      <PageActions>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+      {/* The screen's own header: title and what the period holds on the left,
+          the controls that change the period on the right. */}
+      <header className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-h1 text-title-strong">Timesheet</h1>
+          <p className="mt-[3px] text-body-lg text-t3">
+            {!data
+              ? 'Loading your tracked time…'
+              : data.entry_count
+                ? `${data.entry_count} ${data.entry_count === 1 ? 'entry' : 'entries'} · ${hoursLabel(data.total_minutes)} · ${data.days_worked} ${data.days_worked === 1 ? 'day' : 'days'} worked`
+                : 'Nothing tracked in this period'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Segmented
             label="Pay period length"
             options={CUTOFFS}
@@ -106,7 +117,7 @@ export function TimesheetPage() {
             {total ? `Copy ${total} ${total === 1 ? 'row' : 'rows'}` : 'Nothing to copy'}
           </Button>
         </div>
-      </PageActions>
+      </header>
 
       {error && <ErrorBanner message={error} onRetry={reload} />}
 
@@ -119,15 +130,6 @@ export function TimesheetPage() {
 
       {data && (
         <div className="flex flex-col gap-4">
-          <header>
-            <h1 className="text-h1 text-title-strong">Timesheet</h1>
-            <p className="mt-[3px] text-body-lg text-t3">
-              {data.entry_count
-                ? `${data.entry_count} ${data.entry_count === 1 ? 'entry' : 'entries'} · ${hoursLabel(data.total_minutes)} · ${data.days_worked} ${data.days_worked === 1 ? 'day' : 'days'} worked`
-                : 'Nothing tracked in this period'}
-            </p>
-          </header>
-
           <div className="flex flex-col gap-5">
             {data.lanes.map((lane, index) => (
               <Lane

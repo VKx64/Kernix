@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ListFilter, Plus, Rows2, Rows3, Sparkles } from 'lucide-react'
+import { ListFilter, Plus, Rows2, Rows3, Search, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/auth/AuthProvider'
 import { useWorkspace } from '@/auth/WorkspaceProvider'
@@ -13,7 +13,6 @@ import { TaskRow, type TaskRowDensity } from '@/components/tasks/TaskRow'
 import { EmptyState, ErrorBanner } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PageActions } from '@/layout/page-actions'
 import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
 import { uploadTaskAttachments } from '@/lib/attachments'
@@ -697,26 +696,6 @@ export function TasksTriagePage() {
 
   return (
     <>
-      <PageActions>
-        <div className="flex flex-1 items-center justify-end gap-1.5">
-          {/* Two of the design's three creation paths: the detailed form for
-              when you already know everything, and AI drafting for when you
-              know nothing. The third — single-line quick add — is not built. */}
-          {can('tasks.create_with_ai') && aiProjects.length > 0 && (
-            <Button variant="outline" onClick={() => setAiCreateOpen(true)}>
-              <Sparkles />
-              Draft with AI
-            </Button>
-          )}
-          {can('tasks.create') && (
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus />
-              New task
-            </Button>
-          )}
-        </div>
-      </PageActions>
-
       <div className="-mx-4 flex min-h-0 flex-1 flex-col md:-mx-7">
         <header className="flex-none px-4 md:px-7">
           <div className="flex items-start gap-5">
@@ -734,6 +713,35 @@ export function TasksTriagePage() {
                   </span>
                 ))}
               </p>
+            </div>
+
+            {/* The search and the creation paths, in this screen's own header
+                rather than a bar above every screen. The design opens search
+                as a ⌘K command palette; this is the same filter as an input,
+                and the palette is not built. */}
+            <div className="flex flex-none items-center gap-1.5">
+              <div className="relative hidden sm:block">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-[13px] -translate-y-1/2 text-t4" />
+                <input
+                  value={search}
+                  onChange={(event) => setParam('search', event.target.value || null)}
+                  placeholder="Search tasks"
+                  aria-label="Search task title or project"
+                  className="h-[31px] w-44 rounded-lg border border-line bg-transparent pl-8 pr-2.5 text-meta text-t1 outline-none placeholder:text-t4 focus:border-line-strong lg:w-56"
+                />
+              </div>
+              {can('tasks.create_with_ai') && aiProjects.length > 0 && (
+                <Button variant="outline" onClick={() => setAiCreateOpen(true)}>
+                  <Sparkles />
+                  Draft with AI
+                </Button>
+              )}
+              {can('tasks.create') && (
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus />
+                  New task
+                </Button>
+              )}
             </div>
           </div>
 

@@ -7,7 +7,6 @@ import { MetricTile } from '@/components/kernix/metric-tile'
 import { urgencyRail } from '@/components/kernix/rail'
 import { Segmented } from '@/components/kernix/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PageActions } from '@/layout/page-actions'
 import { useDashboard } from '@/lib/useDashboard'
 import { dueMeta, formatMinutes, statusColor, urgencyColor } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
@@ -73,12 +72,6 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageActions>
-        <div className="flex flex-1 items-center justify-end">
-          <Segmented label="Dashboard range" options={RANGES} value={range} onChange={setRange} />
-        </div>
-      </PageActions>
-
       {error && <ErrorBanner message={error} onRetry={reload} />}
 
       {loading && !data && (
@@ -95,9 +88,15 @@ export function DashboardPage() {
         // Container queries, not viewport ones: the design measures the content
         // column, which is the window minus a 236px sidebar that can collapse.
         <div className="@container flex flex-col gap-3">
-          <header>
-            <h1 className="text-h1 text-title-strong">{greeting(data.greeting_name)}</h1>
-            <p className="mt-[3px] text-body-lg text-t3">{dateLine(data)}</p>
+          {/* The screen's own header, with its one control at the right —
+              the design gives each section its top area rather than a bar
+              above all of them. */}
+          <header className="flex items-center gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-h1 text-title-strong">{greeting(data.greeting_name)}</h1>
+              <p className="mt-[3px] text-body-lg text-t3">{dateLine(data)}</p>
+            </div>
+            <Segmented label="Dashboard range" options={RANGES} value={range} onChange={setRange} />
           </header>
 
           <div className="grid grid-cols-2 gap-2.5 @[660px]:grid-cols-4">
