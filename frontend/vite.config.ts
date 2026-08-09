@@ -30,6 +30,15 @@ export default defineConfig(({ mode }) => {
             ? request.url || '/login'
             : undefined,
         },
+        '/register': {
+          target: proxyTarget,
+          changeOrigin: true,
+          // Same deal as /login: the React route has to survive a refresh, so
+          // only the form submission is forwarded to Laravel.
+          bypass: (request) => request.method === 'GET' || request.method === 'HEAD'
+            ? request.url || '/register'
+            : undefined,
+        },
         '/logout': { target: proxyTarget, changeOrigin: true },
         '/storage': { target: proxyTarget, changeOrigin: true },
       },
