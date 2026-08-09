@@ -1,6 +1,5 @@
 import { Avatar } from '@/components/shared'
 import { Tag } from '@/components/kernix/chip'
-import { Checkbox } from '@/components/ui/checkbox'
 import { displayName } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { EntityId, Message } from '@/types/api'
@@ -25,9 +24,7 @@ export function ConversationRow({
   userId,
   open,
   cursor,
-  picked,
   onOpen,
-  onPickedChange,
 }: {
   message: Message
   userId?: EntityId
@@ -35,9 +32,7 @@ export function ConversationRow({
   open: boolean
   /** The keyboard cursor is on this row. */
   cursor: boolean
-  picked: boolean
   onOpen: () => void
-  onPickedChange: (picked: boolean) => void
 }) {
   const person = counterpart(message, userId)
   const latest = message.latestMessage ?? message.latest_message ?? message
@@ -56,31 +51,17 @@ export function ConversationRow({
         open ? 'bg-row-selected' : cursor ? 'bg-[#16161a]' : 'hover:bg-[#16161a]',
       )}
     >
-      <span className="relative size-[30px] flex-none">
-        <Avatar
-          user={person}
-          className={cn('size-[30px] transition-opacity', picked ? 'opacity-0' : 'group-hover/row:opacity-0')}
-        />
-        <span
-          onClick={(event) => event.stopPropagation()}
-          className={cn(
-            'absolute inset-0 grid place-items-center transition-opacity',
-            picked ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 focus-within:opacity-100',
-          )}
-        >
-          <Checkbox
-            aria-label={`Select conversation with ${displayName(person)}`}
-            checked={picked}
-            onCheckedChange={(checked) => onPickedChange(checked === true)}
-          />
-        </span>
-      </span>
+      {/* The avatar stays put. A checkbox that swaps in on hover made the row
+          flicker and hid the one thing that identifies it. */}
+      <Avatar user={person} className="size-[30px] flex-none [&_[data-slot=avatar-fallback]]:text-[10.5px]" />
 
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-baseline gap-2">
           <span
             className={cn(
-              'flex-1 truncate text-body',
+              // Tight leading: the design's row is three short lines, and the
+              // body line-height would add four pixels to each of them.
+              'flex-1 truncate text-body leading-[1.25]',
               unread ? 'font-[650] text-title-strong' : open ? 'font-[550] text-t1' : 'font-[550] text-title',
             )}
           >

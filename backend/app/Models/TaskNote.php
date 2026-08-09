@@ -64,4 +64,9 @@ class TaskNote extends DomainModel
     {
         return $this->hasMany(NoteAttachment::class, 'note_id');
     }
+
+    public function reactions(): HasMany
+    {
+        return $this->hasMany(TaskNoteReaction::class, 'task_note_id')->orderBy('id');
+    }
 }

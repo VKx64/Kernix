@@ -26,12 +26,12 @@ export function PanelSection({
 }) {
   return (
     <section className={cn('flex flex-col rounded-xl border border-line-soft px-[15px] pb-3 pt-3.5', className)}>
-      <div className="mb-[9px] flex items-baseline gap-2.5">
+      <div className="mb-[9px] flex items-baseline gap-[9px]">
         <LabelRow>{label}</LabelRow>
         <span className="flex-1" />
-        {typeof meta === 'string' ? <span className="text-meta text-t4">{meta}</span> : meta}
+        {typeof meta === 'string' ? <span className="text-meta-sm text-t4">{meta}</span> : meta}
       </div>
-      {empty ? <p className="pb-1 text-meta text-t4">{empty}</p> : children}
+      {empty ? <p className="pt-1 pb-1.5 text-body-sm text-t4">{empty}</p> : children}
     </section>
   )
 }

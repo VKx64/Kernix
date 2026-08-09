@@ -4,11 +4,10 @@ import { RetainerBurn } from '@/components/dashboard/RetainerBurn'
 import { WeekChart } from '@/components/dashboard/WeekChart'
 import { PanelSection } from '@/components/kernix/panel-section'
 import { MetricTile } from '@/components/kernix/metric-tile'
-import { urgencyRail } from '@/components/kernix/rail'
 import { Segmented } from '@/components/kernix/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboard } from '@/lib/useDashboard'
-import { dueMeta, formatMinutes, statusColor, urgencyColor } from '@/lib/taskSignals'
+import { dayDiff, dueMeta, formatMinutes, railColor, statusRole, urgencyColor } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
 import type { Dashboard, DashboardRange, DashboardTask } from '@/types/api'
 
@@ -39,9 +38,22 @@ function dateLine(data: Dashboard): string {
   return parts.join(' · ')
 }
 
-/** The line under a focus row: project, client, and time already on it. */
+/**
+ * The line under a focus row: the project, the status only when it is worth
+ * saying, and the time already on the task.
+ *
+ * A status appears in lower case and only for work in flight or stuck —
+ * "planning" or "quality check" under every row is noise the design leaves out,
+ * and the workspace's own label is used so the vocabulary stays configurable.
+ */
 function taskMeta(task: DashboardTask): string {
-  return [task.project, task.status?.label, formatMinutes(task.logged_minutes)]
+  const role = statusRole(task.status)
+  const logged = formatMinutes(task.logged_minutes)
+  return [
+    task.project,
+    role === 'active' || role === 'blocked' ? task.status?.label?.toLowerCase() : null,
+    logged && `${logged} logged`,
+  ]
     .filter(Boolean)
     .join(' · ')
 }
@@ -130,27 +142,43 @@ export function DashboardPage() {
             <div className="flex min-w-0 flex-col gap-3">
               <PanelSection
                 label="Work on next"
-                meta={range === 'today' ? 'today and anything late' : 'this week and anything late'}
+                meta={data.focus.length ? 'ordered by urgency' : ''}
                 empty={!data.focus.length && 'Nothing is waiting on you.'}
               >
-                {data.focus.map((task) => {
+                {data.focus.map((task, index) => {
                   const due = dueMeta(task.due_date)
                   return (
                     <button
                       key={task.id}
                       type="button"
                       onClick={() => openTask(task.id)}
-                      className="-mx-2 flex items-center gap-2.5 rounded-md px-2 py-[7px] text-left hover:bg-elev-low"
-                      style={urgencyRail(urgencyColor(task.urgency))}
+                      className="-mx-2 flex w-full items-center gap-[11px] rounded-md px-2 py-[9px] text-left hover:bg-elev-low"
                     >
-                      <span className="w-[18px] flex-none font-mono text-[11px] text-t5">
+                      {/* The rail is an element rather than the row's own border:
+                          it stops short of the row padding, which is what keeps
+                          a list of five from reading as a striped block. */}
+                      <span
+                        aria-hidden="true"
+                        className="w-0.5 flex-none self-stretch rounded-sm"
+                        style={{ background: railColor(task.urgency) ?? 'var(--line-strong)' }}
+                      />
+                      <span
+                        className={cn('flex-none font-mono text-[11px]', index === 0 ? 'text-t2' : 'text-t6')}
+                      >
                         {String(task.rank).padStart(2, '0')}
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-body-lg text-title">{task.title}</span>
-                        <span className="truncate text-meta text-t4">{taskMeta(task)}</span>
+                        <span className="truncate text-body leading-[normal] text-title">{task.title}</span>
+                        <span className="truncate text-meta-sm leading-[normal] text-t4">{taskMeta(task)}</span>
                       </span>
-                      <span className={cn('flex-none whitespace-nowrap text-meta', due.className)}>{due.label}</span>
+                      <span
+                        className={cn(
+                          'flex-none whitespace-nowrap font-mono text-meta-sm',
+                          due.tone === 'over' ? 'text-danger' : due.tone === 'today' ? 'text-warn' : 'text-t4',
+                        )}
+                      >
+                        {due.label}
+                      </span>
                     </button>
                   )
                 })}
@@ -158,7 +186,11 @@ export function DashboardPage() {
 
               <PanelSection
                 label="Needs attention"
-                meta={data.needs_attention.length ? `${data.needs_attention.length}` : ''}
+                meta={
+                  data.needs_attention.length
+                    ? `${data.needs_attention.length} ${data.needs_attention.length === 1 ? 'item' : 'items'}`
+                    : ''
+                }
                 empty={!data.needs_attention.length && 'Nothing is late, blocked or untouched.'}
               >
                 {data.needs_attention.map((task) => (
@@ -166,25 +198,25 @@ export function DashboardPage() {
                     key={task.id}
                     type="button"
                     onClick={() => openTask(task.id)}
-                    className="-mx-2 flex items-center gap-2.5 rounded-md px-2 py-[7px] text-left hover:bg-elev-low"
+                    className="-mx-2 flex w-full items-start gap-2.5 rounded-md p-2 text-left hover:bg-elev-low"
                   >
                     <span
                       aria-hidden="true"
-                      className="size-[7px] flex-none rounded-full"
-                      style={{ background: statusColor(task.status) }}
+                      className="mt-[5px] size-1.5 flex-none rounded-full"
+                      style={{ background: task.reason === 'overdue' ? 'var(--danger)' : 'var(--warn)' }}
                     />
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-body-lg text-title">{task.title}</span>
+                      <span className="truncate text-body leading-[normal] text-title">{task.title}</span>
                       <span
                         className={cn(
-                          'truncate text-meta',
-                          task.reason === 'overdue' ? 'text-danger' : task.reason === 'blocked' ? 'text-warn' : 'text-t4',
+                          'truncate text-meta-sm leading-[normal]',
+                          task.reason === 'overdue' ? 'text-danger' : 'text-warn',
                         )}
                       >
                         {task.why}
                       </span>
                     </span>
-                    <span className="flex-none whitespace-nowrap text-meta text-t4">{task.project}</span>
+                    <span className="flex-none whitespace-nowrap text-meta-sm text-t4">{task.project}</span>
                   </button>
                 ))}
               </PanelSection>
@@ -194,9 +226,11 @@ export function DashboardPage() {
                 meta="next 14 days"
                 empty={!data.upcoming.length && 'Nothing due in the next fortnight.'}
               >
-                {data.upcoming.map((day) => (
+                {data.upcoming.map((day) => {
+                  const soon = (dayDiff(day.date) ?? 99) <= 1
+                  return (
                   <div key={day.date} className="grid grid-cols-[74px_minmax(0,1fr)] gap-3 border-t border-soft py-[7px]">
-                    <span className="text-meta text-t3">{day.label}</span>
+                    <span className={cn('pt-[3px] text-meta font-[550]', soon ? 'text-t2' : 'text-t4')}>{day.label}</span>
                     <span className="flex min-w-0 flex-col gap-[5px]">
                       {day.tasks.map((task) => (
                         <button
@@ -207,8 +241,8 @@ export function DashboardPage() {
                         >
                           <span
                             aria-hidden="true"
-                            className="size-[7px] flex-none rounded-full"
-                            style={{ background: statusColor(task.status) }}
+                            className="size-[5px] flex-none rounded-full"
+                            style={{ background: urgencyColor(task.urgency) }}
                           />
                           <span className="min-w-0 flex-1 truncate text-left text-body-sm text-[#b8b8c0]">{task.title}</span>
                           <span className="flex-none whitespace-nowrap text-[11px] text-t4">{task.project}</span>
@@ -216,14 +250,15 @@ export function DashboardPage() {
                       ))}
                     </span>
                   </div>
-                ))}
+                  )
+                })}
               </PanelSection>
             </div>
 
             <div className="flex min-w-0 flex-col gap-3">
               <PanelSection
                 label="Tracked this week"
-                meta={<span className="font-mono text-body-lg text-t1">{formatMinutes(data.week_total_minutes) || '0m'}</span>}
+                meta={<span className="font-mono text-body text-t1">{formatMinutes(data.week_total_minutes) || '0m'}</span>}
               >
                 <WeekChart week={data.week} targetMinutes={data.daily_target_minutes} />
                 <WeekDelta
@@ -245,7 +280,7 @@ export function DashboardPage() {
                       <Avatar user={entry.user} className="size-[22px]" />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="text-body-sm leading-[1.45] text-[#a8a8b0] text-pretty">{entry.text}</span>
-                        <span className="text-meta-sm text-t4">{relativeTime(entry.at)}</span>
+                        <span className="text-[11px] text-t5">{relativeTime(entry.at)}</span>
                       </span>
                     </div>
                   ))}
@@ -263,7 +298,7 @@ function WeekDelta({ total, lastWeek }: { total: number; lastWeek: number }) {
   const delta = total - lastWeek
   return (
     <div className="mt-[11px] flex items-baseline gap-2 border-t border-soft pt-[11px]">
-      <span className="whitespace-nowrap text-body text-t3">
+      <span className="whitespace-nowrap text-meta text-t3">
         {lastWeek ? 'vs last week' : 'no time logged last week'}
       </span>
       <span className="flex-1" />

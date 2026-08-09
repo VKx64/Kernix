@@ -94,6 +94,8 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::post('/messages', [MessageController::class, 'store']);
     Route::get('/messages/{message}', [MessageController::class, 'show']);
     Route::post('/messages/{message}/replies', [MessageController::class, 'reply']);
+    Route::post('/messages/{message}/notes/{note}/reactions', [MessageController::class, 'react']);
+    Route::post('/messages/{message}/ai', [MessageController::class, 'ai']);
     Route::patch('/messages/{message}/read', [MessageController::class, 'read']);
     Route::patch('/messages/{message}/unread', [MessageController::class, 'unread']);
 

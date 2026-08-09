@@ -115,7 +115,7 @@ it('ranks the focus list and shows what each row already cost', async () => {
 
   expect(await screen.findByText('Send the investor deck')).toBeInTheDocument()
   expect(screen.getByText('01')).toBeInTheDocument()
-  expect(screen.getByText(/Investor Deck · In progress · 1h 30m/)).toBeInTheDocument()
+  expect(screen.getByText(/Investor Deck · in progress · 1h 30m logged/)).toBeInTheDocument()
 })
 
 it('asks the server for the week rather than re-filtering what it already has', async () => {

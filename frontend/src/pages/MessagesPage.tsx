@@ -439,14 +439,7 @@ export function MessagesPage() {
                 userId={user?.id}
                 open={String(message.id) === String(messageId)}
                 cursor={cursor === index}
-                picked={picked.has(String(message.id))}
                 onOpen={() => openRow(message)}
-                onPickedChange={(next) => setPicked((current) => {
-                  const updated = new Set(current)
-                  if (next) updated.add(String(message.id))
-                  else updated.delete(String(message.id))
-                  return updated
-                })}
               />
             )) : (
               <div className="px-1 pt-6">
