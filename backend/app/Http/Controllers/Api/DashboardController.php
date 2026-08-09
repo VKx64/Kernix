@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Support\SingleClient;
 use App\Support\TaskSignals;
+use App\Support\UserSettings;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,9 +27,6 @@ use Illuminate\Validation\Rule;
  */
 class DashboardController extends ApiController
 {
-    /** Phase 7 moves this to user settings; until then everyone is on 7 hours. */
-    private const DAILY_TARGET_MINUTES = 420;
-
     private const FOCUS_LIMIT = 5;
 
     private const ATTENTION_LIMIT = 6;
@@ -73,6 +71,9 @@ class DashboardController extends ApiController
         $range = $validated['range'] ?? 'today';
 
         $user = $request->user();
+        // The dashed target line on the week chart, and the note under today's
+        // total, are whatever this person set their day to be.
+        $dailyTarget = (int) UserSettings::for($user)['daily_target_minutes'];
         $now = Carbon::now();
         $today = $now->copy()->startOfDay();
 
@@ -108,7 +109,7 @@ class DashboardController extends ApiController
                 ],
                 'tracked_today' => [
                     'minutes' => $trackedToday,
-                    'note' => 'of '.$this->hoursLabel(self::DAILY_TARGET_MINUTES).' target',
+                    'note' => 'of '.$this->hoursLabel($dailyTarget).' target',
                 ],
                 'retainer_burn' => $retainer === null ? null : [
                     'percent' => $retainer['capacity_minutes'] > 0
@@ -123,7 +124,7 @@ class DashboardController extends ApiController
             'week' => $week,
             'week_total_minutes' => array_sum(array_column($week, 'work_minutes')),
             'last_week_total_minutes' => $this->minutes($myEntries, $weekStart->copy()->subWeek(), $weekStart, 'work', $now),
-            'daily_target_minutes' => self::DAILY_TARGET_MINUTES,
+            'daily_target_minutes' => $dailyTarget,
             'retainer' => $retainer,
             'activity' => $this->activity((int) $user->id, $now),
         ]);

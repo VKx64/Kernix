@@ -9,6 +9,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Support\SingleClient;
 use App\Support\TaskSignals;
+use App\Support\UserSettings;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,9 +27,6 @@ use Illuminate\Support\Collection;
  */
 class OliverInsights
 {
-    /** Phase 7 moves this to user settings; until then everyone is on 7 hours. */
-    private const DAILY_TARGET_MINUTES = 420;
-
     private const WEEKDAYS_PER_WEEK = 5;
 
     private const RISK_LIMIT = 6;
@@ -164,16 +162,18 @@ class OliverInsights
         $committed = (int) $mine
             ->filter(fn (Task $task) => $task->due_date && $task->due_date->gte($today) && $task->due_date->lte($window))
             ->sum('estimated_minutes');
+        // The week this person says they work, not a week this service assumes.
+        $weekTarget = (int) UserSettings::for($user)['weekly_target_minutes'];
         // The window is measured against the working days still left in it, not
         // against a whole week, so a Friday question is not judged on Monday's
         // capacity.
-        $remainingTarget = $this->weekdays($today, $window) * self::DAILY_TARGET_MINUTES;
+        $remainingTarget = $this->weekdays($today, $window) * intdiv($weekTarget, self::WEEKDAYS_PER_WEEK);
 
         return [
             'open' => $mine->count(),
             'overdue' => $mine->filter(fn (Task $task) => $task->due_date !== null && $task->due_date->lt($today))->count(),
             'tracked_week_minutes' => $tracked,
-            'target_week_minutes' => self::WEEKDAYS_PER_WEEK * self::DAILY_TARGET_MINUTES,
+            'target_week_minutes' => $weekTarget,
             'committed_minutes' => $committed,
             'over_committed' => $committed > $remainingTarget,
         ];
@@ -229,6 +229,10 @@ class OliverInsights
      */
     private function timeGaps(User $user, Carbon $now, Carbon $today): array
     {
+        // A gap is measured against the day this person actually works, not a
+        // fixed seven hours — otherwise someone on a six-hour day is nudged
+        // about an hour they never owed.
+        $dailyTarget = (int) UserSettings::for($user)['daily_target_minutes'];
         $from = $today->copy()->subDays(self::GAP_DAYS);
         $entries = $this->myWorkEntries($user, $from, $today);
         $touched = $this->daysTouched($user, $from, $today);
@@ -240,14 +244,14 @@ class OliverInsights
                 continue;
             }
             $tracked = $this->minutes($entries, $day, $day->copy()->addDay(), $now);
-            if ($tracked * 2 >= self::DAILY_TARGET_MINUTES) {
+            if ($tracked * 2 >= $dailyTarget) {
                 continue;
             }
             $gaps[] = [
                 'date' => $date,
                 'tracked_minutes' => $tracked,
-                'target_minutes' => self::DAILY_TARGET_MINUTES,
-                'note' => $day->format('l').' has '.$this->duration(self::DAILY_TARGET_MINUTES - $tracked).' unaccounted for',
+                'target_minutes' => $dailyTarget,
+                'note' => $day->format('l').' has '.$this->duration($dailyTarget - $tracked).' unaccounted for',
             ];
         }
 

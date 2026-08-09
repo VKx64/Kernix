@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\TimeController;
 use App\Http\Controllers\Api\TimerController;
 use App\Http\Controllers\Api\TimesheetController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\UserSettingsController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -66,6 +67,10 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::patch('/settings', [SettingsController::class, 'update']);
     Route::patch('/settings/{section}', [SettingsController::class, 'update'])->whereIn('section', ['system', 'smtp', 'storage', 'ai']);
     Route::post('/settings/ai/test', [SettingsController::class, 'testAi']);
+
+    // Personal preferences, distinct from the workspace settings above.
+    Route::get('/me/settings', [UserSettingsController::class, 'show']);
+    Route::patch('/me/settings', [UserSettingsController::class, 'update']);
 
     Route::get('/time', [TimeController::class, 'status']);
     Route::post('/time/clock-in', [TimeController::class, 'clockIn']);
