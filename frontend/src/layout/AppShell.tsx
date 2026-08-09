@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
+  Sparkles,
   SquareCheck,
   UserRound,
 } from 'lucide-react'
@@ -55,14 +56,21 @@ interface NavigationItem {
   label: string
   icon: ComponentType<{ className?: string }>
   permission?: string
+  /** A presence dot rather than a count — only Oliver carries one. */
+  live?: boolean
+  /** Which running total, if any, badges this item. */
+  badge?: 'unread' | 'tasks'
 }
 
 const navigation: NavigationItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
-  { to: '/messages', label: 'Messages', icon: Inbox, permission: 'messages.view' },
-  { to: '/tasks', label: 'Tasks', icon: SquareCheck, permission: 'tasks.view' },
+  { to: '/messages', label: 'Messages', icon: Inbox, permission: 'messages.view', badge: 'unread' },
+  { to: '/tasks', label: 'Tasks', icon: SquareCheck, permission: 'tasks.view', badge: 'tasks' },
   { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view' },
   { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
+  // Oliver is a place in the design's nav, not a row inside Messages. The dot
+  // is presence, not a count — it says the assistant is watching.
+  { to: '/messages/oliver', label: 'Oliver', icon: Sparkles, permission: 'messages.view', live: true },
   { to: '/timesheet', label: 'Timesheet', icon: Clock, permission: 'time.track' },
   { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
 ]
@@ -72,6 +80,7 @@ export function AppShell() {
   const { timeBusy, timeAction, singleClientMode, refresh: refreshWorkspace } = useWorkspace()
   const timer = useTimerContext()
   const [unread, setUnread] = useState(0)
+  const [openTasks, setOpenTasks] = useState(0)
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
@@ -116,6 +125,20 @@ export function AppShell() {
     return () => { active = false; window.clearInterval(interval) }
   }, [can, location.pathname])
 
+  // The design badges Tasks with how much is on your plate. It reads the same
+  // `mine` view the task screen counts, so the two can never disagree.
+  useEffect(() => {
+    if (!can('tasks.view')) {
+      setOpenTasks(0)
+      return
+    }
+    let active = true
+    void api.get<{ counts?: { mine?: number } }>('/api/tasks', { view: 'mine', per_page: 1 })
+      .then((response) => { if (active) setOpenTasks(response.counts?.mine ?? 0) })
+      .catch(() => { /* Supplemental, like the unread badge. */ })
+    return () => { active = false }
+  }, [can, location.pathname])
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
@@ -140,8 +163,16 @@ export function AppShell() {
                           <span>{item.label}</span>
                         </NavLink>
                       </SidebarMenuButton>
-                      {item.to === '/messages' && unread > 0 && (
+                      {item.live && (
+                        <SidebarMenuBadge>
+                          <span aria-hidden="true" className="size-1.5 rounded-full bg-good" />
+                        </SidebarMenuBadge>
+                      )}
+                      {item.badge === 'unread' && unread > 0 && (
                         <SidebarMenuBadge>{unread > 99 ? '99+' : unread}</SidebarMenuBadge>
+                      )}
+                      {item.badge === 'tasks' && openTasks > 0 && (
+                        <SidebarMenuBadge>{openTasks > 99 ? '99+' : openTasks}</SidebarMenuBadge>
                       )}
                     </SidebarMenuItem>
                   )

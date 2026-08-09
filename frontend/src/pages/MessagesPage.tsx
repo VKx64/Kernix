@@ -456,26 +456,29 @@ export function MessagesPage() {
             </label>
           </div>
 
-          {/* Selection is not part of the design's list, but marking a batch
-              read is how this inbox is actually cleared, so it keeps one line. */}
-          <div className="flex flex-none items-center gap-2 px-4 pb-1.5 text-meta text-t3">
-            <Checkbox
-              aria-label="Select all conversations"
-              checked={visibleMessages.length > 0 && picked.size === visibleMessages.length}
-              onCheckedChange={(checked) => setPicked(checked ? new Set(visibleMessages.map((message) => String(message.id))) : new Set())}
-            />
-            <span className="flex-1 truncate">
-              {picked.size ? `${picked.size} selected` : `${visibleMessages.length} conversation${visibleMessages.length === 1 ? '' : 's'}`}
-            </span>
-            {picked.size > 0 ? (
-              <ListAction disabled={busy} onClick={() => void markPickedRead()}>Read</ListAction>
-            ) : (
-              <>
-                <ListAction onClick={() => setNewestFirst((current) => !current)}>{newestFirst ? 'Newest' : 'Oldest'}</ListAction>
-                {scopeCounts.unread > 0 && <ListAction onClick={() => void markAll()}>Mark all read</ListAction>}
-              </>
-            )}
-          </div>
+          {/* The design's list has no control row, so this one earns its place
+              only when there is something to act on: a selection to clear, or
+              unread to clear in bulk. A quiet inbox shows nothing here. */}
+          {(picked.size > 0 || scopeCounts.unread > 0) && (
+            <div className="flex flex-none items-center gap-2 px-4 pb-1.5 text-meta text-t3">
+              <Checkbox
+                aria-label="Select all conversations"
+                checked={visibleMessages.length > 0 && picked.size === visibleMessages.length}
+                onCheckedChange={(checked) => setPicked(checked ? new Set(visibleMessages.map((message) => String(message.id))) : new Set())}
+              />
+              <span className="flex-1 truncate">
+                {picked.size ? `${picked.size} selected` : `${scopeCounts.unread} unread`}
+              </span>
+              {picked.size > 0 ? (
+                <ListAction disabled={busy} onClick={() => void markPickedRead()}>Read</ListAction>
+              ) : (
+                <>
+                  <ListAction onClick={() => setNewestFirst((current) => !current)}>{newestFirst ? 'Newest' : 'Oldest'}</ListAction>
+                  <ListAction onClick={() => void markAll()}>Mark all read</ListAction>
+                </>
+              )}
+            </div>
+          )}
 
           {error && <div className="px-3 pb-2"><ErrorBanner message={error} onRetry={() => void reload()} /></div>}
 
@@ -654,7 +657,7 @@ export function MessagesPage() {
                 <MessageComposer
                   value={replyBody}
                   busy={busy}
-                  placeholder={`Reply to ${displayName(partner)}…`}
+                  placeholder="Write a message…"
                   inputRef={replyRef}
                   onChange={setReplyBody}
                   onSend={() => void sendReply()}

@@ -29,7 +29,6 @@ import {
   taskStatusValue,
   taskUrgencyValue,
   urgencyColor,
-  urgencyRank,
 } from '@/lib/taskSignals'
 import {
   TASK_GROUP_OPTIONS,
@@ -662,24 +661,6 @@ export function TasksTriagePage() {
 
   const viewTitle = TASK_VIEWS.find((option) => option.value === view)?.label ?? 'Tasks'
 
-  /**
-   * The line under the heading. It names what is wrong rather than how many
-   * tasks exist, and each count is a link into the view that shows them.
-   */
-  const pulse = useMemo(() => {
-    const open = data.filter((task) => !isTaskDone(task))
-    const entries: Array<{ key: string; count: number; label: string; color: string; apply: () => void }> = []
-    const overdue = open.filter((task) => {
-      const days = dueMeta(taskDueDate(task)).tone
-      return days === 'over'
-    }).length
-    const unowned = open.filter((task) => !task.assignee && urgencyRank(taskUrgencyValue(task)) <= 1).length
-    const blocked = open.filter((task) => statusRole(taskStatusValue(task)) === 'blocked').length
-    if (overdue) entries.push({ key: 'overdue', count: overdue, label: 'overdue', color: 'text-danger', apply: () => { setParam('view', 'all'); setParam('sort', 'due') } })
-    if (unowned) entries.push({ key: 'unowned', count: unowned, label: 'need an owner', color: 'text-brand', apply: () => setParam('view', 'unassigned') })
-    if (blocked) entries.push({ key: 'blocked', count: blocked, label: 'blocked', color: 'text-warn', apply: () => setParam('group', 'smart') })
-    return entries
-  }, [data, setParam])
 
   const showStatus = width >= 720
   const showMeta = width >= 560
@@ -699,20 +680,11 @@ export function TasksTriagePage() {
       <div className="-mx-4 flex min-h-0 flex-1 flex-col md:-mx-7">
         <header className="flex-none px-4 md:px-7">
           <div className="flex items-start gap-5">
+            {/* Title alone, as the design has it. The counts that used to sit
+                here are already in the view tabs below, which is where a
+                person looks for them. */}
             <div className="min-w-0 flex-1">
               <h1 className="text-h1 text-title-strong">{viewTitle}</h1>
-              <p className="mt-0.5 flex flex-wrap items-baseline gap-1.5 text-body text-t3">
-                {pulse.length === 0 && !loading && <span>Nothing is overdue or unowned.</span>}
-                {pulse.map((entry, index) => (
-                  <span key={entry.key} className="inline-flex items-baseline gap-1">
-                    <button type="button" onClick={entry.apply} className="inline-flex items-baseline gap-1.5 hover:underline">
-                      <span className={cn('text-body-lg font-[650] tabular-nums', entry.color)}>{entry.count}</span>
-                      {entry.label}
-                    </button>
-                    {index < pulse.length - 1 && <span className="text-t5">,</span>}
-                  </span>
-                ))}
-              </p>
             </div>
 
             {/* The search and the creation paths, in this screen's own header
