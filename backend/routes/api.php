@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\TimesheetController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserSettingsController;
 use App\Http\Controllers\Api\WorkspaceController;
+use App\Http\Middleware\RequireWorkspace;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/extension/pairings/exchange', [ExtensionPairingController::class, 'exchange'])
@@ -47,12 +48,20 @@ Route::post('/invitations/{token}/accept', [InvitationAcceptanceController::clas
     ->where('token', '[A-Fa-f0-9]{64}')
     ->middleware('throttle:5,1');
 
+// Reachable while onboarding is still pending: the signed-in account itself,
+// the workspaces it belongs to, and the endpoint that creates the first one.
+// Everything else needs a workspace, or its queries would run unscoped.
 Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->group(function () {
+    Route::get('/user', [AuthController::class, 'user']);
+    Route::get('/workspaces', [WorkspaceController::class, 'index']);
+    Route::post('/workspaces', [WorkspaceController::class, 'store']);
+});
+
+Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', RequireWorkspace::class])->group(function () {
     Route::post('/extension/pairings', [ExtensionPairingController::class, 'store']);
     Route::get('/extension/devices', [ExtensionPairingController::class, 'devices']);
     Route::delete('/extension/devices/{token}', [ExtensionPairingController::class, 'destroyDevice']);
 
-    Route::get('/user', [AuthController::class, 'user']);
     Route::patch('/user', [ProfileController::class, 'update']);
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::patch('/profile', [ProfileController::class, 'update']);
@@ -150,8 +159,6 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::get('/oliver/insights', [OliverController::class, 'insights']);
     Route::get('/oliver/actions', [OliverController::class, 'actions']);
     Route::post('/oliver/actions/{action}/undo', [OliverController::class, 'undo']);
-    Route::get('/workspaces', [WorkspaceController::class, 'index']);
-    Route::post('/workspaces', [WorkspaceController::class, 'store']);
     Route::patch('/workspaces/{workspace}', [WorkspaceController::class, 'update']);
     Route::post('/workspaces/{workspace}/activate', [WorkspaceController::class, 'activate']);
     Route::get('/workspaces/{workspace}/members', [WorkspaceController::class, 'members']);

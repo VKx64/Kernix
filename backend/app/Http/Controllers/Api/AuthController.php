@@ -67,6 +67,10 @@ class AuthController extends ApiController
         $data['permissions'] = $user->permissions();
         $data['is_admin'] = $user->isAdmin();
         $data['can_admin_override'] = $user->isAdmin();
+        // The client gates on this: an account belonging to no workspace gets
+        // the onboarding step instead of the app, because every screen inside
+        // reads from a workspace that does not exist yet.
+        $data['needs_workspace'] = $user->needsWorkspace();
 
         return $data;
     }

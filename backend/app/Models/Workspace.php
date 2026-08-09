@@ -11,9 +11,15 @@ class Workspace extends DomainModel
 {
     use SoftDeletes;
 
+    /** The pivot carries the role each member holds inside this workspace. */
     public function members(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'workspace_user')->withTimestamps();
+        return $this->belongsToMany(User::class, 'workspace_user')->withPivot('role_id')->withTimestamps();
+    }
+
+    public function roles(): HasMany
+    {
+        return $this->hasMany(Role::class);
     }
 
     public function creator(): BelongsTo

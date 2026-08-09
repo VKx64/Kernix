@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\CurrentWorkspace;
 use App\Support\PermissionCatalog;
 use Database\Factories\UserFactory;
 use App\Services\AvatarStorage;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -61,13 +63,41 @@ class User extends Authenticatable
     }
 
     /**
+     * Self-registration deliberately creates an account with no workspace, so
+     * the person can be walked through onboarding instead of being dropped into
+     * somebody else's tenant.
+     */
+    private static bool $automaticWorkspace = true;
+
+    /** The membership role for the active workspace, memoised per instance. */
+    private ?int $workspaceRoleWorkspaceId = null;
+
+    private ?int $workspaceRoleId = null;
+
+    private bool $workspaceRoleResolved = false;
+
+    /**
+     * An account created inside this callback is left without a workspace.
+     */
+    public static function withoutAutomaticWorkspace(callable $callback): mixed
+    {
+        $previous = self::$automaticWorkspace;
+        self::$automaticWorkspace = false;
+        try {
+            return $callback();
+        } finally {
+            self::$automaticWorkspace = $previous;
+        }
+    }
+
+    /**
      * A new account always lands in a workspace, so nobody signs in to an empty
      * interface. Extra workspaces are granted from the workspace screen.
      */
     protected static function booted(): void
     {
         static::created(function (User $user) {
-            if ($user->workspaces()->exists()) {
+            if (! self::$automaticWorkspace || $user->workspaces()->exists()) {
                 return;
             }
             $workspace = Workspace::query()->orderBy('id')->first()
@@ -76,10 +106,25 @@ class User extends Authenticatable
                     'slug' => 'default',
                     'created_by' => $user->id,
                 ]);
-            $user->workspaces()->syncWithoutDetaching([$workspace->id]);
+            $user->workspaces()->syncWithoutDetaching([$workspace->id => ['role_id' => $user->role_id]]);
             if (! $user->active_workspace_id) {
                 $user->forceFill(['active_workspace_id' => $workspace->id])->saveQuietly();
             }
+            $user->forgetWorkspaceRole();
+        });
+
+        // Administration still edits `users.role_id`, so the membership for the
+        // workspace the person is in has to follow it or the change would look
+        // like it did nothing.
+        static::updated(function (User $user) {
+            if (! $user->wasChanged('role_id') || ! $user->active_workspace_id) {
+                return;
+            }
+            DB::table('workspace_user')
+                ->where('user_id', $user->getKey())
+                ->where('workspace_id', $user->active_workspace_id)
+                ->update(['role_id' => $user->role_id, 'updated_at' => now()]);
+            $user->forgetWorkspaceRole();
         });
     }
 
@@ -93,9 +138,109 @@ class User extends Authenticatable
         return (string) $this->password_hash;
     }
 
+    /**
+     * The role the person holds in the workspace they are currently in. The
+     * foreign key is resolved by `effective_role_id`, which reads the membership
+     * first and falls back to the legacy `users.role_id` column, so eager loads,
+     * lazy loads, and serialised output all describe the same role.
+     *
+     * The global workspace scope is dropped here on purpose: the role is already
+     * chosen by workspace, and the relation still has to resolve while no
+     * workspace is current, e.g. during login.
+     */
+    /**
+     * The relation keys on the real `role_id` column so it can be eager loaded
+     * — `with('role.permissions')` is used in a dozen controllers, and a
+     * belongsTo pointed at an accessor cannot be batched into a query.
+     *
+     * What the person can actually *do* comes from `effectiveRole()`, which
+     * prefers their role in the workspace being served. This relation is the
+     * legacy fallback and the serialised shape.
+     */
     public function role(): BelongsTo
     {
-        return $this->belongsTo(Role::class);
+        return $this->belongsTo(Role::class, 'role_id')->withoutGlobalScope('workspace');
+    }
+
+    /** The role that decides permissions here: workspace membership first. */
+    public function effectiveRole(): ?Role
+    {
+        $roleId = $this->effective_role_id;
+        if ($roleId === null) {
+            return null;
+        }
+        if ($this->relationLoaded('role') && (int) ($this->role?->id ?? 0) === (int) $roleId) {
+            return $this->role;
+        }
+
+        return Role::query()->withoutGlobalScope('workspace')->with('permissions')->find($roleId);
+    }
+
+    public function getEffectiveRoleIdAttribute(): ?int
+    {
+        $membershipRoleId = $this->workspaceRoleId();
+        if ($membershipRoleId !== null) {
+            return $membershipRoleId;
+        }
+
+        // The legacy column is a migration fallback, not a passport. It only
+        // applies where the person is actually a member; without this, someone
+        // who founded one workspace would carry its role into every other.
+        return $this->belongsToCurrentWorkspace() ? ($this->attributes['role_id'] ?? null) : null;
+    }
+
+    /**
+     * The role recorded on the membership for the workspace being served.
+     *
+     * Keyed on the *current* workspace rather than the user's own active one:
+     * a queued job or an admin tool can run inside a workspace that is not the
+     * person's own, and permissions have to be judged where the work is
+     * happening, not where the account happens to be pointed.
+     */
+    private function workspaceRoleId(): ?int
+    {
+        $workspaceId = CurrentWorkspace::id() ?? ($this->attributes['active_workspace_id'] ?? null);
+        if (! $workspaceId || ! $this->exists) {
+            return null;
+        }
+        if ($this->workspaceRoleResolved && $this->workspaceRoleWorkspaceId === (int) $workspaceId) {
+            return $this->workspaceRoleId;
+        }
+
+        $roleId = DB::table('workspace_user')
+            ->where('user_id', $this->getKey())
+            ->where('workspace_id', $workspaceId)
+            ->value('role_id');
+
+        $this->workspaceRoleWorkspaceId = (int) $workspaceId;
+        $this->workspaceRoleId = $roleId === null ? null : (int) $roleId;
+        $this->workspaceRoleResolved = true;
+
+        return $this->workspaceRoleId;
+    }
+
+    /** Membership in the workspace currently being served. */
+    private function belongsToCurrentWorkspace(): bool
+    {
+        $workspaceId = CurrentWorkspace::id();
+        if (! $workspaceId || ! $this->exists) {
+            // No workspace in play — login, a console command — so the legacy
+            // column is all there is to go on.
+            return true;
+        }
+
+        return DB::table('workspace_user')
+            ->where('user_id', $this->getKey())
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+    }
+
+    public function forgetWorkspaceRole(): void
+    {
+        $this->workspaceRoleResolved = false;
+        $this->workspaceRoleId = null;
+        $this->workspaceRoleWorkspaceId = null;
+        $this->unsetRelation('role');
     }
 
     public function department(): BelongsTo
@@ -115,7 +260,13 @@ class User extends Authenticatable
 
     public function workspaces(): BelongsToMany
     {
-        return $this->belongsToMany(Workspace::class, 'workspace_user')->withTimestamps();
+        return $this->belongsToMany(Workspace::class, 'workspace_user')->withPivot('role_id')->withTimestamps();
+    }
+
+    /** True until the person has joined or created their first workspace. */
+    public function needsWorkspace(): bool
+    {
+        return ! $this->workspaces()->exists();
     }
 
     public function activeWorkspace(): BelongsTo
@@ -125,23 +276,22 @@ class User extends Authenticatable
 
     public function isAdmin(): bool
     {
-        return $this->role?->key_name === 'admin';
+        return $this->effectiveRole()?->key_name === 'admin';
     }
 
     public function permissions(): array
     {
-        if (! $this->relationLoaded('role')) {
-            $this->load('role.permissions');
-        } elseif ($this->role && ! $this->role->relationLoaded('permissions')) {
-            $this->role->load('permissions');
+        $role = $this->effectiveRole();
+        if ($role && ! $role->relationLoaded('permissions')) {
+            $role->load('permissions');
         }
 
-        if ($this->isAdmin()) {
+        if ($role?->key_name === 'admin') {
             return PermissionCatalog::keys();
         }
 
         return PermissionCatalog::effective(
-            $this->role?->permissions->pluck('permission_key')->all() ?? []
+            $role?->permissions->pluck('permission_key')->all() ?? []
         );
     }
 

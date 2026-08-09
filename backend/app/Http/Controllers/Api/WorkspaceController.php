@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\CurrentWorkspace;
+use App\Support\WorkspaceProvisioner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class WorkspaceController extends ApiController
@@ -27,26 +27,35 @@ class WorkspaceController extends ApiController
         )->all());
     }
 
+    /**
+     * Two callers reach this: somebody finishing onboarding, who belongs to no
+     * workspace yet and needs no permission to make their first one, and an
+     * administrator adding another workspace, who does. Either way the new
+     * workspace is provisioned with its own roles and the creator is its
+     * administrator.
+     */
     public function store(Request $request): JsonResponse
     {
-        $this->permission($request, 'workspaces.manage');
+        $user = $request->user();
+        $onboarding = $user->needsWorkspace();
+        if (! $onboarding) {
+            $this->permission($request, 'workspaces.manage');
+        }
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:191'],
+            'name' => ['required', 'string', 'min:2', 'max:191'],
             'activate' => ['sometimes', 'boolean'],
         ]);
+        $activate = $onboarding || ($data['activate'] ?? true);
+        $previousWorkspaceId = $user->active_workspace_id;
 
-        $workspace = Workspace::query()->create([
-            'name' => trim($data['name']),
-            'slug' => $this->uniqueSlug($data['name']),
-            'created_by' => $request->user()->id,
-        ]);
-        $workspace->members()->syncWithoutDetaching([$request->user()->id]);
-        if ($data['activate'] ?? true) {
-            $request->user()->forceFill(['active_workspace_id' => $workspace->id])->save();
+        $workspace = WorkspaceProvisioner::provision($user, $data['name']);
+        if (! $activate) {
+            $user->forceFill(['active_workspace_id' => $previousWorkspaceId])->save();
+            $user->forgetWorkspaceRole();
         }
-        $this->audit($request, 'workspace.create', $workspace, ['name' => $workspace->name]);
+        $this->audit($request, 'workspace.create', $workspace, ['name' => $workspace->name, 'onboarding' => $onboarding]);
 
-        return $this->data($workspace->toSummary(($data['activate'] ?? true), 1), 201);
+        return $this->data($workspace->toSummary($activate, 1), 201);
     }
 
     public function update(Request $request, Workspace $workspace): JsonResponse
@@ -113,15 +122,4 @@ class WorkspaceController extends ApiController
         return response()->json(null, 204);
     }
 
-    private function uniqueSlug(string $name): string
-    {
-        $base = Str::slug($name) ?: 'workspace';
-        $slug = $base;
-        $suffix = 2;
-        while (Workspace::withTrashed()->where('slug', $slug)->exists()) {
-            $slug = $base.'-'.$suffix++;
-        }
-
-        return $slug;
-    }
 }
