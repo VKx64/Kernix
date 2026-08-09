@@ -58,37 +58,48 @@ describe('messages triage', () => {
     })
   })
 
-  const views = () => screen.getByRole('navigation', { name: 'Conversation views' })
+  const scopes = () => screen.getByRole('navigation', { name: 'Conversation scope' })
 
-  it('counts each view from the loaded conversations', async () => {
+  it('counts each scope from the loaded conversations', async () => {
     renderPage()
 
-    const rail = views()
-    await waitFor(() => expect(within(rail).getByRole('button', { name: /Needs reply/ })).toHaveTextContent('1'))
-    expect(within(rail).getByRole('button', { name: /^Estimates/ })).toHaveTextContent('1')
-    expect(within(rail).getByRole('button', { name: /^All/ })).toHaveTextContent('2')
-    expect(within(rail).getByRole('button', { name: /Overdue tasks/ })).toHaveTextContent('1')
-    expect(within(rail).getByRole('button', { name: /Assigned to me/ })).toHaveTextContent('1')
+    const tabs = scopes()
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: /^All/ })).toHaveTextContent('2'))
+    // Every conversation is between workspace users, so Team holds all of
+    // them and Clients holds none until client threads exist.
+    expect(within(tabs).getByRole('button', { name: /^Team/ })).toHaveTextContent('2')
+    expect(within(tabs).getByRole('button', { name: /^Clients/ })).toBeInTheDocument()
+    expect(within(tabs).getByRole('button', { name: /^Unread/ })).toHaveTextContent('1')
   })
 
-  it('defaults to needs-reply and switches views on click', async () => {
+  it('opens on everything and narrows to unread on click', async () => {
     const actor = userEvent.setup()
     renderPage()
 
-    // Needs reply holds only the unread conversation.
     await waitFor(() => expect(screen.getByText('Book the studio')).toBeInTheDocument())
-    expect(screen.queryByText('Colour grade')).not.toBeInTheDocument()
+    expect(screen.getByText('Colour grade')).toBeInTheDocument()
 
-    await actor.click(within(views()).getByRole('button', { name: /Estimate requests/ }))
-    await waitFor(() => expect(screen.getByText('Colour grade')).toBeInTheDocument())
-    expect(screen.queryByText('Book the studio')).not.toBeInTheDocument()
+    await actor.click(within(scopes()).getByRole('button', { name: /^Unread/ }))
+    await waitFor(() => expect(screen.queryByText('Colour grade')).not.toBeInTheDocument())
+    expect(screen.getByText('Book the studio')).toBeInTheDocument()
+  })
+
+  it('says the Clients tab is a missing capability, not an empty inbox', async () => {
+    const actor = userEvent.setup()
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText('Book the studio')).toBeInTheDocument())
+    await actor.click(within(scopes()).getByRole('button', { name: /^Clients/ }))
+
+    expect(await screen.findByText('No client conversations')).toBeInTheDocument()
+    expect(screen.getByText(/once client threads are connected/)).toBeInTheDocument()
   })
 
   it('marks the selected conversations read in bulk', async () => {
     const actor = userEvent.setup()
     renderPage()
 
-    await actor.click(within(views()).getByRole('button', { name: /^All/ }))
+    await actor.click(within(scopes()).getByRole('button', { name: /^All/ }))
     await actor.click(await screen.findByLabelText('Select all conversations'))
     expect(screen.getByText('2 selected')).toBeInTheDocument()
 

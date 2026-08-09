@@ -12,6 +12,7 @@ import { ThreadMessage } from '@/components/messages/ThreadMessage'
 import {
   aiState,
   authorId,
+  conversationKind,
   counterpart,
   dayLabel,
   estimateRequest,
@@ -49,12 +50,35 @@ import type { ApiEnvelope, EntityId, Message, Note } from '@/types/api'
  * smart views rather than a team/client split.
  */
 
-type ViewKey = 'needs-reply' | 'estimates' | 'all' | 'estimate-requests' | 'overdue' | 'assigned-to-me'
+/**
+ * The design's four scopes, filtering conversations by who is in them:
+ * everything, colleagues, client contacts, or anything unread.
+ *
+ * `client` is empty by construction today — a conversation is always between
+ * two workspace users, because `recipientQuery` on the server only ever
+ * returns active workspace users. The tab is here rather than hidden so the
+ * screen is the shape the design specifies, and so it fills itself the day
+ * client threads exist rather than needing the row re-cut.
+ */
+type ScopeKey = 'all' | 'internal' | 'client' | 'unread'
+
+const SCOPES: Array<{ key: ScopeKey; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'internal', label: 'Team' },
+  { key: 'client', label: 'Clients' },
+  { key: 'unread', label: 'Unread' },
+]
+
+/**
+ * The estimate workflow's own routes. They are not scopes — they cut across
+ * all four — so they sit under the tab row rather than in it, which is also
+ * the only way to keep them without six tabs wrapping to three lines.
+ */
+type ViewKey = 'all' | 'estimates' | 'estimate-requests' | 'overdue' | 'assigned-to-me'
 
 const VIEWS: Array<{ key: ViewKey; label: string }> = [
-  { key: 'needs-reply', label: 'Needs reply' },
+  { key: 'all', label: 'Everything' },
   { key: 'estimates', label: 'Estimates' },
-  { key: 'all', label: 'All' },
   { key: 'estimate-requests', label: 'Estimate requests' },
   { key: 'overdue', label: 'Overdue tasks' },
   { key: 'assigned-to-me', label: 'Assigned to me' },
@@ -68,7 +92,8 @@ export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const oliverOpen = messageId === 'oliver'
-  const view = (searchParams.get('view') as ViewKey | null) ?? 'needs-reply'
+  const view = (searchParams.get('view') as ViewKey | null) ?? 'all'
+  const scope = (searchParams.get('scope') as ScopeKey | null) ?? 'all'
   const [search, setSearch] = useState(searchParams.get('search') ?? '')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Message | null>(null)
@@ -142,7 +167,6 @@ export function MessagesPage() {
   const matchesView = useCallback((message: Message, key: ViewKey) => {
     const request = estimateRequest(message)
     switch (key) {
-      case 'needs-reply': return isUnread(message)
       case 'estimates': return Boolean(request)
       case 'estimate-requests': return request?.status === 'pending'
       case 'overdue': return isOverdue(message.task)
@@ -151,16 +175,36 @@ export function MessagesPage() {
     }
   }, [user?.id])
 
+  // `all` passes everything; `unread` is the one scope about state rather than
+  // participants; the rest compare the conversation's kind, exactly as the
+  // design's own filter does.
+  const matchesScope = useCallback((message: Message, key: ScopeKey) => {
+    if (key === 'all') return true
+    if (key === 'unread') return isUnread(message)
+    return conversationKind(message) === key
+  }, [])
+
+  const scopeCounts = useMemo(
+    () => Object.fromEntries(SCOPES.map(({ key }) => [
+      key,
+      data.filter((message) => matchesScope(message, key) && matchesView(message, view)).length,
+    ])) as Record<ScopeKey, number>,
+    [data, matchesScope, matchesView, view],
+  )
+
   const counts = useMemo(
-    () => Object.fromEntries(VIEWS.map(({ key }) => [key, data.filter((message) => matchesView(message, key)).length])) as Record<ViewKey, number>,
-    [data, matchesView],
+    () => Object.fromEntries(VIEWS.map(({ key }) => [
+      key,
+      data.filter((message) => matchesView(message, key) && matchesScope(message, scope)).length,
+    ])) as Record<ViewKey, number>,
+    [data, matchesView, matchesScope, scope],
   )
 
   const visibleMessages = useMemo(() => {
-    const rows = data.filter((message) => matchesView(message, view))
+    const rows = data.filter((message) => matchesView(message, view) && matchesScope(message, scope))
     const stamp = (message: Message) => new Date((message.latestMessage ?? message.latest_message ?? message)?.createdAt ?? (message.latestMessage ?? message.latest_message ?? message)?.created_at ?? 0).getTime()
     return [...rows].sort((a, b) => (newestFirst ? stamp(b) - stamp(a) : stamp(a) - stamp(b)))
-  }, [data, matchesView, view, newestFirst])
+  }, [data, matchesView, matchesScope, view, scope, newestFirst])
 
   // What wants an answer floats to the top of whichever view is on, so the
   // list is useful before any filter is touched.
@@ -178,7 +222,16 @@ export function MessagesPage() {
 
   const setView = (next: ViewKey) => {
     const params = new URLSearchParams(searchParams)
-    params.set('view', next)
+    if (next === 'all') params.delete('view')
+    else params.set('view', next)
+    setSearchParams(params)
+    setPage(1)
+  }
+
+  const setScope = (next: ScopeKey) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'all') params.delete('scope')
+    else params.set('scope', next)
     setSearchParams(params)
     setPage(1)
   }
@@ -361,25 +414,46 @@ export function MessagesPage() {
               />
             </label>
 
-            <nav aria-label="Conversation views" className="flex flex-wrap gap-0.5">
-              {VIEWS.map((item) => {
-                const active = view === item.key
+            <nav aria-label="Conversation scope" className="flex gap-0.5">
+              {SCOPES.map((item) => {
+                const active = scope === item.key
                 return (
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => setView(item.key)}
+                    onClick={() => setScope(item.key)}
                     className={cn(
                       'inline-flex h-[26px] items-center gap-1.5 rounded-[7px] px-2.5 text-meta transition-colors',
                       active ? 'bg-[#26262c] font-semibold text-t1' : 'font-[450] text-t3 hover:text-t1',
                     )}
                   >
                     {item.label}
-                    <span className={cn('font-mono text-[10.5px]', active ? 'text-t2' : 'text-t4')}>{counts[item.key]}</span>
+                    {scopeCounts[item.key] > 0 && (
+                      <span className={cn('font-mono text-[10.5px]', active ? 'text-t2' : 'text-t4')}>
+                        {scopeCounts[item.key]}
+                      </span>
+                    )}
                   </button>
                 )
               })}
             </nav>
+
+            {/* The estimate workflow's routes cut across all four scopes, so
+                they are a filter under the tabs rather than more tabs. */}
+            <label className="mt-2 flex items-center gap-2 text-meta text-t4">
+              <span className="sr-only">Filter conversations</span>
+              <select
+                value={view}
+                onChange={(event) => setView(event.target.value as ViewKey)}
+                className="h-[26px] min-w-0 flex-1 rounded-[7px] bg-row-hover px-2 text-meta text-t2 outline-none"
+              >
+                {VIEWS.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}{counts[item.key] ? ` · ${counts[item.key]}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {/* Selection is not part of the design's list, but marking a batch
@@ -398,7 +472,7 @@ export function MessagesPage() {
             ) : (
               <>
                 <ListAction onClick={() => setNewestFirst((current) => !current)}>{newestFirst ? 'Newest' : 'Oldest'}</ListAction>
-                {counts['needs-reply'] > 0 && <ListAction onClick={() => void markAll()}>Mark all read</ListAction>}
+                {scopeCounts.unread > 0 && <ListAction onClick={() => void markAll()}>Mark all read</ListAction>}
               </>
             )}
           </div>
@@ -453,8 +527,14 @@ export function MessagesPage() {
               <div className="px-1 pt-6">
                 <EmptyState
                   icon={Inbox}
-                  title={view === 'needs-reply' ? 'You’re all caught up' : 'Nothing in this view'}
-                  description={view === 'needs-reply' ? 'New replies and estimate requests land here.' : 'Try another view, or start a conversation.'}
+                  title={scope === 'unread' ? 'You’re all caught up' : scope === 'client' ? 'No client conversations' : 'Nothing in this view'}
+                  description={scope === 'unread'
+                    ? 'New replies and estimate requests land here.'
+                    : scope === 'client'
+                      // Said plainly: this is not an empty inbox, it is a
+                      // capability that does not exist yet.
+                      ? 'Conversations with client contacts will appear here once client threads are connected.'
+                      : 'Try another scope, or start a conversation.'}
                 />
               </div>
             )}

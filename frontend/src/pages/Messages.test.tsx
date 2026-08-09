@@ -61,7 +61,7 @@ function renderPage(entry = '/messages') {
   )
 }
 
-const views = () => screen.getByRole('navigation', { name: 'Conversation views' })
+const views = () => screen.getByRole('navigation', { name: 'Conversation scope' })
 
 beforeEach(() => {
   apiGet.mockReset(); apiPatch.mockReset(); apiPost.mockReset()
@@ -98,27 +98,34 @@ describe('the conversation list', () => {
   })
 })
 
-describe('the view tabs', () => {
-  it('counts every view from the conversations that loaded', async () => {
+describe('the scope tabs', () => {
+  it('offers the four scopes the design specifies, in order', async () => {
     renderPage()
 
     const tabs = views()
-    await waitFor(() => expect(within(tabs).getByRole('button', { name: /Needs reply/ })).toHaveTextContent('1'))
-    expect(within(tabs).getByRole('button', { name: /^Estimates/ })).toHaveTextContent('1')
-    expect(within(tabs).getByRole('button', { name: /^All/ })).toHaveTextContent('2')
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: /^All/ })).toBeInTheDocument())
+    expect(within(tabs).getAllByRole('button').map((tab) => tab.textContent?.replace(/\d+$/, '')))
+      .toEqual(['All', 'Team', 'Clients', 'Unread'])
   })
 
-  it('lists only the conversations in the chosen view', async () => {
+  it('counts each scope from the conversations that loaded', async () => {
+    renderPage()
+
+    const tabs = views()
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: /^All/ })).toHaveTextContent('2'))
+    expect(within(tabs).getByRole('button', { name: /^Unread/ })).toHaveTextContent('1')
+  })
+
+  it('lists only the conversations in the chosen scope', async () => {
     const actor = userEvent.setup()
     renderPage()
 
-    // Needs reply holds the unread conversation only.
     expect(await screen.findByText('Book the studio')).toBeInTheDocument()
-    expect(screen.queryByText('Colour grade')).not.toBeInTheDocument()
+    expect(screen.getByText('Colour grade')).toBeInTheDocument()
 
-    await actor.click(within(views()).getByRole('button', { name: /Estimate requests/ }))
-    expect(await screen.findByText('Colour grade')).toBeInTheDocument()
-    expect(screen.queryByText('Book the studio')).not.toBeInTheDocument()
+    await actor.click(within(views()).getByRole('button', { name: /^Unread/ }))
+    await waitFor(() => expect(screen.queryByText('Colour grade')).not.toBeInTheDocument())
+    expect(screen.getByText('Book the studio')).toBeInTheDocument()
   })
 })
 

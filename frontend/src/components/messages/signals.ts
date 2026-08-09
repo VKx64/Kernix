@@ -98,3 +98,22 @@ export function isOverdue(task?: Message['task']) {
   midnight.setHours(0, 0, 0, 0)
   return new Date(due).getTime() < midnight.getTime()
 }
+
+/**
+ * Who a conversation is with, which is what the scope tabs filter on.
+ *
+ * Every conversation in this system is between two workspace users — the
+ * server's recipient list only ever returns active workspace users — so this
+ * is `internal` today for everything. It reads the participant rather than
+ * hardcoding the answer so that client threads, when they arrive, classify
+ * themselves without this having to be found and changed.
+ */
+export function conversationKind(message: Message): 'internal' | 'client' {
+  // Read defensively rather than off a typed field: the server has no notion
+  // of an external participant yet, so there is nothing to type against. When
+  // client threads land they will carry one of these, and this classifies them
+  // without needing to be found first.
+  const record = message as unknown as Record<string, unknown>
+  const external = record.isExternal ?? record.is_external ?? record.clientContact ?? record.client_contact
+  return external ? 'client' : 'internal'
+}
