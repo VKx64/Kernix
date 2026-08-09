@@ -15,7 +15,6 @@ import {
   counterpart,
   dayLabel,
   estimateRequest,
-  isOverdue,
   isUnread,
   requestedMinutes,
   reviewMode,
@@ -42,10 +41,10 @@ import type { ApiEnvelope, EntityId, Message, Note } from '@/types/api'
  * estimate — has moved to the banner and to the estimate request itself, where
  * each is next to the thing it is about.
  *
- * The views are this app's own. The design splits internal from client threads,
- * which this product does not have; what it has instead is an estimate approval
- * workflow, so the filter row carries `Needs reply`, `Estimates` and the three
- * smart views rather than a team/client split.
+ * The filter row is the design's four scopes and nothing else. This app used to
+ * add its own estimate-workflow views under them; the design has no such
+ * control, so they are gone. An estimate request still reaches you as a
+ * conversation, and the task screen is where work is filtered.
  */
 
 /**
@@ -67,20 +66,6 @@ const SCOPES: Array<{ key: ScopeKey; label: string }> = [
   { key: 'unread', label: 'Unread' },
 ]
 
-/**
- * The estimate workflow's own routes. They are not scopes — they cut across
- * all four — so they sit under the tab row rather than in it, which is also
- * the only way to keep them without six tabs wrapping to three lines.
- */
-type ViewKey = 'all' | 'estimates' | 'estimate-requests' | 'overdue' | 'assigned-to-me'
-
-const VIEWS: Array<{ key: ViewKey; label: string }> = [
-  { key: 'all', label: 'Everything' },
-  { key: 'estimates', label: 'Estimates' },
-  { key: 'estimate-requests', label: 'Estimate requests' },
-  { key: 'overdue', label: 'Overdue tasks' },
-  { key: 'assigned-to-me', label: 'Assigned to me' },
-]
 
 export function MessagesPage() {
   usePageFill()
@@ -89,7 +74,6 @@ export function MessagesPage() {
   const { messageId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const view = (searchParams.get('view') as ViewKey | null) ?? 'all'
   const scope = (searchParams.get('scope') as ScopeKey | null) ?? 'all'
   const [search, setSearch] = useState(searchParams.get('search') ?? '')
   const [page, setPage] = useState(1)
@@ -161,16 +145,6 @@ export function MessagesPage() {
     return () => window.clearInterval(timer)
   }, [selected, reload])
 
-  const matchesView = useCallback((message: Message, key: ViewKey) => {
-    const request = estimateRequest(message)
-    switch (key) {
-      case 'estimates': return Boolean(request)
-      case 'estimate-requests': return request?.status === 'pending'
-      case 'overdue': return isOverdue(message.task)
-      case 'assigned-to-me': return String(message.task?.assignee?.id ?? '') === String(user?.id ?? '')
-      default: return true
-    }
-  }, [user?.id])
 
   // `all` passes everything; `unread` is the one scope about state rather than
   // participants; the rest compare the conversation's kind, exactly as the
@@ -184,24 +158,16 @@ export function MessagesPage() {
   const scopeCounts = useMemo(
     () => Object.fromEntries(SCOPES.map(({ key }) => [
       key,
-      data.filter((message) => matchesScope(message, key) && matchesView(message, view)).length,
+      data.filter((message) => matchesScope(message, key)).length,
     ])) as Record<ScopeKey, number>,
-    [data, matchesScope, matchesView, view],
-  )
-
-  const counts = useMemo(
-    () => Object.fromEntries(VIEWS.map(({ key }) => [
-      key,
-      data.filter((message) => matchesView(message, key) && matchesScope(message, scope)).length,
-    ])) as Record<ViewKey, number>,
-    [data, matchesView, matchesScope, scope],
+    [data, matchesScope],
   )
 
   const visibleMessages = useMemo(() => {
-    const rows = data.filter((message) => matchesView(message, view) && matchesScope(message, scope))
+    const rows = data.filter((message) => matchesScope(message, scope))
     const stamp = (message: Message) => new Date((message.latestMessage ?? message.latest_message ?? message)?.createdAt ?? (message.latestMessage ?? message.latest_message ?? message)?.created_at ?? 0).getTime()
     return [...rows].sort((a, b) => (newestFirst ? stamp(b) - stamp(a) : stamp(a) - stamp(b)))
-  }, [data, matchesView, matchesScope, view, scope, newestFirst])
+  }, [data, matchesScope, scope, newestFirst])
 
   // What wants an answer floats to the top of whichever view is on, so the
   // list is useful before any filter is touched.
@@ -215,15 +181,8 @@ export function MessagesPage() {
     if (thread) thread.scrollTop = thread.scrollHeight
   }, [selected])
 
-  useEffect(() => { setPicked(new Set()) }, [view])
+  useEffect(() => { setPicked(new Set()) }, [scope])
 
-  const setView = (next: ViewKey) => {
-    const params = new URLSearchParams(searchParams)
-    if (next === 'all') params.delete('view')
-    else params.set('view', next)
-    setSearchParams(params)
-    setPage(1)
-  }
 
   const setScope = (next: ScopeKey) => {
     const params = new URLSearchParams(searchParams)
@@ -234,8 +193,8 @@ export function MessagesPage() {
   }
 
   const openRow = useCallback((message: Message) => {
-    navigate(`/messages/${message.id}?view=${view}`)
-  }, [navigate, view])
+    navigate(`/messages/${message.id}`)
+  }, [navigate])
 
   // J/K/R/X/Enter, ignored while the caret is in a field.
   useEffect(() => {
@@ -425,32 +384,11 @@ export function MessagesPage() {
                     )}
                   >
                     {item.label}
-                    {scopeCounts[item.key] > 0 && (
-                      <span className={cn('font-mono text-[10.5px]', active ? 'text-t2' : 'text-t4')}>
-                        {scopeCounts[item.key]}
-                      </span>
-                    )}
                   </button>
                 )
               })}
             </nav>
 
-            {/* The estimate workflow's routes cut across all four scopes, so
-                they are a filter under the tabs rather than more tabs. */}
-            <label className="mt-2 flex items-center gap-2 text-meta text-t4">
-              <span className="sr-only">Filter conversations</span>
-              <select
-                value={view}
-                onChange={(event) => setView(event.target.value as ViewKey)}
-                className="h-[26px] min-w-0 flex-1 rounded-[7px] bg-row-hover px-2 text-meta text-t2 outline-none"
-              >
-                {VIEWS.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}{counts[item.key] ? ` · ${counts[item.key]}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           {/* The design's list has no control row, so this one earns its place

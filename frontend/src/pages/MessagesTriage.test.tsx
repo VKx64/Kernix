@@ -60,16 +60,12 @@ describe('messages triage', () => {
 
   const scopes = () => screen.getByRole('navigation', { name: 'Conversation scope' })
 
-  it('counts each scope from the loaded conversations', async () => {
+  it('offers the four scopes without decorating them with counts', async () => {
     renderPage()
 
     const tabs = scopes()
-    await waitFor(() => expect(within(tabs).getByRole('button', { name: /^All/ })).toHaveTextContent('2'))
-    // Every conversation is between workspace users, so Team holds all of
-    // them and Clients holds none until client threads exist.
-    expect(within(tabs).getByRole('button', { name: /^Team/ })).toHaveTextContent('2')
-    expect(within(tabs).getByRole('button', { name: /^Clients/ })).toBeInTheDocument()
-    expect(within(tabs).getByRole('button', { name: /^Unread/ })).toHaveTextContent('1')
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: 'All' })).toBeInTheDocument())
+    expect(within(tabs).getAllByRole('button').map((tab) => tab.textContent)).toEqual(['All', 'Team', 'Clients', 'Unread'])
   })
 
   it('opens on everything and narrows to unread on click', async () => {

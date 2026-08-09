@@ -108,12 +108,13 @@ describe('the scope tabs', () => {
       .toEqual(['All', 'Team', 'Clients', 'Unread'])
   })
 
-  it('counts each scope from the conversations that loaded', async () => {
+  it('carries no counts, as the design does not', async () => {
     renderPage()
 
     const tabs = views()
-    await waitFor(() => expect(within(tabs).getByRole('button', { name: /^All/ })).toHaveTextContent('2'))
-    expect(within(tabs).getByRole('button', { name: /^Unread/ })).toHaveTextContent('1')
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: 'All' })).toBeInTheDocument())
+    // A tab is a scope, not a metric. The unread count lives on the rows.
+    expect(within(tabs).getAllByRole('button').map((tab) => tab.textContent)).toEqual(['All', 'Team', 'Clients', 'Unread'])
   })
 
   it('lists only the conversations in the chosen scope', async () => {

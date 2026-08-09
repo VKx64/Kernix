@@ -6,6 +6,12 @@ import { cn } from '@/lib/utils'
 import type { EntityId, Message } from '@/types/api'
 import { authorId, counterpart, estimateRequest, shortAge, unreadCount } from './signals'
 
+/** The design's preview names people by first name only — "Sam: …". */
+function firstName(person?: { first_name?: string; firstName?: string } | null): string {
+  const full = displayName(person as never)
+  return (person?.firstName ?? person?.first_name ?? full).split(' ')[0]
+}
+
 /**
  * One conversation in the left pane: who it is with, when it last moved, the
  * last line spoken, and the task it hangs off.
@@ -83,8 +89,11 @@ export function ConversationRow({
           {request && <Tag className="flex-none">Estimate</Tag>}
           <time className="flex-none font-mono text-[10.5px] text-t3">{shortAge(latest)}</time>
         </span>
+        {/* The design always names the speaker, not only when it is you —
+            "Taylor: …", "Priya: …" — so a glance down the list says who is
+            waiting on whom without opening anything. */}
         <span className={cn('truncate text-meta-sm', unread ? 'text-t2' : 'text-t3')}>
-          {mine && <span className="font-medium">You: </span>}
+          <span className="font-medium">{mine ? 'You' : firstName(person)}: </span>
           {latest.body}
         </span>
         <span className="truncate text-[10.5px] text-t3">{message.task?.title || message.subject || 'Task thread'}</span>
