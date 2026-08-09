@@ -86,6 +86,10 @@ export interface User extends UserSummary {
 export interface Client {
   id: EntityId
   name: string
+  /** Derived delivery figures, present only when the list was asked for them. */
+  stats?: import('../components/portfolio/ClientTile').ClientStats
+  retainerMinutes?: number | null
+  retainer_minutes?: number | null
   website?: string | null
   email?: string | null
   phone?: string | null
@@ -109,6 +113,10 @@ export interface Project {
   clientId?: EntityId
   client_id?: EntityId
   client?: Pick<Client, 'id' | 'name' | 'timezone'>
+  /** Derived delivery figures, present only when the list was asked for them. */
+  stats?: import('../lib/health').PortfolioStats
+  /** Everyone holding a task on the project, plus its manager. */
+  team?: UserSummary[]
   name: string
   description?: string | null
   status?: string | FieldValue
