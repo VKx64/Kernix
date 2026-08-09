@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\Client;
+use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Workspace;
@@ -234,6 +236,74 @@ final class WorkspaceProvisioner
             } else {
                 DB::table('field_values')->insert($values + ['field_id' => 4, 'key_name' => $key, 'created_at' => $now]);
             }
+        }
+    }
+
+    /**
+     * The hidden client every project and contact attaches to while Clients
+     * is turned off, so `client_id` never has to go nullable. Lazy and
+     * idempotent: a workspace provisioned long before this existed gets one
+     * the first time it needs it, with no backfill step.
+     */
+    public static function defaultClient(Workspace $workspace): Client
+    {
+        return Client::acrossWorkspaces()->firstOrCreate(
+            ['workspace_id' => $workspace->getKey(), 'is_default' => true],
+            ['name' => 'General'],
+        );
+    }
+
+    /** Same shape one level down, for `project_id` while Projects is off. */
+    public static function defaultProject(Workspace $workspace): Project
+    {
+        $client = self::defaultClient($workspace);
+
+        return Project::acrossWorkspaces()->firstOrCreate(
+            ['workspace_id' => $workspace->getKey(), 'is_default' => true],
+            ['name' => 'General', 'client_id' => $client->getKey()],
+        );
+    }
+
+    /**
+     * Called right after a feature is switched back on. A default row that
+     * picked up real data while its feature was off graduates to an ordinary
+     * visible row instead of staying hidden; one that is still empty stays
+     * hidden until it is needed again. Never merges or deletes either way.
+     */
+    public static function revealDefaultRowsIfUsed(Workspace $workspace, string $feature): void
+    {
+        match ($feature) {
+            WorkspaceFeatures::CLIENTS => self::revealDefaultClientIfUsed($workspace),
+            WorkspaceFeatures::PROJECTS => self::revealDefaultProjectIfUsed($workspace),
+            default => null,
+        };
+    }
+
+    private static function revealDefaultClientIfUsed(Workspace $workspace): void
+    {
+        $client = Client::acrossWorkspaces()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('is_default', true)
+            ->first();
+        if (! $client) {
+            return;
+        }
+        if ($client->projects()->exists() || $client->contacts()->exists()) {
+            $client->update(['is_default' => false]);
+        }
+    }
+
+    private static function revealDefaultProjectIfUsed(Workspace $workspace): void
+    {
+        $project = Project::acrossWorkspaces()
+            ->where('workspace_id', $workspace->getKey())
+            ->where('is_default', true)
+            ->first();
+        if (! $project) {
+            return;
+        }
+        if ($project->tasks()->exists()) {
+            $project->update(['is_default' => false]);
         }
     }
 

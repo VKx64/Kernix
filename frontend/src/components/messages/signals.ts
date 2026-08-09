@@ -89,6 +89,11 @@ export function attachmentName(file: Attachment) {
   return file.originalName ?? file.original_name ?? file.name ?? 'Attachment'
 }
 
+/** Seeds the make-a-task capture with a short, glanceable title rather than a whole message. */
+export function taskSeed(body: string, cap = 70) {
+  return body.split('.')[0].trim().slice(0, cap)
+}
+
 export function isOverdue(task?: Message['task']) {
   const due = task?.due_date
   if (!due) return false

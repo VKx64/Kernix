@@ -17,11 +17,17 @@ class ProjectMemoryController extends ApiController
 {
     public function show(Request $request, Project $project): JsonResponse
     {
-        $this->permission($request, 'projects.view');
+        // Any employee with projects.view could otherwise read another
+        // manager's approved AI lessons; the design gives this surface to
+        // nobody but the people who can also manage it.
+        $this->permission($request, 'projects.manage_ai_memory');
         $canManage = $this->canManage($request, $project);
+        // FIELD() is MySQL-only; a CASE expression sorts the same status
+        // priority on every driver, including the sqlite the test suite runs
+        // on, so this endpoint's happy path is actually exercised in CI.
         $entries = $project->memoryEntries()->with(['sourceTask:id,title', 'reviewer:id,first_name,last_name,username'])
             ->when(! $canManage, fn ($query) => $query->where('status', 'approved'))
-            ->orderByRaw("FIELD(status, 'pending', 'approved', 'rejected', 'superseded', 'archived')")
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'rejected' THEN 2 WHEN 'superseded' THEN 3 WHEN 'archived' THEN 4 ELSE 5 END")
             ->orderByDesc('importance')->orderByDesc('id')->get();
 
         return $this->data([

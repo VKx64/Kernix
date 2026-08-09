@@ -93,44 +93,57 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::post('/time/timer/stop', [TimerController::class, 'stop']);
     Route::get('/time/clocked-users', [TimeController::class, 'clockedUsers']);
     Route::get('/time/summary', [TimeController::class, 'summary']);
-    Route::get('/timesheet', [TimesheetController::class, 'index']);
-    Route::put('/timesheet/description', [TimesheetController::class, 'updateDescription']);
-
-    Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
-    Route::post('/messages/mark-all-read', [MessageController::class, 'markAllRead']);
-    Route::get('/messages/recipients', [MessageController::class, 'recipients']);
-    Route::get('/messages', [MessageController::class, 'index']);
-    Route::post('/messages', [MessageController::class, 'store']);
-    Route::get('/messages/{message}', [MessageController::class, 'show']);
-    Route::post('/messages/{message}/replies', [MessageController::class, 'reply']);
-    Route::post('/messages/{message}/notes/{note}/reactions', [MessageController::class, 'react']);
-    Route::post('/messages/{message}/ai', [MessageController::class, 'ai']);
-    Route::patch('/messages/{message}/read', [MessageController::class, 'read']);
-    Route::patch('/messages/{message}/unread', [MessageController::class, 'unread']);
-
-    Route::post('/clients/{client}/archive', [ClientController::class, 'archive']);
-    Route::post('/clients/{client}/restore', [ClientController::class, 'restore']);
-    Route::apiResource('clients', ClientController::class)->except(['destroy']);
-    Route::post('/contacts/{contact}/archive', [ContactController::class, 'archive']);
-    Route::post('/contacts/{contact}/restore', [ContactController::class, 'restore']);
-    Route::apiResource('contacts', ContactController::class)->except(['destroy']);
-    Route::post('/projects/{project}/archive', [ProjectController::class, 'archive']);
-    Route::post('/projects/{project}/restore', [ProjectController::class, 'restore']);
-    Route::post('/projects/{project}/ai-task-generations', [AiTaskGenerationController::class, 'store']);
-    Route::get('/ai-task-generations/{generation}', [AiTaskGenerationController::class, 'show']);
-    Route::post('/ai-task-generations/{generation}/messages', [AiTaskGenerationController::class, 'reply']);
-    Route::post('/ai-task-generations/{generation}/undo', [AiTaskGenerationController::class, 'undo']);
-    Route::get('/projects/{project}/ai-memory', [ProjectMemoryController::class, 'show']);
-    Route::post('/projects/{project}/ai-memory/brief-draft', [ProjectMemoryController::class, 'draftBrief']);
-    Route::patch('/projects/{project}/ai-memory/brief', [ProjectMemoryController::class, 'updateBrief']);
-    Route::patch('/projects/{project}/ai-memory/entries/{entry}', [ProjectMemoryController::class, 'updateEntry']);
-    Route::scopeBindings()->group(function () {
-        Route::get('/projects/{project}/task-folders', [TaskFolderController::class, 'index']);
-        Route::post('/projects/{project}/task-folders', [TaskFolderController::class, 'store']);
-        Route::patch('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'update']);
-        Route::delete('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'destroy']);
+    // Gates only the report; clock-in/out and the timer stay reachable no
+    // matter what, since TaskMutationGuard refuses every task mutation
+    // without an open clock-in and this switch must never touch that.
+    Route::middleware('feature:timesheet')->group(function () {
+        Route::get('/timesheet', [TimesheetController::class, 'index']);
+        Route::put('/timesheet/description', [TimesheetController::class, 'updateDescription']);
     });
-    Route::apiResource('projects', ProjectController::class)->except(['destroy']);
+
+    Route::middleware('feature:messages')->group(function () {
+        Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
+        Route::post('/messages/mark-all-read', [MessageController::class, 'markAllRead']);
+        Route::get('/messages/recipients', [MessageController::class, 'recipients']);
+        Route::get('/messages', [MessageController::class, 'index']);
+        Route::post('/messages', [MessageController::class, 'store']);
+        Route::get('/messages/{message}', [MessageController::class, 'show']);
+        Route::post('/messages/{message}/replies', [MessageController::class, 'reply']);
+        Route::post('/messages/{message}/notes/{note}/reactions', [MessageController::class, 'react']);
+        Route::post('/messages/{message}/ai', [MessageController::class, 'ai']);
+        Route::patch('/messages/{message}/read', [MessageController::class, 'read']);
+        Route::patch('/messages/{message}/unread', [MessageController::class, 'unread']);
+    });
+
+    Route::middleware('feature:clients')->group(function () {
+        Route::post('/clients/{client}/archive', [ClientController::class, 'archive']);
+        Route::post('/clients/{client}/restore', [ClientController::class, 'restore']);
+        Route::apiResource('clients', ClientController::class)->except(['destroy']);
+    });
+    Route::middleware('feature:contacts')->group(function () {
+        Route::post('/contacts/{contact}/archive', [ContactController::class, 'archive']);
+        Route::post('/contacts/{contact}/restore', [ContactController::class, 'restore']);
+        Route::apiResource('contacts', ContactController::class)->except(['destroy']);
+    });
+    Route::middleware('feature:projects')->group(function () {
+        Route::post('/projects/{project}/archive', [ProjectController::class, 'archive']);
+        Route::post('/projects/{project}/restore', [ProjectController::class, 'restore']);
+        Route::post('/projects/{project}/ai-task-generations', [AiTaskGenerationController::class, 'store']);
+        Route::get('/ai-task-generations/{generation}', [AiTaskGenerationController::class, 'show']);
+        Route::post('/ai-task-generations/{generation}/messages', [AiTaskGenerationController::class, 'reply']);
+        Route::post('/ai-task-generations/{generation}/undo', [AiTaskGenerationController::class, 'undo']);
+        Route::get('/projects/{project}/ai-memory', [ProjectMemoryController::class, 'show']);
+        Route::post('/projects/{project}/ai-memory/brief-draft', [ProjectMemoryController::class, 'draftBrief']);
+        Route::patch('/projects/{project}/ai-memory/brief', [ProjectMemoryController::class, 'updateBrief']);
+        Route::patch('/projects/{project}/ai-memory/entries/{entry}', [ProjectMemoryController::class, 'updateEntry']);
+        Route::scopeBindings()->group(function () {
+            Route::get('/projects/{project}/task-folders', [TaskFolderController::class, 'index']);
+            Route::post('/projects/{project}/task-folders', [TaskFolderController::class, 'store']);
+            Route::patch('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'update']);
+            Route::delete('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'destroy']);
+        });
+        Route::apiResource('projects', ProjectController::class)->except(['destroy']);
+    });
 
     Route::post('/tasks/{task}/archive', [TaskController::class, 'archive']);
     Route::post('/tasks/{task}/restore', [TaskController::class, 'restore']);
@@ -153,13 +166,17 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::patch('/tasks/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'update']);
     Route::patch('/tasks/{task}/subtasks/{subtask}/complete', [TaskSubtaskController::class, 'complete']);
     Route::delete('/tasks/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'destroy']);
-    Route::get('/oliver', [OliverController::class, 'show']);
-    Route::post('/oliver/messages', [OliverController::class, 'send']);
-    Route::delete('/oliver/messages', [OliverController::class, 'clear']);
-    Route::get('/oliver/insights', [OliverController::class, 'insights']);
-    Route::get('/oliver/actions', [OliverController::class, 'actions']);
-    Route::post('/oliver/actions/{action}/undo', [OliverController::class, 'undo']);
+    Route::middleware('feature:oliver')->group(function () {
+        Route::get('/oliver', [OliverController::class, 'show']);
+        Route::post('/oliver/messages', [OliverController::class, 'send']);
+        Route::delete('/oliver/messages', [OliverController::class, 'clear']);
+        Route::get('/oliver/insights', [OliverController::class, 'insights']);
+        Route::get('/oliver/actions', [OliverController::class, 'actions']);
+        Route::post('/oliver/actions/{action}/undo', [OliverController::class, 'undo']);
+    });
     Route::patch('/workspaces/{workspace}', [WorkspaceController::class, 'update']);
+    Route::get('/workspaces/{workspace}/features', [WorkspaceController::class, 'features']);
+    Route::patch('/workspaces/{workspace}/features', [WorkspaceController::class, 'updateFeatures']);
     Route::post('/workspaces/{workspace}/activate', [WorkspaceController::class, 'activate']);
     Route::get('/workspaces/{workspace}/members', [WorkspaceController::class, 'members']);
     Route::post('/workspaces/{workspace}/members', [WorkspaceController::class, 'addMember']);

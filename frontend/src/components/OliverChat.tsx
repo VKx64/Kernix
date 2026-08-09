@@ -18,8 +18,26 @@ const TAGS: Record<string, { label: string; color: string }> = {
 
 function kindOf(message: OliverMessage): string {
   if (message.role === 'user') return ''
-  if ((message.actions?.length ?? 0) > 0) return 'action'
+  // A turn only earns the Acted badge — and the offer to undo — once something
+  // in it actually happened. A message where every action was refused is Oliver
+  // declining, not Oliver acting, however many attempts it made.
+  if (message.actions?.some((action) => action.status === 'done')) return 'action'
   return (message as unknown as { kind?: string }).kind ?? ''
+}
+
+/**
+ * One line per distinct outcome rather than one per action: a permission
+ * check that refused four actions the same way reads as one sentence, not a
+ * wall of identical bullets.
+ */
+function groupedActions(actions: OliverMessage['actions']): Array<{ status: string; summary: string; count: number }> {
+  const rows: Array<{ status: string; summary: string; count: number }> = []
+  for (const action of actions ?? []) {
+    const existing = rows.find((row) => row.status === action.status && row.summary === action.summary)
+    if (existing) existing.count += 1
+    else rows.push({ status: action.status, summary: action.summary, count: 1 })
+  }
+  return rows
 }
 
 /**
@@ -82,7 +100,7 @@ export function OliverChat({
     try {
       const response = unwrap(await api.post<ApiEnvelope<{ message: OliverMessage }> | { message: OliverMessage }>('/api/oliver/messages', { body: trimmed }))
       setMessages((current) => [...current, response.message])
-      if ((response.message.actions?.length ?? 0) > 0) onActed?.()
+      if (response.message.actions?.some((action) => action.status === 'done')) onActed?.()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Oliver could not reply.')
     } finally {
@@ -152,22 +170,27 @@ export function OliverChat({
                     </span>
                   )}
 
-                  {(message.actions?.length ?? 0) > 0 && (
-                    <div className="flex flex-col gap-2 rounded-[11px] border border-line bg-surface px-3.5 py-[13px]">
-                      {message.actions!.map((action, index) => (
-                        <span key={`${message.id}-${index}`} className="flex items-baseline gap-[9px]">
-                          <span
-                            aria-hidden="true"
-                            className={cn('size-[5px] flex-none rounded-full', action.status === 'done' ? 'bg-good' : 'bg-danger')}
-                          />
-                          <span className={cn('flex-1 text-body-sm leading-[1.5]', action.status === 'done' ? 'text-[#a8a8b0]' : 'text-danger')}>
-                            {action.summary}
+                  {(message.actions?.length ?? 0) > 0 && (() => {
+                    const rows = groupedActions(message.actions)
+                    const acted = rows.some((row) => row.status === 'done')
+                    return (
+                      <div className="flex flex-col gap-2 rounded-[11px] border border-line bg-surface px-3.5 py-[13px]">
+                        {rows.map((row, index) => (
+                          <span key={`${message.id}-${index}`} className="flex items-baseline gap-[9px]">
+                            <span
+                              aria-hidden="true"
+                              className={cn('size-[5px] flex-none rounded-full', row.status === 'done' ? 'bg-good' : 'bg-danger')}
+                            />
+                            <span className={cn('flex-1 text-body-sm leading-[1.5]', row.status === 'done' ? 'text-[#a8a8b0]' : 'text-danger')}>
+                              {row.summary}{row.count > 1 ? ` (×${row.count})` : ''}
+                            </span>
                           </span>
-                        </span>
-                      ))}
-                      <span className="text-meta text-t4">Undo any of these from the rail.</span>
-                    </div>
-                  )}
+                        ))}
+                        {/* Nothing to undo when nothing was done: the offer would be a lie. */}
+                        {acted && <span className="text-meta text-t4">Undo any of these from the rail.</span>}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )

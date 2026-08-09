@@ -21,15 +21,20 @@ import type { FieldValue, Task, UserSummary } from '../types/api'
  * that is both blocked and overdue is reported once, under the reason you would
  * act on. Everything calmer falls through to the date buckets.
  */
-export type TaskView = 'triage' | 'mine' | 'all' | 'unassigned' | 'done'
+export type TaskView = 'mine' | 'all' | 'unassigned' | 'done'
 
 export const TASK_VIEWS: ReadonlyArray<{ value: TaskView; label: string }> = [
-  { value: 'triage', label: 'Triage' },
   { value: 'mine', label: 'My work' },
   { value: 'all', label: 'All' },
   { value: 'unassigned', label: 'Unassigned' },
   { value: 'done', label: 'Done' },
 ]
+
+/** An unrecognised or old `?view=` — `triage`, from before that tab existed
+ * as a stored link or saved view — lands on My work rather than nothing. */
+export function asTaskView(value: string | null | undefined): TaskView {
+  return TASK_VIEWS.some((option) => option.value === value) ? (value as TaskView) : 'mine'
+}
 
 export type TaskGroupBy = 'smart' | 'status' | 'urgency' | 'project' | 'assignee' | 'none'
 
@@ -104,16 +109,6 @@ const COMPARATORS: Record<TaskSort, (a: Task, b: Task) => number> = {
 
 export function sortTasks(tasks: Task[], sort: TaskSort): Task[] {
   return tasks.slice().sort(COMPARATORS[sort])
-}
-
-/** True when a task is one of the things Triage exists to surface. */
-export function needsTriage(task: Task, now = new Date()): boolean {
-  if (taskRole(task) === 'done') return false
-  const role = taskRole(task)
-  if (role === 'blocked' || role === 'review') return true
-  const days = dayDiff(taskDueDate(task), now)
-  if (days !== null && days <= 0) return true
-  return !task.assignee && urgencyRank(taskUrgencyValue(task)) <= 1
 }
 
 interface SmartBucket {

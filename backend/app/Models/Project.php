@@ -22,6 +22,7 @@ class Project extends DomainModel
             'ai_estimate_review_enabled' => 'boolean',
             'ai_task_creation_enabled' => 'boolean',
             'ai_memory_enabled' => 'boolean',
+            'is_default' => 'boolean',
         ];
     }
 

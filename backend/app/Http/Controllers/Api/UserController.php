@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Role;
 use App\Models\User;
+use App\Support\CurrentWorkspace;
 use App\Support\UserIdentity;
 use App\Support\UserSessionRevoker;
 use Illuminate\Http\JsonResponse;
@@ -17,7 +18,10 @@ class UserController extends ApiController
     public function index(Request $request): JsonResponse
     {
         $this->permission($request, 'users.view');
-        $query = $this->archived(User::query()->with(['role.permissions', 'department']), $request);
+        $query = $this->archived(
+            User::query()->inWorkspace(CurrentWorkspace::forUser($request->user()))->with(['role.permissions', 'department']),
+            $request,
+        );
         if ($search = $request->string('search')->trim()->toString()) {
             $query->where(fn ($user) => $user->where('username', 'like', "%{$search}%")
                 ->orWhere('first_name', 'like', "%{$search}%")
@@ -55,6 +59,7 @@ class UserController extends ApiController
     public function show(Request $request, User $user): JsonResponse
     {
         $this->permission($request, 'users.view');
+        $this->assertInWorkspace($user);
 
         return $this->data($this->present($user, $request->user()->isAdmin()));
     }
@@ -62,6 +67,7 @@ class UserController extends ApiController
     public function update(Request $request, User $user): JsonResponse
     {
         $this->permission($request, 'users.edit');
+        $this->assertInWorkspace($user);
         $this->assertAdminTargetMutable($request, $user);
         $data = $this->validated($request, true, $user);
         $this->assertPrivateFieldAccess($request, $data);
@@ -101,6 +107,7 @@ class UserController extends ApiController
     public function archive(Request $request, User $user): JsonResponse
     {
         $this->permission($request, 'users.archive');
+        $this->assertInWorkspace($user);
         $this->assertNotSelf($request, $user);
         $this->assertAdminTargetMutable($request, $user);
         $this->assertAdminContinuity($user, ['status' => 'inactive']);
@@ -117,6 +124,7 @@ class UserController extends ApiController
     {
         $this->permission($request, 'users.archive');
         $model = User::findOrFail($user);
+        $this->assertInWorkspace($model);
         $this->assertAdminTargetMutable($request, $model);
         $model->update(['archived_at' => null, 'status' => 'active']);
         $this->audit($request, 'user.restore', $model);
@@ -151,6 +159,16 @@ class UserController extends ApiController
     private function assertNotSelf(Request $request, User $user): void
     {
         abort_if((int) $request->user()->id === (int) $user->id, 409, 'You cannot archive or delete your own account.');
+    }
+
+    /**
+     * A user id from another tenant is treated the same as one that does not
+     * exist — a 404, not a 403 — so route-guessing cannot even confirm another
+     * workspace's account is there.
+     */
+    private function assertInWorkspace(User $user): void
+    {
+        abort_unless($user->belongsToCurrentWorkspace(), 404);
     }
 
     private function assertRoleAssignable(Request $request, int $roleId, ?User $target = null): void

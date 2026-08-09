@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\OliverAction;
 use App\Models\OliverConversation;
 use App\Models\Project;
 use App\Models\Role;
@@ -123,6 +124,65 @@ class OliverChatTest extends TestCase
         $this->assertDatabaseMissing('tasks', ['title' => 'Sneaky task']);
     }
 
+    public function test_a_read_only_question_records_no_actions(): void
+    {
+        $this->fakeReply('You have three open tasks; the shoot task is closest to due.', []);
+
+        $response = $this->postJson('/api/oliver/messages', ['body' => 'What should I work on today?'])
+            ->assertOk()
+            ->assertJsonPath('data.message.actions', []);
+
+        $this->assertSame([], $response->json('data.message.actions'));
+        $this->assertSame(0, OliverAction::query()->count());
+    }
+
+    /**
+     * The read-only guarantee does not depend on the model remembering to send
+     * an empty `actions` array: a turn marked `intent: "answer"` has whatever
+     * is in `actions` discarded server-side before it ever reaches the runner.
+     */
+    public function test_a_reply_marked_answer_never_runs_the_actions_it_carries(): void
+    {
+        $this->fakeReply(
+            'Your top task is the shoot; want me to bump its priority?',
+            [$this->action('create_task', ['project_id' => $this->project->id, 'title' => 'Should never exist'])],
+            null,
+            'answer',
+        );
+
+        $response = $this->postJson('/api/oliver/messages', ['body' => 'What should I work on today?'])
+            ->assertOk()
+            ->assertJsonPath('data.message.actions', []);
+
+        $this->assertSame([], $response->json('data.message.actions'));
+        $this->assertDatabaseMissing('tasks', ['title' => 'Should never exist']);
+        $this->assertSame(0, OliverAction::query()->count());
+    }
+
+    public function test_a_permission_denied_action_is_not_recorded_or_offered_for_undo(): void
+    {
+        $role = Role::query()->create(['name' => 'Reader', 'key_name' => 'reader_role']);
+        foreach (['dashboard.view', 'messages.view', 'tasks.view'] as $key) {
+            $role->permissions()->create(['permission_key' => $key]);
+        }
+        $reader = User::factory()->create(['role_id' => $role->id]);
+        Sanctum::actingAs($reader->fresh());
+        TimeSession::query()->create(['user_id' => $reader->id, 'clock_in_at' => now()]);
+        $this->fakeReply('Adding that task.', [
+            $this->action('create_task', ['project_id' => $this->project->id, 'title' => 'Sneaky task']),
+        ]);
+
+        $actions = $this->postJson('/api/oliver/messages', ['body' => 'Create a task for me.'])
+            ->assertOk()
+            ->json('data.message.actions');
+
+        // Nothing here can be mistaken for a completed action: no action_id to
+        // undo, and nothing left behind for the rail's "acted today" log.
+        $this->assertSame('refused', $actions[0]['status']);
+        $this->assertArrayNotHasKey('action_id', $actions[0]);
+        $this->assertSame(0, OliverAction::query()->count());
+    }
+
     public function test_oliver_is_unavailable_while_the_feature_is_switched_off(): void
     {
         SystemSetting::query()->firstOrFail()->update([AiFeatures::enabledColumn(AiFeatures::OLIVER) => false]);
@@ -134,7 +194,7 @@ class OliverChatTest extends TestCase
     /**
      * @param  array<int, array<string, mixed>>  $actions
      */
-    private function fakeReply(string $reply, array $actions, ?callable $before = null): void
+    private function fakeReply(string $reply, array $actions, ?callable $before = null, string $intent = 'act'): void
     {
         $created = $before ? $before() : null;
         $actions = array_map(function (array $action) use ($created) {
@@ -147,7 +207,7 @@ class OliverChatTest extends TestCase
 
         $client = Mockery::mock(OpenRouterClient::class);
         $client->shouldReceive('structured')->once()->andReturn([
-            'output' => ['reply' => $reply, 'actions' => $actions],
+            'output' => ['reply' => $reply, 'intent' => $intent, 'actions' => $actions],
             'cost_usd' => 0.0,
             'actual_model' => 'test/model',
         ]);

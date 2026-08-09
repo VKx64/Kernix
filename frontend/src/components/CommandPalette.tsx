@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Search } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useFeature } from '@/lib/features'
 import { useCan } from '@/lib/permissions'
 import { statusColor } from '@/lib/taskSignals'
 import { useTimerContext } from '@/lib/useTimer'
@@ -44,6 +45,7 @@ export function CommandPalette({
 }) {
   const navigate = useNavigate()
   const can = useCan()
+  const hasFeature = useFeature()
   const timer = useTimerContext()
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
@@ -73,17 +75,19 @@ export function CommandPalette({
 
   const groups = useMemo<PaletteGroup[]>(() => {
     const needle = query.trim().toLowerCase()
-    const go = (label: string, to: string, permission?: string): PaletteItem | null =>
-      permission && !can(permission) ? null : { key: to, label, sub: 'Go to', run: () => { onClose(); navigate(to) } }
+    const go = (label: string, to: string, permission?: string, feature?: string): PaletteItem | null =>
+      (permission && !can(permission)) || (feature && !hasFeature(feature))
+        ? null
+        : { key: to, label, sub: 'Go to', run: () => { onClose(); navigate(to) } }
 
     const commands: Array<PaletteItem | null> = [
       can('tasks.create') ? { key: 'new', label: 'New task', hint: 'N', run: () => { onClose(); navigate('/tasks?new=1') } } : null,
       go('Dashboard', '/', 'dashboard.view'),
       go('Tasks', '/tasks', 'tasks.view'),
-      go('Messages', '/messages', 'messages.view'),
-      go('Projects', '/projects', 'projects.view'),
-      go('Clients', '/clients', 'clients.view'),
-      go('Timesheet', '/timesheet', 'time.track'),
+      go('Messages', '/messages', 'messages.view', 'messages'),
+      go('Projects', '/projects', 'projects.view', 'projects'),
+      go('Clients', '/clients', 'clients.view', 'clients'),
+      go('Timesheet', '/timesheet', 'time.track', 'timesheet'),
       timer.state === 'idle' && can('time.track')
         ? { key: 'timer-start', label: 'Start the timer', run: () => { onClose(); void timer.start(null) } }
         : null,
@@ -112,7 +116,7 @@ export function CommandPalette({
       taskItems.length ? { label: 'Tasks', items: taskItems } : null,
       matched.length ? { label: 'Commands', items: matched } : null,
     ].filter((group): group is PaletteGroup => group !== null)
-  }, [query, tasks, can, navigate, onClose, onShortcuts, timer])
+  }, [query, tasks, can, hasFeature, navigate, onClose, onShortcuts, timer])
 
   const flat = useMemo(() => groups.flatMap((group) => group.items), [groups])
 

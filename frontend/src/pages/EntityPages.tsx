@@ -37,10 +37,12 @@ import {
   StatusBadge,
 } from '@/components/shared'
 import { LabelRow } from '@/components/kernix/label-row'
+import { usePageFill } from '@/layout/page-fill'
 import { ClientTile, type ClientStats } from '@/components/portfolio/ClientTile'
 import { ProjectCard } from '@/components/portfolio/ProjectCard'
 import { api, displayName, normalizePage, unwrap } from '@/lib/api'
 import type { PortfolioStats } from '@/lib/health'
+import { useFeature } from '@/lib/features'
 import { isAdministrator, useCan } from '@/lib/permissions'
 import { lockedPermissions, normalizePermissionCatalog, withRequiredPermissions, type PermissionGroup } from '@/lib/rolePermissions'
 import { useCollection } from '@/lib/useCollection'
@@ -264,12 +266,19 @@ function groupByClient(projects: Project[]) {
 }
 
 export function ProjectsPage() {
-  const [search, setSearch] = useState('')
-  const [archived, setArchived] = useState(false)
+  // The card grid can run long once a workspace has more than a handful of
+  // clients; the header (and the "New project" action inside it) should stay
+  // put rather than scroll away with the cards, the way Messages and Triage
+  // already pin their own headers.
+  usePageFill()
   const navigate = useNavigate()
   const can = useCan()
   const { singleClientMode, settings } = useWorkspace()
-  const collection = useCollection<Project>('/api/projects', { search, all: true, filters: { archived: archived ? 'only' : undefined, stats: 1 } })
+  const hasFeature = useFeature()
+  const clientsEnabled = hasFeature('clients')
+  // The archived filter param is left off rather than sent as false: the API
+  // already defaults to active-only, and the page has no control to change it.
+  const collection = useCollection<Project>('/api/projects', { all: true, filters: { stats: 1 } })
   const mutation = useEntityMutation<Project>('/api/projects', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const statuses = statusValues(lookups.fields, 'project_status')
@@ -278,7 +287,7 @@ export function ProjectsPage() {
 
   const fields: FormFieldSpec[] = [
     { name: 'name', label: 'Project name', required: true, wide: true },
-    ...(!singleClientMode ? [{ name: 'client_id', label: 'Client', type: 'select' as const, required: true, options: lookups.clients.map((client) => ({ label: client.name, value: client.id })) }] : []),
+    ...(!singleClientMode && clientsEnabled ? [{ name: 'client_id', label: 'Client', type: 'select' as const, required: true, options: lookups.clients.map((client) => ({ label: client.name, value: client.id })) }] : []),
     { name: 'manager_user_id', label: 'Project manager', type: 'select', options: lookups.users.map((user) => ({ label: displayName(user), value: user.id })) },
     { name: 'status_value_id', label: 'Status', type: 'select', options: statuses.map((status) => ({ label: status.label, value: status.id })), disabled: lookups.loading && statuses.length === 0, help: lookups.loading && statuses.length === 0 ? 'Loading project statuses…' : undefined },
     { name: 'start_date', label: 'Start date', type: 'date' },
@@ -304,64 +313,84 @@ export function ProjectsPage() {
     ai_memory_enabled: mutation.selected.aiMemoryEnabled ?? mutation.selected.ai_memory_enabled ?? false,
   } : singleClientMode && singleClientId ? { client_id: singleClientId as string | number } : undefined
 
+  const clientGroups = groupByClient(collection.data)
 
   return (
-    <div className="@container space-y-4">
-      <PageHeader eyebrow="Delivery" title="Projects" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} projects in your workspace.`} actions={!archived && can('projects.create') ? <Button onClick={mutation.create}><Plus /> New project</Button> : undefined} />
-      {(collection.error || (!mutation.open && mutation.error)) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
-      <SearchToolbar search={search} onSearch={setSearch} placeholder="Search projects…">
-        <ArchivedToggle archived={archived} onChange={setArchived} />
-      </SearchToolbar>
-      {collection.loading && !collection.data.length && <LoadingRows rows={4} columns={1} />}
-      {!collection.loading && !collection.data.length && (
-        <EmptyState
-          title={archived ? 'No archived projects' : 'No projects found'}
-          description={archived ? 'Archived projects will appear here.' : 'Create a project to organize the first stream of work.'}
-        />
-      )}
-      {/* Grouped by client rather than listed flat: a project only means
-          something next to the others for the same client. */}
-      {groupByClient(collection.data).map((group) => (
-        <section key={String(group.id)} className="flex flex-col gap-2.5">
-          <div className="flex items-baseline gap-2.5">
-            <LabelRow>{group.name}</LabelRow>
-            <span className="text-meta text-t4">
-              {group.projects.length} {group.projects.length === 1 ? 'project' : 'projects'}
-            </span>
+    <>
+      <div className="-mx-4 flex min-h-0 flex-1 flex-col md:-mx-7">
+        {/* Custom rather than <PageHeader>: this screen has no eyebrow and centres
+            the button against the title block, unlike the shared component's
+            other callers. */}
+        <header className="flex-none px-4 pb-4 md:px-7">
+          <div className="flex items-center gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-h1 text-title-strong">Projects</h1>
+              <p className="text-meta text-t3">{collection.data.length} {collection.data.length === 1 ? 'project' : 'projects'} · {clientGroups.length} {clientGroups.length === 1 ? 'client' : 'clients'}</p>
+            </div>
+            {can('projects.create') && <Button onClick={mutation.create}><Plus /> New project</Button>}
           </div>
-          <div className="grid gap-2.5 @[720px]:grid-cols-2 @[1100px]:grid-cols-3">
-            {group.projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                name={project.name}
-                stats={projectStats(project)}
-                stateLabel={projectStateLabel(project)}
-                team={project.team ?? []}
-                onOpen={() => navigate(`/projects/${project.id}`)}
-                actions={
-                  <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
-                    {!archived && (
-                      <Button variant="ghost" size="icon-sm" className="relative" title="Project memory" aria-label={`Open ${project.name} memory`} asChild>
-                        <Link to={`/projects/${project.id}/memory`}>
-                          <Sparkles />
-                          {Number(project.pendingMemoryCount ?? project.pending_memory_count ?? 0) > 0 && (
-                            <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.6rem] text-primary-foreground">{project.pendingMemoryCount ?? project.pending_memory_count}</span>
-                          )}
-                        </Link>
-                      </Button>
-                    )}
-                    <RowActions
-                      onEdit={!archived && can('projects.edit') ? () => mutation.edit(project) : undefined}
-                      onDelete={!archived && can('projects.archive') ? () => void mutation.archive(project) : undefined}
-                      onRestore={archived && can('projects.archive') ? () => void mutation.restore(project) : undefined}
-                    />
-                  </div>
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+        </header>
+
+        <div className="@container min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-8 md:px-7">
+          {(collection.error || (!mutation.open && mutation.error)) && <ErrorBanner message={collection.error || mutation.error} onRetry={() => void collection.reload()} />}
+          {collection.loading && !collection.data.length && <LoadingRows rows={4} columns={1} />}
+          {!collection.loading && !collection.data.length && (
+            <EmptyState
+              title="No projects found"
+              description="Create a project to organize the first stream of work."
+            />
+          )}
+          {/* Grouped by client rather than listed flat: a project only means
+              something next to the others for the same client. */}
+          {clientGroups.map((group) => (
+            <section key={String(group.id)} className="flex flex-col gap-2.5">
+              <div className="flex items-baseline gap-2.5">
+                <LabelRow>{group.name}</LabelRow>
+                {/* Design shows the client's industry here; that field does not
+                    exist on the Client record yet, so this keeps the project
+                    count rather than inventing data. */}
+                <span className="text-meta text-t4">
+                  {group.projects.length} {group.projects.length === 1 ? 'project' : 'projects'}
+                </span>
+                <span aria-hidden="true" className="h-px flex-1 bg-soft" />
+              </div>
+              <div className="grid gap-2.5 @[720px]:grid-cols-2 @[1100px]:grid-cols-3">
+                {group.projects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    name={project.name}
+                    stats={projectStats(project)}
+                    stateLabel={projectStateLabel(project)}
+                    team={project.team ?? []}
+                    onOpen={() => navigate(`/projects/${project.id}`)}
+                    actions={
+                      <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                        {/* Project AI context is manager territory; an employee without
+                            projects.manage_ai_memory gets no entry point to it at all,
+                            matching the design's cards, which carry no such control. */}
+                        {can('projects.manage_ai_memory') && (
+                          <Button variant="ghost" size="icon-sm" className="relative" title="Project memory" aria-label={`Open ${project.name} memory`} asChild>
+                            <Link to={`/projects/${project.id}/memory`}>
+                              <Sparkles />
+                              {Number(project.pendingMemoryCount ?? project.pending_memory_count ?? 0) > 0 && (
+                                <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[0.6rem] text-primary-foreground">{project.pendingMemoryCount ?? project.pending_memory_count}</span>
+                              )}
+                            </Link>
+                          </Button>
+                        )}
+                        <RowActions
+                          onEdit={can('projects.edit') ? () => mutation.edit(project) : undefined}
+                          onDelete={can('projects.archive') ? () => void mutation.archive(project) : undefined}
+                        />
+                      </div>
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
       {mutation.open && !mutation.selected && <ProjectOnboarding
         clients={lookups.clients}
         managers={lookups.users}
@@ -371,6 +400,7 @@ export function ProjectsPage() {
         singleClientMode={singleClientMode}
         singleClientId={singleClientId as EntityId | null | undefined}
         singleClient={singleClient}
+        clientPickerHidden={!clientsEnabled}
         busy={mutation.busy}
         error={mutation.error}
         canOpenTasks={can('tasks.view')}
@@ -383,7 +413,7 @@ export function ProjectsPage() {
         onOpenClients={() => { mutation.close(); navigate('/clients') }}
       />}
       {mutation.open && mutation.selected && <EntityModal open title="Edit project" fields={fields} initialValues={initial} busy={mutation.busy} error={mutation.error} onClose={mutation.close} onSave={async (payload) => mutation.save(singleClientMode && singleClientId ? { ...payload, client_id: singleClientId as string | number } : payload)} />}
-    </div>
+    </>
   )
 }
 
@@ -401,6 +431,8 @@ export function ClientsPage() {
   const navigate = useNavigate()
   const can = useCan()
   const { singleClientMode } = useWorkspace()
+  const hasFeature = useFeature()
+  const clientsEnabled = hasFeature('clients')
   const collection = useCollection<Client>('/api/clients', { search, all: true, filters: { archived: archived ? 'only' : undefined, stats: 1 } })
   const mutation = useEntityMutation<Client>('/api/clients', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
@@ -412,6 +444,17 @@ export function ClientsPage() {
         <PageHeader eyebrow="Workspace mode" title="Client directory is hidden" description="This workspace is scoped to one client, so client switching and client administration are removed from the interface." />
         <Panel>
           <EmptyState title="Single-client mode is active" description="Projects and contacts remain available in their own sections." action={can('projects.view') ? <Button asChild><Link to="/projects">Open projects</Link></Button> : undefined} />
+        </Panel>
+      </div>
+    )
+  }
+
+  if (!clientsEnabled) {
+    return (
+      <div className="space-y-4">
+        <PageHeader eyebrow="Workspace settings" title="Clients is turned off" description="An administrator turned this surface off for this workspace." />
+        <Panel>
+          <EmptyState title="Clients is turned off" description="Projects keep working without a client on them." action={can('projects.view') ? <Button asChild><Link to="/projects">Open projects</Link></Button> : undefined} />
         </Panel>
       </div>
     )
@@ -479,12 +522,14 @@ export function ContactsPage() {
   const [archived, setArchived] = useState(false)
   const can = useCan()
   const { singleClientMode, settings } = useWorkspace()
+  const hasFeature = useFeature()
+  const clientsEnabled = hasFeature('clients')
   const collection = useCollection<Contact>('/api/contacts', { search, all: true, filters: { archived: archived ? 'only' : undefined } })
   const mutation = useEntityMutation<Contact>('/api/contacts', collection.reload, 'archive')
   const lookups = useLookups(mutation.open)
   const singleClientId = value(settings as Record<string, unknown>, 'singleClientId', 'single_client_id')
   const fields: FormFieldSpec[] = [
-    ...(!singleClientMode ? [{ name: 'client_id', label: 'Client', type: 'select' as const, required: true, options: lookups.clients.map((client) => ({ label: client.name, value: client.id })) }] : []),
+    ...(!singleClientMode && clientsEnabled ? [{ name: 'client_id', label: 'Client', type: 'select' as const, required: true, options: lookups.clients.map((client) => ({ label: client.name, value: client.id })) }] : []),
     { name: 'first_name', label: 'First name', required: true },
     { name: 'last_name', label: 'Last name' },
     { name: 'title', label: 'Title / role' },
@@ -531,6 +576,7 @@ function SettingsNav() {
   const can = useCan()
   const links = [
     can('settings.view') ? { to: '/settings', label: 'System' } : null,
+    can('workspaces.manage') ? { to: '/settings/workspace', label: 'Workspace' } : null,
     can('users.view') ? { to: '/settings/users', label: 'Users' } : null,
     can('roles.view') ? { to: '/settings/roles', label: 'Roles' } : null,
     can('fields.view') ? { to: '/settings/fields', label: 'Fields' } : null,

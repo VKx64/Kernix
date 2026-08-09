@@ -7,8 +7,24 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import { BRAND_MARK, BRAND_NAME } from '@/lib/brand'
+
+type FieldErrors = Partial<Record<'name' | 'email' | 'password', string>>
+
+function fieldErrorsFrom(reason: unknown): FieldErrors {
+  if (!(reason instanceof ApiError) || reason.status !== 422) return {}
+  const details = reason.details as { errors?: Record<string, string[]> } | undefined
+  const errors = details?.errors ?? {}
+  const pick = (key: string): string | undefined => errors[key]?.[0]
+  return {
+    name: pick('name'),
+    email: pick('email'),
+    // The confirmation input has its own field, but the rule that fails
+    // lives on `password` (`confirmed`), so both surface the same message.
+    password: pick('password') ?? pick('password_confirmation'),
+  }
+}
 
 const highlights = [
   { icon: SquareCheck, title: 'Stay focused', copy: 'See the work that needs you now.' },
@@ -34,6 +50,7 @@ export function RegisterPage() {
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const navigate = useNavigate()
 
   if (status === 'authenticated') return <Navigate to="/" replace />
@@ -42,6 +59,7 @@ export function RegisterPage() {
     event.preventDefault()
     setBusy(true)
     setError('')
+    setFieldErrors({})
     try {
       await api.csrf()
       await api.post('/register', {
@@ -56,7 +74,14 @@ export function RegisterPage() {
       await refresh()
       navigate('/', { replace: true })
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to create your account.')
+      const fields = fieldErrorsFrom(reason)
+      setFieldErrors(fields)
+      // A field already carries its message; the banner only needs to speak
+      // up when the failure has nowhere else to land.
+      const hasFieldError = Object.values(fields).some(Boolean)
+      if (!hasFieldError) {
+        setError(reason instanceof Error ? reason.message : 'Unable to create your account.')
+      }
     } finally {
       setBusy(false)
     }
@@ -123,7 +148,9 @@ export function RegisterPage() {
                   onChange={(event) => setName(event.target.value)}
                   required
                   placeholder="Maria Santos"
+                  aria-invalid={Boolean(fieldErrors.name)}
                 />
+                {fieldErrors.name && <p className="text-sm text-destructive">{fieldErrors.name}</p>}
               </div>
 
               <div className="space-y-2">
@@ -136,7 +163,9 @@ export function RegisterPage() {
                   onChange={(event) => setEmail(event.target.value)}
                   required
                   placeholder="you@example.com"
+                  aria-invalid={Boolean(fieldErrors.email)}
                 />
+                {fieldErrors.email && <p className="text-sm text-destructive">{fieldErrors.email}</p>}
               </div>
 
               <div className="space-y-2">
@@ -150,7 +179,9 @@ export function RegisterPage() {
                   required
                   minLength={8}
                   placeholder="At least 8 characters"
+                  aria-invalid={Boolean(fieldErrors.password)}
                 />
+                {fieldErrors.password && <p className="text-sm text-destructive">{fieldErrors.password}</p>}
               </div>
 
               <div className="space-y-2">

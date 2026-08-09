@@ -1,9 +1,10 @@
-import { Copy, FileText, Reply } from 'lucide-react'
+import { FileText, SquarePlus } from 'lucide-react'
 import { Avatar } from '@/components/shared'
 import { Tag } from '@/components/kernix/chip'
+import { formatBytes } from '@/lib/attachments'
 import { cn } from '@/lib/utils'
 import type { Note } from '@/types/api'
-import { attachmentName, noteTime } from './signals'
+import { attachmentName, noteTime, taskSeed } from './signals'
 
 /**
  * One turn in the thread. Everyone reads left-aligned — the design gives the
@@ -20,8 +21,9 @@ export function ThreadMessage({
   isAi,
   grouped,
   seen,
-  onReply,
-  onCopy,
+  canMakeTask,
+  onReact,
+  onMakeTask,
 }: {
   message: Note
   mine: boolean
@@ -31,10 +33,13 @@ export function ThreadMessage({
   grouped: boolean
   /** Delivery line under the last thing you said, or empty. */
   seen: string
-  onReply: () => void
-  onCopy: () => void
+  /** False when the seat cannot create tasks or this thread has no project to file into. */
+  canMakeTask: boolean
+  onReact: (emoji: string) => void
+  onMakeTask: (seedTitle: string) => void
 }) {
   const files = message.attachments ?? []
+  const reactions = message.reactions ?? []
 
   return (
     <div
@@ -60,10 +65,14 @@ export function ThreadMessage({
           <div className="mt-2 flex flex-wrap gap-2">
             {files.map((file) => {
               const name = attachmentName(file)
+              const meta = file.size ? formatBytes(file.size) : ''
               const content = (
                 <>
                   <FileText className="size-[15px] flex-none text-t3" />
-                  <span className="truncate text-body-sm text-[#d4d4d9]">{name}</span>
+                  <span className="flex flex-col items-start gap-px">
+                    <span className="truncate text-body-sm text-[#d4d4d9]">{name}</span>
+                    {meta && <span className="text-[11px] text-t3">{meta}</span>}
+                  </span>
                 </>
               )
               return file.url ? (
@@ -88,6 +97,25 @@ export function ThreadMessage({
           </div>
         )}
 
+        {reactions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {reactions.map((reaction) => (
+              <button
+                key={reaction.emoji}
+                type="button"
+                onClick={() => onReact(reaction.emoji)}
+                className={cn(
+                  'inline-flex h-[23px] items-center gap-[5px] rounded-[7px] border px-2 text-[11.5px] text-t2',
+                  reaction.mine ? 'border-[#33344a] bg-[#1b1c2c]' : 'border-[#22222a] bg-[#151518] hover:border-[#3a3a46]',
+                )}
+              >
+                <span>{reaction.emoji}</span>
+                <span>{reaction.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {seen && <span className="mt-[5px] block text-[11px] text-t3">{seen}</span>}
       </div>
 
@@ -99,20 +127,33 @@ export function ThreadMessage({
       >
         <button
           type="button"
-          aria-label="Reply to this message"
-          onClick={onReply}
-          className="grid size-[25px] place-items-center rounded-md text-t2 hover:bg-[#26262e] hover:text-t1"
+          aria-label="React with thumbs up"
+          title="React"
+          onClick={() => onReact('👍')}
+          className="grid size-[25px] place-items-center rounded-md text-[12px] hover:bg-[#26262e]"
         >
-          <Reply className="size-[13px]" />
+          👍
         </button>
         <button
           type="button"
-          aria-label="Copy this message"
-          onClick={onCopy}
-          className="grid size-[25px] place-items-center rounded-md text-t2 hover:bg-[#26262e] hover:text-t1"
+          aria-label="Mark handled"
+          title="Mark handled"
+          onClick={() => onReact('✅')}
+          className="grid size-[25px] place-items-center rounded-md text-[12px] hover:bg-[#26262e]"
         >
-          <Copy className="size-[13px]" />
+          ✅
         </button>
+        {canMakeTask && (
+          <button
+            type="button"
+            aria-label="Turn into a task"
+            title="Turn into a task"
+            onClick={() => onMakeTask(taskSeed(message.body))}
+            className="grid size-[25px] place-items-center rounded-md text-t2 hover:bg-[#26262e] hover:text-t1"
+          >
+            <SquarePlus className="size-[13px]" />
+          </button>
+        )}
       </div>
     </div>
   )

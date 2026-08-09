@@ -19,7 +19,11 @@ class InvitationController extends ApiController
     public function index(Request $request): JsonResponse
     {
         $this->assertAdmin($request);
+        // An invitation carries no workspace_id of its own; it is scoped
+        // through the role it grants, and `role()` keeps the workspace global
+        // scope, so this only matches roles in the caller's own workspace.
         $page = UserInvitation::query()
+            ->whereHas('role')
             ->with(['role', 'projects', 'inviter', 'acceptedUser'])
             ->latest()
             ->paginate($this->perPage($request));

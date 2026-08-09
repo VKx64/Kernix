@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Inbox, Plus, Search, SquareCheckBig } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
+import { Inbox, Plus, Search, Sparkles } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { EmptyState, ErrorBanner, Avatar } from '@/components/shared'
+import { ActionItemsBar, type ActionItem } from '@/components/messages/ActionItemsBar'
 import { ConversationRow } from '@/components/messages/ConversationRow'
 import { EstimateDecision, type DecisionMode } from '@/components/messages/EstimateDecision'
 import { MessageComposer } from '@/components/messages/MessageComposer'
 import { NewMessageModal } from '@/components/messages/NewMessageModal'
 import { ThreadMessage } from '@/components/messages/ThreadMessage'
+import { ThreadSummaryCard } from '@/components/messages/ThreadSummaryCard'
 import {
   aiState,
   authorId,
@@ -19,17 +21,18 @@ import {
   requestedMinutes,
   reviewMode,
 } from '@/components/messages/signals'
-import { Tag } from '@/components/kernix/chip'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePageFill } from '@/layout/page-fill'
 import { cn } from '@/lib/utils'
-import { api, displayName, unwrap } from '@/lib/api'
-import { dueMeta } from '@/lib/taskSignals'
+import { api, ApiError, displayName, unwrap } from '@/lib/api'
 import { useCollection } from '@/lib/useCollection'
 import { useCan } from '@/lib/permissions'
 import type { ApiEnvelope, EntityId, Message, Note } from '@/types/api'
+
+/** What each of the three AI calls on a thread returns. */
+type ThreadAiKind = 'summary' | 'actions' | 'reply'
 
 /**
  * Messages — two panes.
@@ -87,6 +90,11 @@ export function MessagesPage() {
   const [busy, setBusy] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  // Which of the three AI calls is in flight, so its chip can relabel and the
+  // others cannot be started under it — the thread has one AI budget at a time.
+  const [aiKind, setAiKind] = useState<ThreadAiKind | null>(null)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [actionItems, setActionItems] = useState<ActionItem[] | null>(null)
   const [newestFirst, setNewestFirst] = useState(true)
   const [cursor, setCursor] = useState(-1)
   const threadRef = useRef<HTMLDivElement>(null)
@@ -109,6 +117,14 @@ export function MessagesPage() {
       setDecisionReason('')
       setDecisionMode(null)
       setReplyBody('')
+      // A quiet refresh follows something the reader just did in this same
+      // conversation — sending a reply, deciding a request — so whatever AI
+      // result they were looking at stays on screen through it.
+      if (!quiet) {
+        setAiKind(null)
+        setSummary(null)
+        setActionItems(null)
+      }
       if (isUnread(message)) {
         const marked = await api.patch<ApiEnvelope<Message> | Message>(`/api/messages/${id}/read`)
         setSelected(unwrap(marked))
@@ -313,7 +329,6 @@ export function MessagesPage() {
   const partner = selected ? counterpart(selected, user?.id) : undefined
   const threadMessages = selected?.messages ?? (selected ? [selected] : [])
   const task = selected?.task
-  const taskDue = dueMeta(task?.due_date)
   const aiStatusLine = selectedAiState === 'queued' || selectedAiState === 'running' ? 'Strict review in progress…'
     : selectedAiState === 'waiting_employee' ? 'Waiting for the employee to answer its challenge.'
       : selectedAiState === 'budget_blocked' ? 'Monthly budget reached; a human manager can decide.'
@@ -336,8 +351,55 @@ export function MessagesPage() {
     return reader ? `Seen by ${displayName(reader)}` : 'Seen'
   }
 
-  const copyMessage = (body: string) => {
-    void navigator.clipboard?.writeText(body).catch(() => setDetailError('That message could not be copied.'))
+  // A conversation carries at most one project — the task it is about — so
+  // both the action-items bar and a message's make-a-task action gate on the
+  // same thing: the permission, and somewhere to file the task.
+  const canCreateTasks = can('tasks.create') && Boolean(task?.project)
+
+  const runThreadAi = async (kind: ThreadAiKind) => {
+    if (!selected) return
+    setAiKind(kind); setDetailError('')
+    try {
+      const response = await api.post<ApiEnvelope<{ summary?: string; items?: Array<{ title: string }>; reply?: string }>>(
+        `/api/messages/${selected.id}/ai`,
+        { kind },
+      )
+      const data = unwrap(response)
+      if (kind === 'summary') setSummary(data.summary ?? '')
+      else if (kind === 'actions') setActionItems((data.items ?? []).map((item) => ({ title: item.title, made: false })))
+      else setReplyBody(data.reply ?? '')
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) setDetailError('AI is unavailable right now.')
+      else setDetailError(reason instanceof Error ? reason.message : 'That AI request failed.')
+    } finally {
+      setAiKind(null)
+    }
+  }
+
+  const toggleReaction = async (noteId: EntityId, emoji: string) => {
+    if (!selected) return
+    try {
+      const response = await api.post<ApiEnvelope<Message> | Message>(`/api/messages/${selected.id}/notes/${noteId}/reactions`, { emoji })
+      setSelected(unwrap(response))
+    } catch (reason) {
+      setDetailError(reason instanceof Error ? reason.message : 'That reaction could not be saved.')
+    }
+  }
+
+  const createTaskFromTitle = async (title: string) => {
+    if (!task?.project) return
+    try {
+      await api.post('/api/tasks', { title, project_id: task.project.id })
+    } catch (reason) {
+      setDetailError(reason instanceof Error ? reason.message : 'That task could not be created.')
+    }
+  }
+
+  const createTaskFromItem = async (index: number) => {
+    const item = actionItems?.[index]
+    if (!item || item.made) return
+    await createTaskFromTitle(item.title)
+    setActionItems((current) => current?.map((row, i) => (i === index ? { ...row, made: true } : row)) ?? null)
   }
 
   return (
@@ -475,76 +537,66 @@ export function MessagesPage() {
           ) : selected ? (
             <>
               <header className="flex flex-none items-center gap-3 border-b border-line-soft px-5 py-3.5">
-                <Avatar user={partner} className="size-[30px]" />
+                <Avatar user={partner} className="size-8" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="truncate text-[15px] font-semibold tracking-[-0.016em] text-title-strong">{displayName(partner)}</span>
-                    <Tag>{selectedRequest ? 'Estimate' : 'Task'}</Tag>
+                    <span
+                      className={cn(
+                        'inline-flex h-5 flex-none items-center rounded-md px-2 text-[10.5px] font-semibold tracking-[0.04em] uppercase',
+                        conversationKind(selected) === 'client' ? 'bg-[#231d2b] text-[#c8a8d8]' : 'bg-soft text-t3',
+                      )}
+                    >
+                      {conversationKind(selected) === 'client' ? 'Client' : 'Internal'}
+                    </span>
                   </div>
-                  <span className="text-meta-sm text-t3">{task?.project?.name || 'Task conversation'}</span>
+                  <span className="text-meta-sm text-t3">{task ? `Thread on ${task.title}` : 'Direct message'}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => void toggleUnread()}
-                  className="h-[26px] rounded-[7px] px-2.5 text-meta text-t3 hover:bg-sidebar-accent hover:text-t1"
+                  className="h-[26px] flex-none rounded-[7px] px-2.5 text-meta text-t3 hover:bg-sidebar-accent hover:text-t1"
                 >
                   {isUnread(selected) ? 'Mark read' : 'Mark unread'}
                 </button>
+                <AiChip busy={aiKind === 'summary'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('summary')}>
+                  {aiKind === 'summary' ? 'Summarising…' : 'Summarise'}
+                </AiChip>
+                <AiChip busy={aiKind === 'actions'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('actions')}>
+                  {aiKind === 'actions' ? 'Reading…' : 'Action items'}
+                </AiChip>
               </header>
-
-              {task && (
-                can('tasks.view') ? (
-                  <Link
-                    to={`/tasks/${task.id}`}
-                    aria-label={task.title}
-                    className="flex flex-none items-center gap-[9px] border-b border-line-soft bg-inset px-5 py-[9px] hover:bg-[#16161a]"
-                  >
-                    <TaskBannerBody title={task.title} due={taskDue.label} dueClassName={taskDue.className} hasDue={Boolean(task.due_date)} />
-                    <span className="flex-none text-meta-sm text-label-fg">Open task</span>
-                  </Link>
-                ) : (
-                  <div className="flex flex-none items-center gap-[9px] border-b border-line-soft bg-inset px-5 py-[9px]">
-                    <TaskBannerBody title={task.title} due={taskDue.label} dueClassName={taskDue.className} hasDue={Boolean(task.due_date)} />
-                  </div>
-                )
-              )}
 
               {detailError && <div className="px-5 pt-3"><ErrorBanner message={detailError} /></div>}
 
               <div ref={threadRef} className="min-h-0 flex-1 overflow-y-auto px-5 pt-2 pb-5">
+                {summary !== null && <ThreadSummaryCard summary={summary} onDismiss={() => setSummary(null)} />}
+
                 {threadMessages.map((message, index) => {
                   const mine = authorId(message) === String(user?.id ?? '')
                   const actor = message.actorName ?? message.actor_name ?? displayName(message.author)
                   const isAi = (message.actorType ?? message.actor_type) === 'ai'
                   const isSystem = (message.actorType ?? message.actor_type) === 'system'
                   const previous = threadMessages[index - 1]
-                  const newDay = dayLabel(message) !== dayLabel(previous)
-                  const grouped = !newDay && Boolean(previous) && authorId(previous) === authorId(message)
+                  // No day separator in the design — this is grouping-only now,
+                  // so a burst from one person on the same day still collapses.
+                  const grouped = dayLabel(message) === dayLabel(previous) && Boolean(previous) && authorId(previous) === authorId(message)
                     && (previous.actorType ?? previous.actor_type) === (message.actorType ?? message.actor_type)
-                  return (
-                    <div key={message.id}>
-                      {newDay && (
-                        <div className="my-3 flex items-center gap-2 text-meta-sm text-t4">
-                          <span className="h-px flex-1 bg-line-soft" />
-                          <span>{dayLabel(message)}</span>
-                          <span className="h-px flex-1 bg-line-soft" />
-                        </div>
-                      )}
-                      {isSystem ? (
-                        <p className="py-1.5 text-center text-meta text-t4">{message.body}</p>
-                      ) : (
-                        <ThreadMessage
-                          message={message}
-                          mine={mine}
-                          actor={actor}
-                          isAi={isAi}
-                          grouped={grouped}
-                          seen={seenLine(message, index)}
-                          onReply={() => replyRef.current?.focus()}
-                          onCopy={() => copyMessage(message.body)}
-                        />
-                      )}
-                    </div>
+                  return isSystem ? (
+                    <p key={message.id} className="py-1.5 text-center text-meta text-t4">{message.body}</p>
+                  ) : (
+                    <ThreadMessage
+                      key={message.id}
+                      message={message}
+                      mine={mine}
+                      actor={actor}
+                      isAi={isAi}
+                      grouped={grouped}
+                      seen={seenLine(message, index)}
+                      canMakeTask={canCreateTasks}
+                      onReact={(emoji) => void toggleReaction(message.id, emoji)}
+                      onMakeTask={(seedTitle) => void createTaskFromTitle(seedTitle)}
+                    />
                   )
                 })}
 
@@ -568,14 +620,25 @@ export function MessagesPage() {
                 )}
               </div>
 
+              {actionItems && (
+                <ActionItemsBar
+                  items={actionItems}
+                  canCreate={canCreateTasks}
+                  onCreate={(index) => void createTaskFromItem(index)}
+                  onClose={() => setActionItems(null)}
+                />
+              )}
+
               {can('tasks.comment') ? (
                 <MessageComposer
                   value={replyBody}
                   busy={busy}
                   placeholder="Write a message…"
                   inputRef={replyRef}
+                  draftBusy={aiKind === 'reply'}
                   onChange={setReplyBody}
                   onSend={() => void sendReply()}
+                  onDraftReply={() => void runThreadAi('reply')}
                 />
               ) : (
                 <p className="flex-none border-t border-line-soft px-5 py-3 text-body-sm text-t3">
@@ -607,13 +670,25 @@ export function MessagesPage() {
   )
 }
 
-function TaskBannerBody({ title, due, dueClassName, hasDue }: { title: string; due: string; dueClassName: string; hasDue: boolean }) {
+/**
+ * The header's two AI actions. Both look alike and both go inert together —
+ * this conversation has one AI budget in flight at a time — but only the one
+ * that is running relabels, so the reader can see which.
+ */
+function AiChip({ children, busy, disabled, onClick }: { children: React.ReactNode; busy: boolean; disabled: boolean; onClick: () => void }) {
   return (
-    <>
-      <SquareCheckBig className="size-[13px] flex-none text-label-fg" />
-      <span className="flex-1 truncate text-body-sm text-t2">{title}</span>
-      {hasDue && <span className={cn('flex-none font-mono text-meta-sm', dueClassName)}>{due}</span>}
-    </>
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-7 flex-none items-center gap-[7px] rounded-lg bg-[#1c1d2e] px-2.5 text-xs font-[550] text-[#a8abfb] transition-colors',
+        'hover:bg-[#23243a] hover:text-[#c8caff] disabled:pointer-events-none disabled:opacity-70',
+      )}
+    >
+      <Sparkles className={cn('size-3', busy && 'animate-pulse')} strokeWidth={1.6} />
+      {children}
+    </button>
   )
 }
 

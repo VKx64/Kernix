@@ -38,11 +38,12 @@ class BootstrapController extends ApiController
         $projects = Project::query()
             ->with('client')
             ->whereNull('archived_at')
+            ->where('is_default', false)
             ->whereHas('client', fn ($client) => $client->whereNull('archived_at'));
         if (SingleClient::enabled()) {
             $projects->where('client_id', SingleClient::id() ?? 0);
         }
-        $clients = Client::query()->whereNull('archived_at');
+        $clients = Client::query()->whereNull('archived_at')->where('is_default', false);
         if (SingleClient::enabled()) {
             $clients->whereKey(SingleClient::id() ?? 0);
         }

@@ -21,7 +21,7 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string) => {
   if (path === '/api/tasks') {
     return {
       data: taskState.tasks,
-      counts: { triage: taskState.tasks.length, mine: 0, all: taskState.tasks.length, unassigned: 0, done: 0 },
+      counts: { mine: 0, all: taskState.tasks.length, unassigned: 0, done: 0 },
       total: taskState.tasks.length,
     }
   }

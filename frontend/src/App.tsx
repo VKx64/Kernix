@@ -5,6 +5,7 @@ import { AppShell } from './layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BRAND_MARK } from './lib/brand'
+import { useFeature } from './lib/features'
 import { useCan } from './lib/permissions'
 import { TimerProvider } from './lib/useTimer'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
@@ -16,16 +17,19 @@ import { LoginPage } from './pages/LoginPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { RegisterPage } from './pages/RegisterPage'
+import { WorkspaceOnboardingPage } from './pages/WorkspaceOnboardingPage'
 import { OliverPage } from './pages/OliverPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { WorkspaceSettingsPage } from './pages/WorkspaceSettingsPage'
 import { TaskDetailPage } from './pages/TasksPage'
 import { TasksTriagePage } from './pages/TasksTriagePage'
 import { TimesheetPage } from './pages/TimesheetPage'
 
 function ProtectedApp() {
-  const { status } = useAuth()
+  const { status, user } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
@@ -41,6 +45,11 @@ function ProtectedApp() {
   }
   if (status === 'guest') return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
 
+  // Registered but belonging to nowhere. There is no shell to render — every
+  // screen inside it reads from a workspace — so onboarding replaces it whole
+  // rather than sitting as a route within it.
+  if (user?.needsWorkspace ?? user?.needs_workspace) return <WorkspaceOnboardingPage />
+
   return (
     <WorkspaceProvider>
       {/* The timer outlives every route, so it is owned above the shell and
@@ -52,8 +61,13 @@ function ProtectedApp() {
   )
 }
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+function PermissionRoute({ permission, feature, children }: { permission: string; feature?: string; children: React.ReactNode }) {
   const can = useCan()
+  const hasFeature = useFeature()
+  // A disabled feature is a valid URL that simply is not turned on here — it
+  // works again after a workspace switch, so it redirects home rather than
+  // rendering the permission-denied screen a role gap would show.
+  if (feature && !hasFeature(feature)) return <Navigate to="/" replace />
   return can(permission) ? children : <AccessDenied />
 }
 
@@ -84,6 +98,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
       {/* The primitive gallery. Unauthenticated and outside the shell so it can
           be opened without a backend, which is also why it never ships: it is
@@ -91,21 +106,22 @@ export default function App() {
       {import.meta.env.DEV && <Route path="/design" element={<DesignSystemPage />} />}
       <Route element={<ProtectedApp />}>
         <Route index element={<PermissionRoute permission="dashboard.view"><DashboardPage /></PermissionRoute>} />
-        <Route path="messages" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
+        <Route path="messages" element={<PermissionRoute permission="messages.view" feature="messages"><MessagesPage /></PermissionRoute>} />
         <Route path="messages/oliver" element={<Navigate to="/oliver" replace />} />
-        <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view"><MessagesPage /></PermissionRoute>} />
+        <Route path="messages/:messageId" element={<PermissionRoute permission="messages.view" feature="messages"><MessagesPage /></PermissionRoute>} />
         <Route path="tasks" element={<PermissionRoute permission="tasks.view"><TasksTriagePage /></PermissionRoute>} />
-        <Route path="oliver" element={<PermissionRoute permission="messages.view"><OliverPage /></PermissionRoute>} />
-        <Route path="timesheet" element={<PermissionRoute permission="time.track"><TimesheetPage /></PermissionRoute>} />
+        <Route path="oliver" element={<PermissionRoute permission="messages.view" feature="oliver"><OliverPage /></PermissionRoute>} />
+        <Route path="timesheet" element={<PermissionRoute permission="time.track" feature="timesheet"><TimesheetPage /></PermissionRoute>} />
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
         <Route path="projects/:projectId" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
-        <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.view"><ProjectMemoryPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.manage_ai_memory"><ProjectMemoryPage /></PermissionRoute>} />
         <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
         <Route path="clients/:clientId" element={<PermissionRoute permission="clients.view"><ClientDetailPage /></PermissionRoute>} />
-        <Route path="contacts" element={<PermissionRoute permission="contacts.view"><ContactsPage /></PermissionRoute>} />
+        <Route path="contacts" element={<PermissionRoute permission="contacts.view" feature="contacts"><ContactsPage /></PermissionRoute>} />
         <Route path="analytics" element={<Navigate to="/" replace />} />
         <Route path="settings" element={<PermissionRoute permission="settings.view"><SettingsPage /></PermissionRoute>} />
+        <Route path="settings/workspace" element={<PermissionRoute permission="workspaces.manage"><WorkspaceSettingsPage /></PermissionRoute>} />
         <Route path="settings/users" element={<PermissionRoute permission="users.view"><UsersPage /></PermissionRoute>} />
         <Route path="settings/roles" element={<PermissionRoute permission="roles.view"><RolesPage /></PermissionRoute>} />
         <Route path="settings/fields" element={<PermissionRoute permission="fields.view"><FieldsPage /></PermissionRoute>} />

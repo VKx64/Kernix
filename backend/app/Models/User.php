@@ -100,7 +100,14 @@ class User extends Authenticatable
             if (! self::$automaticWorkspace || $user->workspaces()->exists()) {
                 return;
             }
-            $workspace = Workspace::query()->orderBy('id')->first()
+            // An admin adding a teammate from Settings > Users is acting inside
+            // their own workspace, so the new account has to land there, not in
+            // whichever workspace happens to have the lowest id. The blanket
+            // fallback below only fires for console/seeder code with no request
+            // in play, where there is no "current" workspace to prefer.
+            $currentWorkspaceId = CurrentWorkspace::id();
+            $workspace = ($currentWorkspaceId ? Workspace::query()->find($currentWorkspaceId) : null)
+                ?? Workspace::query()->orderBy('id')->first()
                 ?? Workspace::query()->create([
                     'name' => config('app.name', 'Workspace'),
                     'slug' => 'default',
@@ -220,7 +227,7 @@ class User extends Authenticatable
     }
 
     /** Membership in the workspace currently being served. */
-    private function belongsToCurrentWorkspace(): bool
+    public function belongsToCurrentWorkspace(): bool
     {
         $workspaceId = CurrentWorkspace::id();
         if (! $workspaceId || ! $this->exists) {
@@ -261,6 +268,18 @@ class User extends Authenticatable
     public function workspaces(): BelongsToMany
     {
         return $this->belongsToMany(Workspace::class, 'workspace_user')->withPivot('role_id')->withTimestamps();
+    }
+
+    /**
+     * Users are not workspace-owned rows the way tasks or roles are — one
+     * account can belong to several workspaces — so they cannot carry the
+     * `BelongsToWorkspace` trait's automatic global scope. Anything listing or
+     * looking up users for a tenant-facing screen has to filter through this
+     * scope explicitly instead.
+     */
+    public function scopeInWorkspace($query, ?int $workspaceId)
+    {
+        return $query->whereHas('workspaces', fn ($workspaces) => $workspaces->whereKey($workspaceId));
     }
 
     /** True until the person has joined or created their first workspace. */

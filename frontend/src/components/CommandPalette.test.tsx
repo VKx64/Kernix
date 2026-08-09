@@ -27,6 +27,7 @@ vi.mock('../lib/api', async (importOriginal) => {
 })
 
 vi.mock('../lib/permissions', () => ({ useCan: () => () => true, isAdministrator: () => false }))
+vi.mock('../lib/features', () => ({ useFeature: () => () => true }))
 vi.mock('../lib/useTimer', () => ({ useTimerContext: () => timerState }))
 
 function renderPalette(onShortcuts = vi.fn(), onClose = vi.fn()) {

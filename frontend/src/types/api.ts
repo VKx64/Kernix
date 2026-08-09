@@ -71,6 +71,9 @@ export interface User extends UserSummary {
   permissions?: string[]
   isAdmin?: boolean
   is_admin?: boolean
+  /** Registered but belonging to no workspace yet — onboarding is unfinished. */
+  needsWorkspace?: boolean
+  needs_workspace?: boolean
   status?: string
   timezone?: string
   imagicEmail?: string | null
@@ -264,6 +267,8 @@ export interface Note {
   actor_name?: string
   aiReviewRunId?: EntityId | null
   ai_review_run_id?: EntityId | null
+  /** Empty array when the message carries none. */
+  reactions?: Array<{ emoji: string; count: number; mine: boolean }>
 }
 
 export interface AiReviewRun {
@@ -605,6 +610,8 @@ export interface AppSettings {
   task_mutations_require_clock_in?: boolean
   canAdminOverride?: boolean
   can_admin_override?: boolean
+  activeWorkspace?: Workspace | null
+  active_workspace?: Workspace | null
   theme?: string
   timezone?: string
   dateFormat?: string
@@ -623,7 +630,17 @@ export interface AppSettings {
     cost_usd: string | number
     calls: number
   }>
+  /** Per-workspace switches: contacts, timesheet, messages, oliver, clients, projects. Absent key means "on". */
+  features?: Record<string, boolean>
   [key: string]: unknown
+}
+
+export interface WorkspaceFeature {
+  key: string
+  label: string
+  description: string
+  enabled: boolean
+  requires: string[]
 }
 
 export type ClockState = 'clocked_out' | 'working' | 'break' | 'clocked_in'

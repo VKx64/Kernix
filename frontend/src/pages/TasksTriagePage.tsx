@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
 import { uploadTaskAttachments } from '@/lib/attachments'
+import { useFeature } from '@/lib/features'
 import { useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { activityPhrase } from '@/lib/taskActivity'
@@ -41,6 +42,7 @@ import {
   TASK_SORT_OPTIONS,
   TASK_VIEWS,
   asTaskLayout,
+  asTaskView,
   flatTaskIds,
   groupTasks,
   readSavedViews,
@@ -51,7 +53,6 @@ import {
   type TaskGroupBy,
   type TaskLayout,
   type TaskSort,
-  type TaskView,
 } from '@/lib/taskTriage'
 import { useTaskQueue } from '@/lib/useTaskQueue'
 import { useTaskFolderCatalog } from '@/lib/useTaskFolders'
@@ -62,11 +63,12 @@ import { AiCreateTaskModal } from './AiCreateTaskModal'
 import { CreateTaskModal, type CreateTaskPayload } from './CreateTaskModal'
 
 /**
- * Tasks — the Triage screen.
+ * Tasks.
  *
- * The list opens on a judgement rather than an inventory: `Triage` is the
- * default view and it holds only what is blocked, late, due today, in review, or
- * urgent with nobody on it. `All` is one keystroke away and rarely needed.
+ * `My work` is the default view. `All` is one keystroke away and rarely
+ * needed. The file and component keep the name Triage because the grouped
+ * layout still sorts by attention — blocked, then late, then due today, then
+ * unowned — even though Triage is no longer a view of its own.
  *
  * Three things about the shape of this file. The server owns which tasks are in
  * a view and what the tab counts are, because those are questions about the
@@ -125,10 +127,11 @@ export function TasksTriagePage() {
   const { user } = useAuth()
   const can = useCan()
   const { canMutateTasks, canAdminOverride, adminOverride } = useWorkspace()
+  const hasFeature = useFeature()
   const timer = useTimerContext()
   const [params, setParams] = useSearchParams()
 
-  const view = (params.get('view') as TaskView) ?? 'triage'
+  const view = asTaskView(params.get('view'))
   const groupBy = (params.get('group') as TaskGroupBy) ?? 'smart'
   const sort = (params.get('sort') as TaskSort) ?? 'smart'
   const layout: TaskLayout = asTaskLayout(params.get('layout'))
@@ -236,7 +239,10 @@ export function TasksTriagePage() {
     setParams((current) => {
       const next = new URLSearchParams(current)
       for (const key of ['view', 'group', 'sort', 'layout', ...TASK_FILTER_PARAMS]) next.delete(key)
-      if (saved.view !== 'triage') next.set('view', saved.view)
+      // `saved.view` may still say `triage` if it was saved before that view
+      // existed as a tab; treated as My work like any other stale link.
+      const savedView = asTaskView(saved.view)
+      if (savedView !== 'mine') next.set('view', savedView)
       if (saved.group !== 'smart') next.set('group', saved.group)
       if (saved.sort !== 'smart') next.set('sort', saved.sort)
       if (saved.layout !== 'grouped') next.set('layout', saved.layout)
@@ -703,13 +709,13 @@ export function TasksTriagePage() {
         if (task) toggleDone(task)
         return
       }
-      if (['1', '2', '3', '4', '5'].includes(event.key)) {
+      if (['1', '2', '3', '4'].includes(event.key)) {
         event.preventDefault()
         const next = TASK_VIEWS[Number(event.key) - 1]
         if (next) {
           setSelected([])
           setCursor(0)
-          setParam('view', next.value === 'triage' ? null : next.value)
+          setParam('view', next.value === 'mine' ? null : next.value)
         }
       }
   }
@@ -849,7 +855,7 @@ export function TasksTriagePage() {
             </div>
           </div>
 
-          {/* Views. `1`–`5` reach the same five. */}
+          {/* Views. `1`–`4` reach the same four. */}
           <div className="mt-2.5 flex items-center gap-0.5 border-b border-soft">
             {TASK_VIEWS.map((option) => {
               const active = option.value === view
@@ -860,7 +866,7 @@ export function TasksTriagePage() {
                   onClick={() => {
                     setSelected([])
                     setCursor(0)
-                    setParam('view', option.value === 'triage' ? null : option.value)
+                    setParam('view', option.value === 'mine' ? null : option.value)
                   }}
                   className={cn(
                     '-mb-px inline-flex h-8 items-center gap-[7px] border-b-2 px-2.5 text-body transition-colors',
@@ -950,13 +956,11 @@ export function TasksTriagePage() {
           {!loading && !hasRows && !error && (
             <div className="pt-24">
               <EmptyState
-                title={activeFilters.length ? 'Nothing matches' : view === 'triage' ? 'All clear' : 'Nothing here'}
+                title={activeFilters.length ? 'Nothing matches' : 'Nothing here'}
                 description={
                   activeFilters.length
                     ? 'No tasks fit this combination. Loosen a filter and try again.'
-                    : view === 'triage'
-                      ? 'Nothing is blocked, late, or urgent without an owner. This is the good outcome.'
-                      : 'No tasks in this view yet.'
+                    : 'No tasks in this view yet.'
                 }
                 action={activeFilters.length
                   ? (
@@ -1048,11 +1052,9 @@ export function TasksTriagePage() {
 
           {/* Grouping is a judgement over the whole set, so a truncated set has
               to say so rather than quietly group a page. */}
-          {data.length > 0 && (
+          {data.length > 0 && total > data.length && (
             <p className="mt-10 text-meta-sm text-t4">
-              {total > data.length
-                ? `${data.length} shown of ${total} — narrow the filters to group the rest`
-                : `${data.length} ${data.length === 1 ? 'task' : 'tasks'}`}
+              {`${data.length} shown of ${total} — narrow the filters to group the rest`}
             </p>
           )}
         </div>
@@ -1086,6 +1088,7 @@ export function TasksTriagePage() {
         <CreateTaskModal
           open={createOpen}
           projects={lookups.projects}
+          projectsEnabled={hasFeature('projects')}
           folders={createFolders}
           foldersLoading={folderCatalog.loading}
           folderError={createProjectId ? folderCatalog.errorsByProject[String(createProjectId)] ?? '' : ''}
@@ -1101,7 +1104,9 @@ export function TasksTriagePage() {
           canEstimate={can('tasks.estimate')}
           canCreateSubtasks={can('tasks.subtasks')}
           canAttach={can('tasks.attachments')}
+          existingTasks={data}
           onErrorDismiss={() => setCreateError('')}
+          onOpenTask={(taskId) => setParam('open', String(taskId))}
           onClose={() => setCreateOpen(false)}
           onSubmit={create}
         />

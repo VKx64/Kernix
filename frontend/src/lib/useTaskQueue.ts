@@ -5,7 +5,7 @@ import type { TaskView } from './taskTriage'
 
 export type TaskViewCounts = Record<TaskView, number>
 
-const EMPTY_COUNTS: TaskViewCounts = { triage: 0, mine: 0, all: 0, unassigned: 0, done: 0 }
+const EMPTY_COUNTS: TaskViewCounts = { mine: 0, all: 0, unassigned: 0, done: 0 }
 
 interface TaskQueueOptions {
   view: TaskView

@@ -9,11 +9,15 @@ use App\Models\TaskAttachment;
 use App\Models\TaskCompletionProof;
 use App\Models\TaskFolder;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\TaskMutationService;
+use App\Support\CurrentWorkspace;
 use App\Support\SingleClient;
 use App\Support\TaskMutationGuard;
 use App\Support\TaskSignals;
 use App\Support\TaskStatuses;
+use App\Support\WorkspaceFeatures;
+use App\Support\WorkspaceProvisioner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -131,7 +135,7 @@ class TaskController extends ApiController
         $this->permission($request, 'tasks.create');
         $this->authorizeRequestedFields($request, true);
         TaskMutationGuard::enforce($request);
-        $data = $this->validated($request);
+        $data = $this->withDefaultProject($this->validated($request));
         $subtaskDrafts = $data['subtasks'] ?? [];
         unset($data['subtasks']);
         $this->assertProjectVisible((int) $data['project_id']);
@@ -280,7 +284,7 @@ class TaskController extends ApiController
     private function validated(Request $request, bool $partial = false): array
     {
         return $request->validate([
-            'project_id' => [$partial ? 'sometimes' : 'required', 'integer', Rule::exists('projects', 'id')->whereNull('archived_at')->whereNull('deleted_at')],
+            'project_id' => [Rule::excludeIf($this->projectsDisabled()), $partial ? 'sometimes' : 'required', 'integer', Rule::exists('projects', 'id')->whereNull('archived_at')->whereNull('deleted_at')],
             'task_folder_id' => ['sometimes', 'nullable', 'integer', Rule::exists('task_folders', 'id')],
             'title' => [$partial ? 'sometimes' : 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string'],
@@ -394,6 +398,33 @@ class TaskController extends ApiController
         if (SingleClient::enabled()) {
             abort_unless((int) $task->project()->value('client_id') === (int) SingleClient::id(), 404);
         }
+    }
+
+    /** @param array<string, mixed> $data */
+    private function withDefaultProject(array $data): array
+    {
+        if (empty($data['project_id']) && $this->projectsDisabled()) {
+            $workspace = $this->currentWorkspace();
+            if ($workspace) {
+                $data['project_id'] = WorkspaceProvisioner::defaultProject($workspace)->id;
+            }
+        }
+
+        return $data;
+    }
+
+    private function currentWorkspace(): ?Workspace
+    {
+        $id = CurrentWorkspace::id();
+
+        return $id ? Workspace::find($id) : null;
+    }
+
+    private function projectsDisabled(): bool
+    {
+        $workspace = $this->currentWorkspace();
+
+        return $workspace !== null && ! WorkspaceFeatures::enabled($workspace, WorkspaceFeatures::PROJECTS);
     }
 
     private function scopeToClient($query): void

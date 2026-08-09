@@ -1,4 +1,4 @@
-import { flatTaskIds, groupTasks, needsTriage, sortTasks, type TaskGroup } from './taskTriage'
+import { flatTaskIds, groupTasks, sortTasks, type TaskGroup } from './taskTriage'
 import type { FieldValue, Task, UserSummary } from '../types/api'
 
 const STATUSES: FieldValue[] = [
@@ -51,32 +51,6 @@ function total(groups: TaskGroup[]): number {
 }
 
 beforeEach(() => { sequence = 0 })
-
-describe('needsTriage', () => {
-  it('claims anything blocked or in review, whatever its date', () => {
-    expect(needsTriage(task({ statusKey: 'blocked', due: 30 }), NOW)).toBe(true)
-    expect(needsTriage(task({ statusKey: 'quality_check', due: 30 }), NOW)).toBe(true)
-  })
-
-  it('claims work that is late or due today', () => {
-    expect(needsTriage(task({ due: -2 }), NOW)).toBe(true)
-    expect(needsTriage(task({ due: 0 }), NOW)).toBe(true)
-  })
-
-  it('claims urgent work with nobody on it', () => {
-    expect(needsTriage(task({ urgencyKey: 'urgent', due: 30 }), NOW)).toBe(true)
-    expect(needsTriage(task({ urgencyKey: 'high', due: 30 }), NOW)).toBe(true)
-  })
-
-  it('leaves urgent work alone once it has an owner', () => {
-    expect(needsTriage(task({ urgencyKey: 'urgent', due: 30, assignee: PEOPLE[0] }), NOW)).toBe(false)
-  })
-
-  it('ignores calm future work and anything already done', () => {
-    expect(needsTriage(task({ due: 12, assignee: PEOPLE[0] }), NOW)).toBe(false)
-    expect(needsTriage(task({ statusKey: 'complete', due: -5 }), NOW)).toBe(false)
-  })
-})
 
 describe('groupTasks by attention', () => {
   it('reports a task that is both blocked and overdue once, under Blocked', () => {

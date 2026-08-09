@@ -15,6 +15,7 @@ use App\Services\OpenRouterClient;
 use App\Services\ProjectMemoryPrompt;
 use App\Services\TaskCompletionAuditPrompt;
 use App\Support\AiFeatures;
+use App\Support\WorkspaceFeatures;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,6 +32,8 @@ class SettingsController extends ApiController
     public function context(Request $request): JsonResponse
     {
         $settings = SystemSetting::firstOrFail();
+        $activeWorkspaceId = CurrentWorkspace::forUser($request->user());
+        $activeWorkspace = $activeWorkspaceId ? Workspace::query()->find($activeWorkspaceId) : null;
 
         return $this->data([
             'app_name' => config('app.name'),
@@ -44,9 +47,17 @@ class SettingsController extends ApiController
             'task_mutations_require_clock_in' => true,
             'permissions' => $request->user()->permissions(),
             'can_admin_override' => $request->user()->isAdmin(),
-            'active_workspace' => CurrentWorkspace::forUser($request->user())
-                ? Workspace::query()->find(CurrentWorkspace::forUser($request->user()))?->toSummary(true)
-                : null,
+            'active_workspace' => $activeWorkspace?->toSummary(true),
+            // Keyed by feature so an older or erroring server that omits this
+            // still lets the frontend default every key to true. Every
+            // registry key ships here, not only the RENDERED ones — the app
+            // (nav, pickers, columns) needs to react to clients/projects
+            // before their own switch is shown on the settings screen.
+            'features' => $activeWorkspace
+                ? collect(WorkspaceFeatures::keys())
+                    ->mapWithKeys(fn (string $key) => [$key => WorkspaceFeatures::enabled($activeWorkspace, $key)])
+                    ->all()
+                : [],
         ]);
     }
 

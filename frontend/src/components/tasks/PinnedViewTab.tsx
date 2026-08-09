@@ -3,10 +3,10 @@ import { type MouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * The saved-views tab, sitting after the five view tabs it is a peer of.
+ * The saved-views tab, sitting after the four view tabs it is a peer of.
  *
  * It reads as a tab because a saved view replaces the view you were on, and it
- * carries a dot only while one is active — that dot is how you tell "Triage
+ * carries a dot only while one is active — that dot is how you tell "My work
  * plus filters I typed" from "the view I named".
  */
 export function PinnedViewTab({

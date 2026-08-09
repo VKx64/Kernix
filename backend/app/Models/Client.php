@@ -13,7 +13,7 @@ class Client extends DomainModel
 
     protected function casts(): array
     {
-        return ['archived_at' => 'datetime', 'retainer_minutes' => 'integer'];
+        return ['archived_at' => 'datetime', 'retainer_minutes' => 'integer', 'is_default' => 'boolean'];
     }
 
     public function status(): BelongsTo

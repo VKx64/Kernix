@@ -15,6 +15,9 @@ interface WorkspaceContextValue {
   canAdminOverride: boolean
   canMutateTasks: boolean
   isOnBreak: boolean
+  /** Per-workspace feature switches. A missing key defaults to true — see lib/features.ts. */
+  features: Record<string, boolean>
+
   /** One workspace-wide switch instead of a checkbox on every task form. */
   adminOverride: boolean
   setAdminOverride: (next: boolean) => void
@@ -67,6 +70,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [canTrackTime, refresh])
 
   const singleClientMode = Boolean(settings.singleClientMode ?? settings.single_client_mode)
+  const features = useMemo(() => settings.features ?? {}, [settings.features])
   const isOnBreak = Boolean(
     time?.onBreak
     ?? time?.on_break
@@ -111,11 +115,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     canAdminOverride,
     canMutateTasks,
     isOnBreak,
+    features,
     adminOverride,
     setAdminOverride,
     refresh,
     timeAction,
-  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, isOnBreak, adminOverride, setAdminOverride, refresh, timeAction])
+  }), [settings, time, loading, timeBusy, singleClientMode, canAdminOverride, canMutateTasks, isOnBreak, features, adminOverride, setAdminOverride, refresh, timeAction])
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

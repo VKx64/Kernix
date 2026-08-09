@@ -29,7 +29,7 @@ const URGENCIES: FieldValue[] = [
 const authState = vi.hoisted(() => ({ user: null as User | null }))
 const listState = vi.hoisted(() => ({
   tasks: [] as Task[],
-  counts: { triage: 0, mine: 0, all: 0, unassigned: 0, done: 0 },
+  counts: { mine: 0, all: 0, unassigned: 0, done: 0 },
   total: 0,
 }))
 const requests = vi.hoisted(() => ({ tasks: [] as Array<Record<string, unknown> | undefined> }))
@@ -110,7 +110,7 @@ function seed() {
     task(2, 'Send investor deck', { due: -4, statusId: 11, assignee: { id: 3, first_name: 'Sam', last_name: 'Kaur' } }),
     task(3, 'Ship the ad creatives', { due: 0, statusId: 11 }),
   ]
-  listState.counts = { triage: 3, mine: 1, all: 12, unassigned: 4, done: 7 }
+  listState.counts = { mine: 1, all: 12, unassigned: 4, done: 7 }
   listState.total = 3
 }
 
@@ -300,12 +300,12 @@ describe('inline changes', () => {
 })
 
 describe('empty states', () => {
-  it('calls an empty Triage the good outcome', async () => {
+  it('shows nothing-here rather than an empty list when a view has no work', async () => {
     listState.tasks = []
     listState.total = 0
-    listState.counts = { triage: 0, mine: 0, all: 5, unassigned: 0, done: 5 }
+    listState.counts = { mine: 0, all: 5, unassigned: 0, done: 5 }
     renderPage()
-    expect(await screen.findByText('All clear')).toBeInTheDocument()
+    expect(await screen.findByText('Nothing here')).toBeInTheDocument()
   })
 
   it('blames the filter, not the work, when a filter is what emptied the list', async () => {

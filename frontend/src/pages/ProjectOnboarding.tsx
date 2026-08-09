@@ -48,6 +48,8 @@ interface ProjectOnboardingProps {
   singleClientMode: boolean
   singleClientId?: EntityId | null
   singleClient?: Client | null
+  /** Clients is turned off for this workspace: no picker, the server attaches the hidden default client. */
+  clientPickerHidden?: boolean
   busy: boolean
   error: string
   canOpenTasks?: boolean
@@ -155,6 +157,7 @@ export function ProjectOnboarding({
   singleClientMode,
   singleClientId,
   singleClient,
+  clientPickerHidden = false,
   busy,
   error,
   canOpenTasks = false,
@@ -179,7 +182,7 @@ export function ProjectOnboarding({
     return clients.find((client) => String(client.id) === draft.client_id) ?? null
   }, [clients, draft.client_id, singleClient, singleClientId, singleClientMode])
   const selectedManager = managers.find((manager) => String(manager.id) === draft.manager_user_id)
-  const needsClient = !singleClientMode && !lookupsLoading && !lookupError && clients.length === 0
+  const needsClient = !singleClientMode && !clientPickerHidden && !lookupsLoading && !lookupError && clients.length === 0
 
   const setField = (name: keyof ProjectDraft, value: string) => {
     setDraft((current) => ({ ...current, [name]: value }))
@@ -200,6 +203,8 @@ export function ProjectOnboarding({
       if (singleClientId === undefined || singleClientId === null || singleClientId === '') {
         nextErrors.client_id = 'Choose a workspace client in Settings before creating a project.'
       }
+    } else if (clientPickerHidden) {
+      // No picker, no requirement — the server attaches the hidden default client.
     } else if (!draft.client_id) {
       nextErrors.client_id = lookupsLoading
         ? 'Client options are still loading.'
@@ -224,7 +229,7 @@ export function ProjectOnboarding({
 
     const project = await onCreate({
       name: draft.name.trim(),
-      client_id: singleClientMode ? singleClientId : draft.client_id,
+      client_id: singleClientMode ? singleClientId : clientPickerHidden ? undefined : draft.client_id,
       manager_user_id: draft.manager_user_id,
       status_value_id: draft.status_value_id,
       start_date: draft.start_date,
@@ -353,7 +358,7 @@ export function ProjectOnboarding({
                     <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Building2 className="size-4" />{selectedClient?.name ?? 'No client configured'}</p>
                     {errors.client_id && <p className="text-sm text-destructive">{errors.client_id}</p>}
                   </div>
-                ) : (
+                ) : clientPickerHidden ? null : (
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor={`${formId}-client`}>Client <span aria-hidden="true" className="text-destructive">*</span></Label>
                     <Select
@@ -456,7 +461,7 @@ export function ProjectOnboarding({
 
             <footer className="flex flex-wrap justify-end gap-2">
               <Button type="button" variant="outline" disabled={busy} onClick={requestClose}>Cancel</Button>
-              <Button type="submit" disabled={busy || (lookupsLoading && clients.length === 0 && !singleClientMode)}>
+              <Button type="submit" disabled={busy || (lookupsLoading && clients.length === 0 && !singleClientMode && !clientPickerHidden)}>
                 {busy ? 'Creating…' : 'Create project'}
               </Button>
             </footer>

@@ -120,6 +120,9 @@
   --shadow-overlay: 0 20px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.02);
 
   --animate-live-pulse: live-pulse 1.6s ease-in-out infinite;
+  /* Overlays: the scrim fades, the panel lifts into place behind it. */
+  --animate-v-fade: v-fade 0.14s ease;
+  --animate-v-lift: v-lift 0.18s cubic-bezier(0.22, 0.85, 0.3, 1);
 }
 
 /*
@@ -166,8 +169,10 @@
   --t5: #5f5f68;
   --t6: #4e4e57;
 
-  /* Signal colour. `brand` carries AI, links and identity; the other three
-     are reserved for state and never used decoratively. */
+  /* Signal colour. `brand` carries AI, links and identity — plus the Messages
+     composer's send button, which the design fills with it once a reply is
+     ready — while the other three are reserved for state and never used
+     decoratively. */
   --brand: #7b7ff6;
   --brand-hover: #9b9ef8;
   --danger: #f2585b;
@@ -225,6 +230,19 @@
   /* Sidebar is a fixed 236px rail; reading columns cap at 1040px. */
   --spacing-sidebar: 236px;
   --container-reading: 1040px;
+}
+
+@keyframes v-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes v-lift {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
 }
 
 @keyframes live-pulse {

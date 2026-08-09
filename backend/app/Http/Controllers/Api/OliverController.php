@@ -84,7 +84,11 @@ class OliverController extends ApiController
         }
 
         $usage->record('oliver', 'oliver_conversation', $conversation->id, $result, null, $actor->id);
-        $actions = $result['output']['actions'] ?? [];
+        // The model's own `actions` array is not trusted on its word: only an
+        // `intent` of "act" ever reaches the runner, so a turn it has already
+        // marked as an answer cannot mutate anything even if it slipped
+        // something into `actions` by mistake.
+        $actions = ($result['output']['intent'] ?? 'act') === 'act' ? ($result['output']['actions'] ?? []) : [];
         $performed = [];
         if ($actions !== []) {
             try {

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\WorkspaceFeatures;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +11,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Workspace extends DomainModel
 {
     use SoftDeletes;
+
+    protected function casts(): array
+    {
+        $features = [];
+        foreach (WorkspaceFeatures::keys() as $feature) {
+            $features[WorkspaceFeatures::enabledColumn($feature)] = 'boolean';
+        }
+
+        return $features;
+    }
 
     /** The pivot carries the role each member holds inside this workspace. */
     public function members(): BelongsToMany

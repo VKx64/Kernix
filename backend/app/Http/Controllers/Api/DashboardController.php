@@ -353,7 +353,7 @@ class DashboardController extends ApiController
      */
     private function retainer(Carbon $now): ?array
     {
-        $query = Client::query()->whereNotNull('retainer_minutes')->whereNull('archived_at');
+        $query = Client::query()->whereNotNull('retainer_minutes')->whereNull('archived_at')->where('is_default', false);
         if (SingleClient::enabled()) {
             $query->whereKey(SingleClient::id() ?? 0);
         }

@@ -50,6 +50,33 @@ describe('OliverChat', () => {
     expect(screen.getByText('You do not have permission for that change.')).toBeInTheDocument()
   })
 
+  it('does not badge a turn as Acted or offer Undo when every action was refused', async () => {
+    const actor = userEvent.setup()
+    apiPost.mockResolvedValue({
+      data: {
+        message: {
+          id: 8,
+          role: 'assistant',
+          body: "I can't change task status for you — that permission is not on your role.",
+          actions: [
+            { type: 'update_task', status: 'refused', summary: 'You do not have permission for that change.' },
+            { type: 'update_task', status: 'refused', summary: 'You do not have permission for that change.' },
+          ],
+        },
+      },
+    })
+    render(<OliverChat />)
+
+    await actor.type(await screen.findByLabelText('Message Oliver'), 'What should I work on today?')
+    await actor.click(screen.getByRole('button', { name: /Send/ }))
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalled())
+    expect(screen.queryByText('Acted')).not.toBeInTheDocument()
+    expect(screen.queryByText('Undo any of these from the rail.')).not.toBeInTheDocument()
+    // Four identical refusals collapse into one line the person can actually read.
+    expect(screen.getAllByText(/You do not have permission for that change\./)).toHaveLength(1)
+  })
+
   it('locks the composer when Oliver is switched off', async () => {
     apiGet.mockResolvedValue({ data: { available: false, messages: [] } })
     render(<OliverChat />)

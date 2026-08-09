@@ -17,6 +17,7 @@ class ClientController extends ApiController
     {
         $this->permission($request, 'clients.view');
         $query = $this->archived(Client::with('status')->withCount(['contacts', 'projects']), $request);
+        $query->where('is_default', false);
         if (SingleClient::enabled()) {
             $query->whereKey(SingleClient::id() ?? 0);
         }
@@ -52,6 +53,7 @@ class ClientController extends ApiController
     public function show(Request $request, Client $client): JsonResponse
     {
         $this->permission($request, 'clients.view');
+        $this->assertNotDefault($client);
         if (SingleClient::enabled()) {
             abort_unless($client->id === SingleClient::id(), 404);
         }
@@ -84,6 +86,7 @@ class ClientController extends ApiController
     {
         $this->permission($request, 'clients.edit');
         $this->ensureMutable();
+        $this->assertNotDefault($client);
         $before = $client->getAttributes();
         $client->update($this->validated($request, true));
         $this->audit($request, 'client.update', $client, ['before' => $before, 'after' => $client->getAttributes()]);
@@ -95,6 +98,7 @@ class ClientController extends ApiController
     {
         $this->permission($request, 'clients.archive');
         $this->ensureMutable();
+        $this->assertNotDefault($client);
         $this->ensureNoActiveDependents($client);
         $client->update(['archived_at' => now()]);
         $this->audit($request, 'client.archive', $client);
@@ -107,6 +111,7 @@ class ClientController extends ApiController
         $this->permission($request, 'clients.archive');
         $this->ensureMutable();
         $model = Client::findOrFail($client);
+        $this->assertNotDefault($model);
         $model->update(['archived_at' => null]);
         $this->audit($request, 'client.restore', $model);
 
@@ -116,6 +121,12 @@ class ClientController extends ApiController
     private function ensureMutable(): void
     {
         abort_if(SingleClient::enabled(), 403, 'Client management is disabled in single-client mode.');
+    }
+
+    /** The hidden "General" client is not a client record anyone reaches by id. */
+    private function assertNotDefault(Client $client): void
+    {
+        abort_if($client->is_default, 404);
     }
 
     private function ensureNoActiveDependents(Client $client): void

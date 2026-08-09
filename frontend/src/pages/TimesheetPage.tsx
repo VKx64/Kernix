@@ -259,7 +259,10 @@ function Row({
   return (
     <div
       className={cn(
-        'ml-8 grid grid-cols-[48px_minmax(0,1fr)_62px] items-baseline gap-x-3.5 rounded-md px-2 py-[9px] hover:bg-row-hover',
+        // -mx-2 cancels the px-2 used to size the hover background, so the
+        // date column lands flush with the lane's left edge — the same edge
+        // the monogram tile sits on in the header above.
+        '-mx-2 grid grid-cols-[48px_minmax(0,1fr)_62px] items-baseline gap-x-3.5 rounded-md px-2 py-[9px] hover:bg-row-hover',
         separated && 'border-t border-[#131316]',
       )}
     >

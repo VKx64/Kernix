@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { api, unwrap } from '@/lib/api'
+import { useFeature } from '@/lib/features'
 import { useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { cn } from '@/lib/utils'
@@ -58,6 +59,8 @@ interface NavigationItem {
   label: string
   icon: ComponentType<{ className?: string }>
   permission?: string
+  /** A per-workspace switch this item also needs to be on for. */
+  feature?: string
   /** A presence dot rather than a count — only Oliver carries one. */
   live?: boolean
   /** Which running total, if any, badges this item. */
@@ -66,15 +69,15 @@ interface NavigationItem {
 
 const navigation: NavigationItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
-  { to: '/messages', label: 'Messages', icon: Inbox, permission: 'messages.view', badge: 'unread' },
+  { to: '/messages', label: 'Messages', icon: Inbox, permission: 'messages.view', feature: 'messages', badge: 'unread' },
   { to: '/tasks', label: 'Tasks', icon: SquareCheck, permission: 'tasks.view', badge: 'tasks' },
-  { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view' },
-  { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view' },
+  { to: '/projects', label: 'Projects', icon: Briefcase, permission: 'projects.view', feature: 'projects' },
+  { to: '/clients', label: 'Clients', icon: Building2, permission: 'clients.view', feature: 'clients' },
   // Oliver is a place in the design's nav, not a row inside Messages. The dot
   // is presence, not a count — it says the assistant is watching.
-  { to: '/oliver', label: 'Oliver', icon: Sparkles, permission: 'messages.view', live: true },
-  { to: '/timesheet', label: 'Timesheet', icon: Clock, permission: 'time.track' },
-  { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view' },
+  { to: '/oliver', label: 'Oliver', icon: Sparkles, permission: 'messages.view', feature: 'oliver', live: true },
+  { to: '/timesheet', label: 'Timesheet', icon: Clock, permission: 'time.track', feature: 'timesheet' },
+  { to: '/contacts', label: 'Contacts', icon: Contact, permission: 'contacts.view', feature: 'contacts' },
 ]
 
 export function AppShell() {
@@ -88,6 +91,7 @@ export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
+  const hasFeature = useFeature()
   // Settings lives under the profile menu only — it is account/admin plumbing,
   // not one of the workspace areas the sidebar lists.
   const settingsTarget = can('settings.view')
@@ -101,6 +105,7 @@ export function AppShell() {
           : null
   const visibleNavigation = navigation.filter((item) => {
     if (item.to === '/clients' && singleClientMode) return false
+    if (item.feature && !hasFeature(item.feature)) return false
     return !item.permission || can(item.permission)
   })
 
@@ -110,7 +115,7 @@ export function AppShell() {
   const clockedIn = timer.clockedIn
 
   useEffect(() => {
-    if (!can('messages.view')) {
+    if (!can('messages.view') || !hasFeature('messages')) {
       setUnread(0)
       return
     }
@@ -127,7 +132,7 @@ export function AppShell() {
     void loadUnread()
     const interval = window.setInterval(loadUnread, 60_000)
     return () => { active = false; window.clearInterval(interval) }
-  }, [can, location.pathname])
+  }, [can, hasFeature, location.pathname])
 
   /**
    * The two global overlays. They live here rather than on a page because the
