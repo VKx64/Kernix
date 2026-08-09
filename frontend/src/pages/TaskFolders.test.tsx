@@ -115,8 +115,8 @@ describe('moving a task to a folder from the Triage row menu', () => {
     render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
     await openRowMenu(actor)
-    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
-    await actor.click(await screen.findByRole('menuitem', { name: 'Delivery' }))
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }, { timeout: 4000 }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'Delivery' }, { timeout: 4000 }))
 
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', expect.objectContaining({ task_folder_id: 12 })))
   })
@@ -126,8 +126,8 @@ describe('moving a task to a folder from the Triage row menu', () => {
     render(<MemoryRouter><TasksTriagePage /></MemoryRouter>)
 
     await openRowMenu(actor)
-    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
-    await actor.click(await screen.findByRole('menuitem', { name: 'No folder' }))
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }, { timeout: 4000 }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'No folder' }, { timeout: 4000 }))
 
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/api/tasks/1', expect.objectContaining({ task_folder_id: null })))
   })
@@ -142,7 +142,7 @@ describe('moving a task to a folder from the Triage row menu', () => {
     expect(await screen.findByText('Book studio')).toBeInTheDocument()
 
     await openRowMenu(actor)
-    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }))
+    await actor.click(await screen.findByRole('menuitem', { name: /Move to folder/ }, { timeout: 4000 }))
     expect(await screen.findByText('This project’s folders could not be loaded.')).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Delivery' })).not.toBeInTheDocument()
   })

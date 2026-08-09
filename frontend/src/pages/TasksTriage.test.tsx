@@ -132,21 +132,27 @@ beforeEach(() => {
   apiPatch.mockClear()
 })
 
-/** Group headings are the only expandable buttons on the screen. */
-async function groupHeadings(): Promise<string[]> {
-  const buttons = await screen.findAllByRole('button', { expanded: true })
-  return buttons.map((button) => button.textContent ?? '')
+/**
+ * Group headings are the only expandable buttons on the screen.
+ *
+ * Synchronous on purpose: nesting an async `findAllByRole` inside a `waitFor`
+ * starts a fresh one-second query on every retry, and those races made this
+ * flake under the parallel runner while passing in isolation.
+ */
+function groupHeadings(): string[] {
+  return screen.getAllByRole('button', { expanded: true }).map((button) => button.textContent ?? '')
 }
 
 describe('Triage grouping', () => {
   it('heads each group with the reason its rows need attention', async () => {
     renderPage()
-    await waitFor(async () => {
-      const headings = await groupHeadings()
-      expect(headings.join(' ')).toContain('Blocked')
-      expect(headings.join(' ')).toContain('Overdue')
-      expect(headings.join(' ')).toContain('Due today')
-    })
+    // Wait once for the list to arrive, then read the headings synchronously.
+    await screen.findByText('Awaiting legal sign-off')
+    const headings = groupHeadings().join(' ')
+
+    expect(headings).toContain('Blocked')
+    expect(headings).toContain('Overdue')
+    expect(headings).toContain('Due today')
   })
 
   it('shows each task exactly once even when two reasons could claim it', async () => {
