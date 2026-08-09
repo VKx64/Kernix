@@ -18,6 +18,7 @@ class Project extends DomainModel
             'start_date' => 'date',
             'due_date' => 'date',
             'archived_at' => 'datetime',
+            'budget_minutes' => 'integer',
             'ai_estimate_review_enabled' => 'boolean',
             'ai_task_creation_enabled' => 'boolean',
             'ai_memory_enabled' => 'boolean',

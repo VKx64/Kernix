@@ -6,13 +6,17 @@ use App\Models\Client;
 use App\Models\Project;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\PortfolioStats;
 use App\Support\SingleClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 class ProjectController extends ApiController
 {
+    public function __construct(private readonly PortfolioStats $stats) {}
+
     public function index(Request $request): JsonResponse
     {
         $this->permission($request, 'projects.view');
@@ -31,6 +35,9 @@ class ProjectController extends ApiController
 
         $page = $query->orderByDesc('updated_at')->paginate($this->perPage($request));
         $page->getCollection()->transform(fn (Project $project) => $this->present($project));
+        if ($request->boolean('stats')) {
+            $this->attachStats($page->getCollection());
+        }
 
         return $this->paginated($page);
     }
@@ -51,7 +58,14 @@ class ProjectController extends ApiController
         $this->permission($request, 'projects.view');
         $this->withinClient($project->client_id);
 
-        return $this->data($this->present($project));
+        $project = $this->present($project);
+        // The detail page always carries its delivery picture; the list only
+        // does so on request, so leaner consumers keep their current payload.
+        $this->attachStats(collect([$project]));
+        $project->setAttribute('team', $this->stats->team($project));
+        $project->setAttribute('activity', $this->stats->activity([(int) $project->id]));
+
+        return $this->data($project);
     }
 
     public function update(Request $request, Project $project): JsonResponse
@@ -96,6 +110,21 @@ class ProjectController extends ApiController
         $this->audit($request, 'project.restore', $model);
 
         return $this->data($this->present($model));
+    }
+
+    /** @param Collection<int, Project> $projects */
+    private function attachStats(Collection $projects): void
+    {
+        $stats = $this->stats->forProjects($projects);
+        $openTasks = $this->stats->openTasks($projects);
+        // Cards carry faces, so the list needs the team as much as the detail
+        // page does — batched, not one query per card.
+        $teams = $this->stats->teams($projects);
+        foreach ($projects as $project) {
+            $project->setAttribute('stats', $stats[(int) $project->id] ?? null);
+            $project->setAttribute('open_tasks', $openTasks[(int) $project->id] ?? []);
+            $project->setAttribute('team', $teams[(int) $project->id] ?? []);
+        }
     }
 
     private function present(Project $project): Project

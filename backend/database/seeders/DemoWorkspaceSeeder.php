@@ -45,6 +45,19 @@ class DemoWorkspaceSeeder extends Seeder
         'Lumen Digital' => 3600,
     ];
 
+    /**
+     * Time budgets in minutes, not money. "Investor Deck" is deliberately left
+     * out so the no-budget path stays exercisable on the projects screen.
+     */
+    private const BUDGET_MINUTES = [
+        'Website Relaunch' => 4800,
+        'Q3 Social Campaign' => 2400,
+        'Brand Identity Refresh' => 1800,
+        'Product Launch Video' => 6000,
+        'SEO Overhaul' => 3600,
+        'App Redesign' => 5400,
+    ];
+
     public function run(): void
     {
         $admin = User::query()->find(1);
@@ -111,6 +124,11 @@ class DemoWorkspaceSeeder extends Seeder
                 ['name' => $name, 'client_id' => $clients[$clientName]->id],
                 ['status_value_id' => $statusId, 'manager_user_id' => $admin->id, 'created_by' => $admin->id],
             );
+        }
+        // Set outside firstOrCreate so an existing demo database picks the
+        // budgets up too.
+        foreach (self::BUDGET_MINUTES as $name => $minutes) {
+            $projects[$name]->update(['budget_minutes' => $minutes]);
         }
 
         return $projects;

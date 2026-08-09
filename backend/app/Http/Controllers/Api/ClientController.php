@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Client;
+use App\Models\Project;
+use App\Services\PortfolioStats;
 use App\Support\SingleClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClientController extends ApiController
 {
+    public function __construct(private readonly PortfolioStats $stats) {}
+
     public function index(Request $request): JsonResponse
     {
         $this->permission($request, 'clients.view');
@@ -25,6 +29,12 @@ class ClientController extends ApiController
 
         $page = $query->orderBy('name')->paginate($this->perPage($request));
         $page->getCollection()->transform(fn (Client $client) => $this->present($client));
+        if ($request->boolean('stats')) {
+            $stats = $this->stats->forClients($page->getCollection());
+            foreach ($page->getCollection() as $client) {
+                $client->setAttribute('stats', $stats[(int) $client->id] ?? null);
+            }
+        }
 
         return $this->paginated($page);
     }
@@ -50,6 +60,22 @@ class ClientController extends ApiController
         if ($request->user()->canDo('contacts.view')) {
             $client->load('contacts');
         }
+
+        // The detail page always carries the delivery picture, one row per live
+        // project, so the client page and the project cards read the same.
+        $projects = Project::query()
+            ->whereNull('archived_at')
+            ->where('client_id', $client->id)
+            ->orderBy('name')
+            ->get();
+        $projectStats = $this->stats->forProjects($projects);
+        $client->setAttribute('stats', $this->stats->forClients(collect([$client]))[(int) $client->id]);
+        $client->setAttribute('projects', $projects->map(fn (Project $project) => [
+            'id' => (int) $project->id,
+            'name' => $project->name,
+            'stats' => $projectStats[(int) $project->id],
+        ])->all());
+        $client->setAttribute('activity', $this->stats->activity($projects->pluck('id')->map(fn ($id) => (int) $id)->all()));
 
         return $this->data($client);
     }
@@ -101,7 +127,12 @@ class ClientController extends ApiController
 
     private function present(Client $client): Client
     {
-        $client->load('status')->loadCount(['contacts', 'projects']);
+        // The list query already eager-loads both; reloading them per row would
+        // turn a paginated page into an N+1.
+        $client->loadMissing('status');
+        if (! array_key_exists('contacts_count', $client->getAttributes())) {
+            $client->loadCount(['contacts', 'projects']);
+        }
         $client->setRelation('status_value', $client->status);
 
         return $client;
