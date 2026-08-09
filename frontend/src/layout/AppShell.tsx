@@ -25,6 +25,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { CommandPalette } from '@/components/CommandPalette'
+import { ShortcutsDialog } from '@/components/ShortcutsDialog'
 import { TimerBox } from '@/components/timer/TimerBox'
 import {
   Sidebar,
@@ -81,6 +83,8 @@ export function AppShell() {
   const timer = useTimerContext()
   const [unread, setUnread] = useState(0)
   const [openTasks, setOpenTasks] = useState(0)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
@@ -124,6 +128,39 @@ export function AppShell() {
     const interval = window.setInterval(loadUnread, 60_000)
     return () => { active = false; window.clearInterval(interval) }
   }, [can, location.pathname])
+
+  /**
+   * The two global overlays. They live here rather than on a page because the
+   * design offers them everywhere, and because Escape has to close them before
+   * any page's own Escape handling runs — which it does, since this listener
+   * is attached first and stops the event.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName.toLowerCase()
+      const typing = tag === 'input' || tag === 'textarea' || target?.isContentEditable
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+        return
+      }
+      if (event.key === 'Escape' && (paletteOpen || shortcutsOpen)) {
+        event.stopPropagation()
+        setPaletteOpen(false)
+        setShortcutsOpen(false)
+        return
+      }
+      // `?` is Shift+/ — a plain key, so it must not fire mid-sentence.
+      if (event.key === '?' && !typing && !paletteOpen) {
+        event.preventDefault()
+        setShortcutsOpen((current) => !current)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [paletteOpen, shortcutsOpen])
 
   // The design badges Tasks with how much is on your plate. It reads the same
   // `mine` view the task screen counts, so the two can never disagree.
@@ -266,6 +303,12 @@ export function AppShell() {
           )}
         </PageFillProvider>
       </SidebarInset>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onShortcuts={() => setShortcutsOpen(true)}
+      />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <Toaster />
     </SidebarProvider>
   )
