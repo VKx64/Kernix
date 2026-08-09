@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\OliverAction;
 use App\Models\OliverConversation;
 use App\Models\OliverMessage;
 use App\Models\SystemSetting;
 use App\Services\AiUsageService;
 use App\Services\OliverActionRunner;
+use App\Services\OliverInsights;
 use App\Services\OliverPrompt;
 use App\Services\OpenRouterClient;
 use App\Support\AiFeatures;
@@ -105,6 +107,12 @@ class OliverController extends ApiController
             'body' => trim((string) ($result['output']['reply'] ?? 'Done.')),
             'actions' => $performed,
         ]);
+        // The log rows are written as each action runs, so the turn they belong
+        // to only exists once the reply does.
+        $recorded = array_values(array_filter(array_column($performed, 'action_id')));
+        if ($recorded !== []) {
+            OliverAction::query()->whereIn('id', $recorded)->update(['message_id' => $reply->id]);
+        }
         $conversation->update(['last_message_at' => now()]);
         $this->audit($request, 'oliver.reply', $conversation, ['actions' => count($performed)]);
 
@@ -119,6 +127,40 @@ class OliverController extends ApiController
         $conversation->update(['last_message_at' => null]);
 
         return response()->json(null, 204);
+    }
+
+    /** What Oliver can say about the requester's own work without changing any of it. */
+    public function insights(Request $request, OliverInsights $insights): JsonResponse
+    {
+        $this->permission($request, 'messages.view');
+
+        return $this->data($insights->for($request->user()));
+    }
+
+    /** The rail's "acted today" list: this person's own actions, newest first. */
+    public function actions(Request $request): JsonResponse
+    {
+        $this->permission($request, 'messages.view');
+        $limit = max(1, min(100, $request->integer('limit', 20)));
+
+        return $this->data(
+            OliverAction::query()
+                ->where('user_id', $request->user()->id)
+                ->latest('id')
+                ->limit($limit)
+                ->get()
+                ->map(fn (OliverAction $action) => $action->toSummary())
+                ->all()
+        );
+    }
+
+    public function undo(Request $request, OliverAction $action): JsonResponse
+    {
+        $this->permission($request, 'messages.view');
+        $this->runner->undo($action, $request->user());
+        $this->audit($request, 'oliver.undo', $action, ['type' => $action->type, 'entity_id' => $action->entity_id]);
+
+        return $this->data($action->toSummary());
     }
 
     private function conversation(Request $request): OliverConversation

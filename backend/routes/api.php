@@ -140,6 +140,9 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api'])->
     Route::get('/oliver', [OliverController::class, 'show']);
     Route::post('/oliver/messages', [OliverController::class, 'send']);
     Route::delete('/oliver/messages', [OliverController::class, 'clear']);
+    Route::get('/oliver/insights', [OliverController::class, 'insights']);
+    Route::get('/oliver/actions', [OliverController::class, 'actions']);
+    Route::post('/oliver/actions/{action}/undo', [OliverController::class, 'undo']);
     Route::get('/workspaces', [WorkspaceController::class, 'index']);
     Route::post('/workspaces', [WorkspaceController::class, 'store']);
     Route::patch('/workspaces/{workspace}', [WorkspaceController::class, 'update']);
