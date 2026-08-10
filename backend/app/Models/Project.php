@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Project extends DomainModel
@@ -63,7 +64,7 @@ class Project extends DomainModel
         return $this->belongsToMany(User::class)->withPivot('assigned_by')->withTimestamps();
     }
 
-    public function aiProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function aiProfile(): HasOne
     {
         return $this->hasOne(ProjectAiProfile::class);
     }
@@ -71,5 +72,10 @@ class Project extends DomainModel
     public function memoryEntries(): HasMany
     {
         return $this->hasMany(ProjectMemoryEntry::class);
+    }
+
+    public function projectForms(): HasMany
+    {
+        return $this->hasMany(ProjectForm::class);
     }
 }

@@ -245,7 +245,7 @@ export function TasksTriagePage() {
       if (savedView !== 'mine') next.set('view', savedView)
       if (saved.group !== 'smart') next.set('group', saved.group)
       if (saved.sort !== 'smart') next.set('sort', saved.sort)
-      if (saved.layout !== 'grouped') next.set('layout', saved.layout)
+      if (saved.layout !== 'list') next.set('layout', saved.layout)
       for (const [key, value] of Object.entries(saved.filters)) next.set(key, value)
       return next
     }, { replace: true })
@@ -927,7 +927,7 @@ export function TasksTriagePage() {
               value={layout}
               onChange={(next) => {
                 setCursor(0)
-                setParam('layout', next === 'grouped' ? null : next)
+                setParam('layout', next === 'list' ? null : next)
               }}
               className="mr-1 bg-transparent p-0"
             />

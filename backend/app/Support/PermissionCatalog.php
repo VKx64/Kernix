@@ -71,6 +71,14 @@ final class PermissionCatalog
             ],
         ],
         [
+            'group' => 'Forms',
+            'permissions' => [
+                ['key' => 'forms.view', 'label' => 'View project forms', 'description' => 'View a project\'s intake forms and their submission queue.', 'requires' => ['projects.view']],
+                ['key' => 'forms.manage', 'label' => 'Manage project forms', 'description' => 'Create, edit, duplicate, and rotate the link for project intake forms.', 'requires' => ['forms.view']],
+                ['key' => 'forms.review', 'label' => 'Review form submissions', 'description' => 'Convert or decline intake form submissions.', 'requires' => ['forms.view', 'tasks.create']],
+            ],
+        ],
+        [
             'group' => 'Clients',
             'permissions' => [
                 ['key' => 'clients.view', 'label' => 'View clients', 'description' => 'View all workspace clients.', 'requires' => []],

@@ -107,4 +107,9 @@ class Task extends DomainModel
     {
         return $this->belongsTo(AiTaskGeneration::class, 'ai_task_generation_id');
     }
+
+    public function formSubmission(): BelongsTo
+    {
+        return $this->belongsTo(FormSubmission::class);
+    }
 }

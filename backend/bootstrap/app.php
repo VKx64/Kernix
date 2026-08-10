@@ -18,6 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function (): void {
+            // Loaded outside of withRouting(api:), so these routes get NO
+            // middleware group at all — see routes/public.php for why that
+            // is load-bearing, not an oversight.
+            require __DIR__.'/../routes/public.php';
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();

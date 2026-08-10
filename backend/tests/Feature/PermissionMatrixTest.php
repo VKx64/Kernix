@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\AiTaskGeneration;
+use App\Models\Client;
 use App\Models\Contact;
 use App\Models\Field;
 use App\Models\FieldValue;
+use App\Models\FormSubmission;
 use App\Models\Project;
+use App\Models\ProjectForm;
 use App\Models\Role;
 use App\Models\Task;
 use App\Models\TaskAttachment;
@@ -153,6 +155,9 @@ class PermissionMatrixTest extends TestCase
             'projects.edit' => $this->projectPatchRequest($actor, ['name' => 'Matrix edited project']),
             'projects.archive' => $this->projectArchiveRequest($actor),
             'projects.manage_ai_memory' => $this->projectMemoryManageRequest($actor),
+            'forms.view' => $this->formsViewRequest($actor),
+            'forms.manage' => $this->formsManageRequest($actor),
+            'forms.review' => $this->formsReviewRequest($actor),
             'clients.view' => $this->request('GET', '/api/clients'),
             'clients.create' => $this->request('POST', '/api/clients', ['name' => 'Matrix created client'], 201, true),
             'clients.edit' => $this->clientPatchRequest($actor),
@@ -211,6 +216,34 @@ class PermissionMatrixTest extends TestCase
             'brief' => 'Permission matrix approved project brief.',
             'approve' => true,
         ], 200, true);
+    }
+
+    private function formsViewRequest(User $actor): array
+    {
+        [, $project] = $this->workspace($actor);
+
+        return $this->request('GET', '/api/projects/'.$project->id.'/forms');
+    }
+
+    private function formsManageRequest(User $actor): array
+    {
+        [, $project] = $this->workspace($actor);
+
+        return $this->request('POST', '/api/projects/'.$project->id.'/forms', [
+            'title' => 'Matrix created form',
+        ], 201, true);
+    }
+
+    private function formsReviewRequest(User $actor): array
+    {
+        [, $project] = $this->workspace($actor);
+        $form = ProjectForm::factory()->create(['project_id' => $project->id]);
+        $submission = FormSubmission::factory()->create([
+            'project_form_id' => $form->id,
+            'project_id' => $project->id,
+        ]);
+
+        return $this->request('POST', '/api/form-submissions/'.$submission->id.'/convert', [], 201, true);
     }
 
     private function taskPatchRequest(User $actor, array $payload): array
@@ -636,6 +669,7 @@ class PermissionMatrixTest extends TestCase
             'tasks.subtasks', 'tasks.assign', 'tasks.estimate', 'tasks.archive', 'tasks.attachments', 'tasks.review_completion',
             'tasks.request_estimate', 'tasks.review_estimate_requests',
             'tasks.work_unassigned', 'tasks.request_work', 'tasks.review_work_requests',
+            'forms.review',
         ], true);
     }
 
@@ -653,7 +687,7 @@ class PermissionMatrixTest extends TestCase
         $tables = [
             'roles', 'role_permissions', 'fields', 'field_values', 'users', 'clients', 'contacts',
             'projects', 'tasks', 'task_subtasks', 'task_notes', 'task_emails', 'time_sessions',
-            'task_estimate_requests', 'task_work_requests',
+            'task_estimate_requests', 'task_work_requests', 'project_forms', 'form_submissions',
             'time_breaks', 'system_settings', 'audit_logs', 'sessions', 'personal_access_tokens',
         ];
         $snapshot = [];

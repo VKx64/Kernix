@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AiTaskGenerationController;
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AvatarController;
 use App\Http\Controllers\Api\BootstrapController;
@@ -11,12 +11,15 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExtensionController;
 use App\Http\Controllers\Api\ExtensionPairingController;
 use App\Http\Controllers\Api\FieldController;
+use App\Http\Controllers\Api\FormSubmissionController;
+use App\Http\Controllers\Api\FormSubmissionFileController;
 use App\Http\Controllers\Api\InvitationAcceptanceController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\OliverController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectFormController;
 use App\Http\Controllers\Api\ProjectMemoryController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SettingsController;
@@ -143,6 +146,20 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
             Route::delete('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'destroy']);
         });
         Route::apiResource('projects', ProjectController::class)->except(['destroy']);
+
+        Route::get('/projects/{project}/forms', [ProjectFormController::class, 'index']);
+        Route::post('/projects/{project}/forms', [ProjectFormController::class, 'store']);
+        Route::get('/project-forms/{projectForm}', [ProjectFormController::class, 'show']);
+        Route::patch('/project-forms/{projectForm}', [ProjectFormController::class, 'update']);
+        Route::delete('/project-forms/{projectForm}', [ProjectFormController::class, 'destroy']);
+        Route::post('/project-forms/{projectForm}/rotate-slug', [ProjectFormController::class, 'rotateSlug']);
+        Route::post('/project-forms/{projectForm}/duplicate', [ProjectFormController::class, 'duplicate']);
+        Route::get('/project-forms/{projectForm}/submissions', [FormSubmissionController::class, 'index']);
+        Route::get('/form-submissions/{submission}', [FormSubmissionController::class, 'show']);
+        Route::post('/form-submissions/{submission}/convert', [FormSubmissionController::class, 'convert']);
+        Route::post('/form-submissions/{submission}/decline', [FormSubmissionController::class, 'decline']);
+        Route::post('/form-submissions/{submission}/reconvert', [FormSubmissionController::class, 'reconvert']);
+        Route::get('/form-submissions/{submission}/files/{file}', [FormSubmissionFileController::class, 'show']);
     });
 
     Route::post('/tasks/{task}/archive', [TaskController::class, 'archive']);

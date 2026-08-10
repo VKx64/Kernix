@@ -80,6 +80,22 @@ post_max_size = 128M      # 25M x the 10-file batch limit, plus overhead
 max_file_uploads = 20
 ```
 
+Public project-form submissions accept up to 3 files of 10 MB each (30 MB
+per request), so they need `upload_max_filesize >= 12M` and
+`post_max_size >= 40M` at minimum — both already covered by the values
+above. Below those, a 10 MB upload arrives at Laravel as an empty POST
+before validation ever runs, so a public visitor sees a bare 422 with no
+files, not a helpful error.
+
+The `public-form-submit` rate limiter (keyed `slug|ip` in
+`AppServiceProvider`) and the `ip_hash` stored on each submission both trust
+`$request->ip()`. That's correct today because this deployment sits direct on
+the server with no reverse proxy or CDN in front. If one is ever added,
+`trustProxies` MUST be configured with that proxy's actual CIDR ranges before
+the public form is exposed again — never `trustProxies(at: '*')`, which makes
+`X-Forwarded-For` attacker-controlled and makes both the rate limiter and the
+stored `ip_hash` worthless.
+
 ---
 
 ## 2. Database

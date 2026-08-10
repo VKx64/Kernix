@@ -145,7 +145,10 @@ function groupHeadings(): string[] {
 
 describe('Triage grouping', () => {
   it('heads each group with the reason its rows need attention', async () => {
-    renderPage()
+    // Grouped is no longer the default layout, so the grouped view is asked
+    // for explicitly here — this test is about the grouping engine, not
+    // about which layout the page opens to.
+    renderPage('/tasks?layout=grouped')
     // Wait once for the list to arrive, then read the headings synchronously.
     await screen.findByText('Awaiting legal sign-off')
     const headings = groupHeadings().join(' ')
@@ -158,7 +161,7 @@ describe('Triage grouping', () => {
   it('shows each task exactly once even when two reasons could claim it', async () => {
     listState.tasks = [task(1, 'Blocked and late', { statusId: 13, due: -6 })]
     listState.total = 1
-    renderPage()
+    renderPage('/tasks?layout=grouped')
     expect(await screen.findAllByText('Blocked and late')).toHaveLength(1)
   })
 

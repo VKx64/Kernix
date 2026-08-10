@@ -36,7 +36,7 @@ export function ProjectCard({
 
   return (
     <div
-      className="relative flex flex-col rounded-[11px] border border-rail bg-surface"
+      className="relative flex w-full max-w-sm flex-col rounded-[11px] border border-rail bg-surface"
       style={{ borderLeft: `2px solid ${health.color}` }}
     >
       <button

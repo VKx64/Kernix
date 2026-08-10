@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import { Avatar, ErrorBanner } from '@/components/shared'
+import { ProjectTabStrip } from '@/components/forms/ProjectTabStrip'
 import { MetricTile } from '@/components/kernix/metric-tile'
 import { PanelSection } from '@/components/kernix/panel-section'
 import { urgencyRail } from '@/components/kernix/rail'
@@ -12,7 +13,16 @@ import { healthDetail, healthOf, type PortfolioStats } from '@/lib/health'
 import { useCan } from '@/lib/permissions'
 import { dueMeta, formatMinutes, statusColor, urgencyColor } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
-import type { ApiEnvelope, DashboardActivity, DashboardTask, EntityId, Project, UserSummary } from '@/types/api'
+import type { ApiEnvelope, DashboardActivity, DashboardTask, EntityId, Project, ProjectForm, UserSummary } from '@/types/api'
+
+type ProjectTab = 'overview' | 'tasks' | 'team' | 'activity'
+
+function tabFromPath(pathname: string): ProjectTab {
+  if (pathname.endsWith('/tasks')) return 'tasks'
+  if (pathname.endsWith('/team')) return 'team'
+  if (pathname.endsWith('/activity')) return 'activity'
+  return 'overview'
+}
 
 interface TeamMember extends UserSummary {
   open_tasks: number
@@ -36,11 +46,14 @@ interface ProjectDetail extends Project {
  */
 export function ProjectDetailPage() {
   const { projectId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
+  const tab = tabFromPath(location.pathname)
   const [project, setProject] = useState<ProjectDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [formsCount, setFormsCount] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -54,6 +67,17 @@ export function ProjectDetailPage() {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [projectId])
+
+  // Only fetched to know whether the Forms tab should carry a count badge —
+  // the tab itself is always offered regardless of permission or count.
+  useEffect(() => {
+    if (!projectId || !can('forms.view')) { setFormsCount(0); return }
+    let active = true
+    void api.get<ApiEnvelope<ProjectForm[]>>(`/api/projects/${projectId}/forms`)
+      .then((response) => { if (active) setFormsCount(unwrap(response).length) })
+      .catch(() => { if (active) setFormsCount(0) })
+    return () => { active = false }
+  }, [projectId, can])
 
   const stats = project?.stats
   const health = healthOf(stats?.health)
@@ -97,7 +121,9 @@ export function ProjectDetailPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-3 @[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
+          <ProjectTabStrip projectId={project.id} formsCount={formsCount} />
+
+          {(tab === 'overview' || tab === 'tasks') && (
             <PanelSection
               label="Open work"
               meta={can('tasks.view') ? <Link className="text-meta text-t3 hover:text-t1" to={`/tasks?project_id=${project.id}`}>All tasks</Link> : undefined}
@@ -121,38 +147,40 @@ export function ProjectDetailPage() {
                 )
               })}
             </PanelSection>
+          )}
 
-            <div className="flex min-w-0 flex-col gap-3">
-              <PanelSection label="Team" empty={!project.team?.length && 'Nobody is assigned yet.'}>
-                <div className="flex flex-col gap-2.5">
-                  {project.team?.map((member) => (
-                    <div key={member.id} className="flex items-center gap-2.5">
-                      <Avatar user={member} className="size-[26px]" />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-body-lg text-title">{displayName(member)}</span>
-                        {member.is_manager && <span className="text-meta-sm text-t4">Project manager</span>}
-                      </span>
-                      <span className="flex-none text-right font-mono text-meta text-t3">
-                        {formatMinutes(member.logged_minutes) || '0m'}
-                        <span className="block text-[10.5px] text-t5">{member.open_tasks} open</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </PanelSection>
+          {(tab === 'overview' || tab === 'team') && (
+            <PanelSection label="Team" empty={!project.team?.length && 'Nobody is assigned yet.'}>
+              <div className="flex flex-col gap-2.5">
+                {project.team?.map((member) => (
+                  <div key={member.id} className="flex items-center gap-2.5">
+                    <Avatar user={member} className="size-[26px]" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-body-lg text-title">{displayName(member)}</span>
+                      {member.is_manager && <span className="text-meta-sm text-t4">Project manager</span>}
+                    </span>
+                    <span className="flex-none text-right font-mono text-meta text-t3">
+                      {formatMinutes(member.logged_minutes) || '0m'}
+                      <span className="block text-[10.5px] text-t5">{member.open_tasks} open</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </PanelSection>
+          )}
 
-              <PanelSection label="Activity" empty={!project.activity?.length && 'Nothing has happened yet.'}>
-                <div className="flex flex-col gap-3">
-                  {project.activity?.map((entry) => (
-                    <div key={entry.id} className="flex items-start gap-2.5">
-                      <Avatar user={entry.user} className="size-[22px]" />
-                      <span className="min-w-0 flex-1 text-body-sm leading-[1.45] text-[#a8a8b0] text-pretty">{entry.text}</span>
-                    </div>
-                  ))}
-                </div>
-              </PanelSection>
-            </div>
-          </div>
+          {(tab === 'overview' || tab === 'activity') && (
+            <PanelSection label="Activity" empty={!project.activity?.length && 'Nothing has happened yet.'}>
+              <div className="flex flex-col gap-3">
+                {project.activity?.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-2.5">
+                    <Avatar user={entry.user} className="size-[22px]" />
+                    <span className="min-w-0 flex-1 text-body-sm leading-[1.45] text-[#a8a8b0] text-pretty">{entry.text}</span>
+                  </div>
+                ))}
+              </div>
+            </PanelSection>
+          )}
         </>
       )}
     </div>

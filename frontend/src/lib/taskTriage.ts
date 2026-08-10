@@ -71,7 +71,7 @@ export const TASK_LAYOUT_OPTIONS: ReadonlyArray<{ value: TaskLayout; label: stri
 ]
 
 export function asTaskLayout(value: string | null | undefined): TaskLayout {
-  return TASK_LAYOUT_OPTIONS.some((option) => option.value === value) ? (value as TaskLayout) : 'grouped'
+  return TASK_LAYOUT_OPTIONS.some((option) => option.value === value) ? (value as TaskLayout) : 'list'
 }
 
 export interface TaskGroup {

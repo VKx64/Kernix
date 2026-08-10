@@ -1015,4 +1015,136 @@ export interface OliverActionRecord {
 }
 
 export type FormValue = string | number | boolean | null | undefined
+
+// --- Project Forms ----------------------------------------------------------
+
+export interface ProjectFormFieldChoice {
+  value: string
+  label: string
+  caption?: string | null
+  /** Only present on `severity` choices — the workspace's live urgency key. */
+  urgency_key?: string | null
+}
+
+export interface ProjectFormField {
+  id: string
+  type: string
+  label: string
+  help?: string | null
+  required?: boolean
+  choices?: ProjectFormFieldChoice[]
+  /** One of title/description/subtasks/urgency/due/none. */
+  maps?: string | null
+  min?: string | number | null
+  max?: string | number | null
+}
+
+export interface ProjectForm {
+  id: EntityId
+  project_id?: EntityId
+  projectId?: EntityId
+  title: string
+  blurb?: string | null
+  header_line?: string | null
+  icon?: string | null
+  slug: string
+  state: 'live' | 'paused'
+  fields: ProjectFormField[]
+  next_field_seq?: number
+  require_email: boolean
+  auto_convert: boolean
+  notify: boolean
+  task_type_key?: string | null
+  closes_on?: string | null
+  created_by?: EntityId
+  creator?: UserSummary | null
+  submissions_count?: number
+  pending_submissions_count?: number
+  slug_rotated_at?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface FormSubmissionFile {
+  id: EntityId
+  filename?: string
+  file_name?: string
+  size?: number | null
+  url?: string | null
+}
+
+/** Frozen at receipt time — never the live form. See `ProjectForm::toSnapshot`. */
+export interface FormSubmissionSnapshot {
+  id: EntityId
+  title: string
+  fields: ProjectFormField[]
+  task_type_key?: string | null
+  created_by?: EntityId
+}
+
+export interface FormSubmission {
+  id: EntityId
+  project_form_id?: EntityId
+  projectFormId?: EntityId
+  project_id?: EntityId
+  form?: Pick<ProjectForm, 'id' | 'title' | 'icon'>
+  form_snapshot: FormSubmissionSnapshot
+  answers: Record<string, unknown>
+  status: 'new' | 'converted' | 'declined'
+  email?: string | null
+  submitter_name?: string | null
+  submitter?: string | null
+  ip?: string | null
+  task_id?: EntityId | null
+  task?: Task | null
+  decline_reason?: string | null
+  decided_by?: EntityId | null
+  decider?: UserSummary | null
+  decided_at?: string | null
+  possible_duplicate_of?: EntityId | null
+  files?: FormSubmissionFile[]
+  created_at: string
+}
+
+export interface PublicFormChoice {
+  value: string
+  label: string
+  caption?: string | null
+}
+
+export interface PublicFormField {
+  id: string
+  type: string
+  label: string
+  help?: string | null
+  required?: boolean
+  choices?: PublicFormChoice[]
+  min?: string | number | null
+  max?: string | number | null
+}
+
+/** The exact shape `GET /api/public/forms/{slug}` returns — nothing more. */
+export interface PublicForm {
+  title: string
+  blurb?: string | null
+  header_line?: string | null
+  closed: boolean
+  closed_message?: string | null
+  require_email: boolean
+  max_files?: number | null
+  max_file_bytes?: number | null
+  /** Aggregate ceiling across every `file` field combined, for the WHOLE submission — not per field. See PublicFormController::openPayload. */
+  max_submission_files?: number | null
+  /** Aggregate byte ceiling across every `file` field combined, for the WHOLE submission — not per field. */
+  max_submission_bytes?: number | null
+  accepted_types?: string[] | null
+  fields: PublicFormField[]
+}
+
+/** The exact shape `POST /api/public/forms/{slug}/submissions` returns. */
+export interface PublicFormSubmissionResult {
+  reference: string
+  submitted_at: string
+  email_on_file: boolean
+}
 export type FormPayload = Record<string, FormValue | FormValue[]>

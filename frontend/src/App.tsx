@@ -21,7 +21,10 @@ import { RegisterPage } from './pages/RegisterPage'
 import { WorkspaceOnboardingPage } from './pages/WorkspaceOnboardingPage'
 import { OliverPage } from './pages/OliverPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
+import { ProjectFormBuilderPage } from './pages/ProjectFormBuilderPage'
+import { ProjectFormsPage } from './pages/ProjectFormsPage'
 import { ProjectMemoryPage } from './pages/ProjectMemoryPage'
+import { PublicFormPage } from './pages/PublicFormPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WorkspaceSettingsPage } from './pages/WorkspaceSettingsPage'
 import { TaskDetailPage } from './pages/TasksPage'
@@ -100,6 +103,9 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
+      {/* A client's own intake link. No app chrome, no auth, no way back into
+          the product — reached anonymously and must stay reachable that way. */}
+      <Route path="/f/:slug" element={<PublicFormPage />} />
       {/* The primitive gallery. Unauthenticated and outside the shell so it can
           be opened without a backend, which is also why it never ships: it is
           registered in development builds only. */}
@@ -115,6 +121,11 @@ export default function App() {
         <Route path="tasks/:taskId" element={<PermissionRoute permission="tasks.view"><TaskDetailPage /></PermissionRoute>} />
         <Route path="projects" element={<PermissionRoute permission="projects.view"><ProjectsPage /></PermissionRoute>} />
         <Route path="projects/:projectId" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/tasks" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/team" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/activity" element={<PermissionRoute permission="projects.view"><ProjectDetailPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/forms" element={<PermissionRoute permission="forms.view"><ProjectFormsPage /></PermissionRoute>} />
+        <Route path="projects/:projectId/forms/:formId" element={<PermissionRoute permission="forms.view"><ProjectFormBuilderPage /></PermissionRoute>} />
         <Route path="projects/:projectId/memory" element={<PermissionRoute permission="projects.manage_ai_memory"><ProjectMemoryPage /></PermissionRoute>} />
         <Route path="clients" element={<PermissionRoute permission="clients.view"><ClientsPage /></PermissionRoute>} />
         <Route path="clients/:clientId" element={<PermissionRoute permission="clients.view"><ClientDetailPage /></PermissionRoute>} />
