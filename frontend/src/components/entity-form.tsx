@@ -70,6 +70,21 @@ function schemaFor(fields: FormFieldSpec[]) {
         ]
       }
 
+      // A select's FormOption.value can be a numeric id (foreign keys such as
+      // project or assignee) or a string enum, so its value must accept
+      // either. An unselected select is modelled as '' (see the `defaults`
+      // below), never `undefined` or `0`, so that's the only "empty" this
+      // checks for — a real numeric id of 0 would still pass.
+      if (field.type === 'select') {
+        const select = z.union([z.string(), z.number()])
+        return [
+          field.name,
+          field.required
+            ? select.refine((value) => value !== '', { message: `${field.label} is required.` })
+            : select,
+        ]
+      }
+
       const text = z.string()
       return [
         field.name,
@@ -162,7 +177,16 @@ export function EntityForm({
                         <Select
                           value={String(field.value ?? '')}
                           disabled={spec.disabled}
-                          onValueChange={(value) => handleChange(spec.name, value, spec.clearOnChange)}
+                          onValueChange={(value) => {
+                            // Radix's Select only ever hands back the string
+                            // it was given (SelectItem's value is always
+                            // stringified below), so numeric ids have to be
+                            // recovered from the matching option before they
+                            // reach the form — otherwise a numeric field
+                            // silently turns into its string twin.
+                            const option = spec.options?.find((candidate) => String(candidate.value) === value)
+                            handleChange(spec.name, option ? option.value : value, spec.clearOnChange)
+                          }}
                         >
                           <FormControl>
                             <SelectTrigger className="w-full">

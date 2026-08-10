@@ -3,6 +3,7 @@ import { Check, ChevronLeft, ChevronRight, ExternalLink, SendHorizontal, Timer, 
 import { Link } from 'react-router'
 import { LabelRow } from '@/components/kernix/label-row'
 import { Avatar } from '@/components/shared'
+import { TaskDrawerFiles } from '@/components/tasks/TaskDrawerFiles'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -20,8 +21,10 @@ import type { Subtask, Task, UserSummary } from '@/types/api'
  * the comments are one chronological thread rather than two tabs, so "what
  * happened" reads in order regardless of who or what caused it.
  *
- * The heavier surfaces — attachments, emails, completion proof, estimate and
- * work requests — stay on the full task page, which the header links to.
+ * Attachments already on the task are shown here so nothing uploaded from
+ * elsewhere goes unseen, but uploading and deleting stay on the full task
+ * page along with the other heavier surfaces — emails, completion proof,
+ * estimate and work requests — which the header links to.
  */
 export interface TaskDrawerField {
   key: string
@@ -68,6 +71,9 @@ export function TaskDrawer({
   timerBusy,
   canTrackTime,
   onToggleTimer,
+  canManageFiles,
+  filesAdminOverride,
+  onFilesChanged,
 }: {
   task: Task | null
   loading: boolean
@@ -92,9 +98,16 @@ export function TaskDrawer({
   timerBusy: boolean
   canTrackTime: boolean
   onToggleTimer: () => void
+  /** Whether the viewer may upload or delete files from the drawer. */
+  canManageFiles: boolean
+  filesAdminOverride?: boolean
+  onFilesChanged: () => void | Promise<void>
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  // The files section listens on the drawer's own root, so a file dropped
+  // anywhere over the panel — not just the FILES section — targets this task.
+  const panelRef = useRef<HTMLDivElement>(null)
   const taskId = task ? String(task.id) : null
 
   // A new task means a new thread; keep the draft per task rather than
@@ -107,6 +120,7 @@ export function TaskDrawer({
   }, [taskId])
 
   const subtasks = task?.subtasks ?? []
+  const attachments = task?.attachments ?? []
   const doneSubtasks = subtasks.filter((subtask) => Boolean(subtask.completedAt ?? subtask.completed_at)).length
   const logged = formatMinutes(taskLoggedMinutes(task ?? ({} as Task)))
   const done = task ? isTaskDone(task) : false
@@ -134,6 +148,7 @@ export function TaskDrawer({
         className="absolute inset-0 animate-in bg-[rgba(4,4,6,0.5)] fade-in duration-150"
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-label={task?.title ?? 'Task'}
         className="relative flex h-full w-[496px] max-w-full animate-in flex-col border-l border-line bg-[#0e0e10] duration-200 slide-in-from-right-8"
@@ -208,6 +223,15 @@ export function TaskDrawer({
                   {task.description?.trim() || 'No notes yet.'}
                 </p>
               </section>
+
+              <TaskDrawerFiles
+                taskId={task.id}
+                attachments={attachments}
+                canManage={canManageFiles}
+                adminOverride={filesAdminOverride}
+                onChanged={onFilesChanged}
+                dragContainerRef={panelRef}
+              />
 
               {subtasks.length > 0 && (
                 <section className="flex flex-col gap-[9px]">

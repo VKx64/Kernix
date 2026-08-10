@@ -62,7 +62,21 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border bg-popover text-popover-foreground shadow-popover data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          // No data-[state=closed] exit animation on purpose: Radix's
+          // DismissableLayer disables pointer events on every ancestor for
+          // as long as this content's own layer stays registered, and while
+          // an exit animation plays, Presence (@radix-ui/react-presence)
+          // keeps the (already logically closed) content mounted until
+          // `animationend` fires. Inside a Dialog, that leaves the dialog's
+          // own content — including a Save button — with
+          // `pointer-events: none` for the whole animation, so the very next
+          // click lands on nothing and is silently swallowed. Dropping the
+          // exit animation lets Presence unmount synchronously with the
+          // close, so the layer (and pointer-events) clears immediately.
+          // See https://github.com/radix-ui/primitives/issues/1859 and the
+          // dismissable-layer source at
+          // node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs.
+          "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border bg-popover text-popover-foreground shadow-popover data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className

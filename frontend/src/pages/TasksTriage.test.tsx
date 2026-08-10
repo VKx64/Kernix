@@ -42,7 +42,10 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string, query?: Record<string
   if (path === '/api/bootstrap') {
     return {
       data: {
-        projects: [{ id: 5, name: 'Launch', client: { id: 4, name: 'Acme' } }],
+        projects: [
+          { id: 5, name: 'Launch', client: { id: 4, name: 'Acme' } },
+          { id: 6, name: 'Rebrand', client: { id: 4, name: 'Acme' } },
+        ],
         coworkers: [{ id: 3, first_name: 'Sam', last_name: 'Kaur' }],
         fields: [
           { id: 3, key: 'task_status', values: STATUSES },
@@ -299,6 +302,35 @@ describe('inline changes', () => {
     renderPage()
     expect(await screen.findByRole('button', { name: 'Assigned to Sam Kaur' })).toBeInTheDocument()
     expect((await screen.findAllByRole('button', { name: 'Assign this task' })).length).toBeGreaterThan(0)
+  })
+})
+
+describe('the drawer project field', () => {
+  it('lets a permitted user reassign the project, clearing the stale folder in the same request', async () => {
+    listState.tasks[0] = task(1, 'Awaiting legal sign-off', { statusId: 13, task_folder_id: 40 })
+    const actor = userEvent.setup()
+    renderPage('/tasks?open=1')
+    await screen.findByRole('dialog', { name: 'Awaiting legal sign-off' })
+
+    await actor.click(screen.getByRole('button', { name: 'Launch' }))
+    await actor.click(await screen.findByRole('menuitem', { name: /^Rebrand/ }))
+
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(
+      '/api/tasks/1',
+      expect.objectContaining({ project_id: 6, task_folder_id: null }),
+    ))
+  })
+
+  it('disables the field for someone without tasks.edit', async () => {
+    authState.user = {
+      id: 2,
+      username: 'producer',
+      permissions: ['tasks.view', 'tasks.change_status', 'tasks.assign', 'projects.view', 'time.track'],
+    }
+    renderPage('/tasks?open=1')
+    await screen.findByRole('dialog', { name: 'Awaiting legal sign-off' })
+
+    expect(screen.getByRole('button', { name: 'Launch' })).toBeDisabled()
   })
 })
 

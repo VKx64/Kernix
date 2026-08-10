@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
-import { uploadTaskAttachments } from '@/lib/attachments'
+import { relativeTime, uploadTaskAttachments } from '@/lib/attachments'
 import { useFeature } from '@/lib/features'
 import { useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
@@ -88,6 +88,7 @@ type MenuKind =
   | 'urgency'
   | 'assignee'
   | 'due'
+  | 'project'
   | 'row'
   | 'folder'
   | 'group'
@@ -426,6 +427,20 @@ export function TasksTriagePage() {
             separated: days === null,
             hint: days === null ? undefined : new Date(isoInDays(days)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
             onSelect: () => applyAndClose({ due_date: days === null ? null : isoInDays(days) }, bulk ? 'Dates updated' : undefined),
+          })),
+        }
+      case 'project':
+        return {
+          title: 'Project',
+          items: lookups.projects.map((project) => ({
+            key: String(project.id),
+            label: project.name,
+            hint: project.client?.name,
+            // Folders are scoped to a single project, so moving a task to a
+            // different project would leave its folder pointing at one that
+            // no longer belongs to it. Clear it in the same request rather
+            // than carry a stale folder id across projects.
+            onSelect: () => applyAndClose({ project_id: project.id, task_folder_id: null }, bulk ? 'Project updated' : undefined),
           })),
         }
       case 'row': {
@@ -1163,7 +1178,7 @@ function TaskDrawerConnected({
   onToggleDone: (task: Task) => void
 }) {
   const can = useCan()
-  const { adminOverride } = useWorkspace()
+  const { adminOverride, canAdminOverride } = useWorkspace()
   const timer = useTimerContext()
   // The footer button acts on this task only. A timer running on some other
   // task still reads as "Start timer" here, and starting moves it across.
@@ -1235,8 +1250,8 @@ function TaskDrawerConnected({
       key: 'project',
       label: 'Project',
       value: task.project?.name ?? 'No project',
-      disabled: true,
-      onOpen: () => undefined,
+      disabled: !can('tasks.edit'),
+      onOpen: (anchor) => onOpenMenu('project', anchor, [task.id]),
     },
   ]
 
@@ -1325,22 +1340,9 @@ function TaskDrawerConnected({
       timerBusy={timer.busy}
       canTrackTime={can('time.track')}
       onToggleTimer={() => void (timerRunning ? timer.stop() : timer.start(task.id))}
+      canManageFiles={can('tasks.attachments')}
+      filesAdminOverride={adminOverride && canAdminOverride}
+      onFilesChanged={async () => { await load(); await onReload() }}
     />
   )
-}
-
-/** Short relative time — the drawer has no room for a full timestamp. */
-function relativeTime(value: string | null | undefined): string {
-  if (!value) return ''
-  const at = new Date(value).getTime()
-  if (Number.isNaN(at)) return ''
-  const minutes = Math.round((Date.now() - at) / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.round(hours / 24)
-  if (days === 1) return 'yesterday'
-  if (days < 7) return `${days}d ago`
-  return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

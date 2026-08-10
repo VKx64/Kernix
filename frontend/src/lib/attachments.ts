@@ -46,6 +46,22 @@ export function fileKind(mime: string): 'image' | 'video' | 'audio' | 'pdf' | 'f
   return 'file'
 }
 
+/** Short relative time — used anywhere a full timestamp would not fit. */
+export function relativeTime(value: string | null | undefined): string {
+  if (!value) return ''
+  const at = new Date(value).getTime()
+  if (Number.isNaN(at)) return ''
+  const minutes = Math.round((Date.now() - at) / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days === 1) return 'yesterday'
+  if (days < 7) return `${days}d ago`
+  return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export async function uploadTaskAttachments(taskId: EntityId, files: File[], adminOverride = false): Promise<TaskAttachment[]> {
   const form = new FormData()
   files.forEach((file) => form.append('files[]', file))
