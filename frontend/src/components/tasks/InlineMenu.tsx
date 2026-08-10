@@ -80,7 +80,13 @@ export function InlineMenu({
         className="pointer-events-none fixed"
         style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
       />
-      <DropdownMenuContent align="start" sideOffset={4} className="min-w-[212px] p-[5px]">
+      {/*
+       * The menu is portalled to the body, so it competes on z-index with
+       * whatever opened it. It has to outrank the overlays it can be opened
+       * from — a menu anchored inside the creation modal renders behind it
+       * otherwise.
+       */}
+      <DropdownMenuContent align="start" sideOffset={4} className="z-[80] min-w-[212px] p-[5px]">
         {title && <DropdownMenuLabel className="px-2.5 pt-[7px] pb-[5px] text-label uppercase text-label-fg">{title}</DropdownMenuLabel>}
         {children}
         {items.map((item) => (
