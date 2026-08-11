@@ -7,8 +7,10 @@ use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserInvitation;
+use App\Models\Workspace;
 use App\Support\SingleClient;
 use App\Support\UserIdentity;
+use App\Support\WorkspaceProvisioner;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -77,11 +79,17 @@ class InvitationAcceptanceController extends ApiController
             abort_unless($invitation, 410, 'This invitation is invalid or no longer available.');
             $this->assertAvailable($invitation);
             [$role, $projects, $projectIds] = $this->activeDependencies($invitation, true);
+            $workspace = $this->invitedWorkspace($role);
 
             $this->assertIdentityAvailable($data['username'], 'username');
             $this->assertIdentityAvailable($invitation->email, 'email');
 
-            $user = User::create([
+            // The invite link is opened while signed out, so there is no current
+            // workspace for the automatic assignment in User::booted() to read;
+            // left to itself it would drop the account into the lowest-id
+            // workspace instead of the one that invited them. The invitation's
+            // role carries the right workspace, so join through it explicitly.
+            $user = User::withoutAutomaticWorkspace(fn (): User => User::create([
                 'role_id' => $role->id,
                 'username' => $data['username'],
                 'password_hash' => Hash::make($data['password']),
@@ -89,7 +97,8 @@ class InvitationAcceptanceController extends ApiController
                 'last_name' => (string) ($data['last_name'] ?? ''),
                 'imagic_email' => $invitation->email,
                 'status' => 'active',
-            ]);
+            ]));
+            WorkspaceProvisioner::join($workspace, $user, $role);
             if ($projectIds !== []) {
                 $user->projects()->attach($projectIds, ['assigned_by' => $invitation->invited_by]);
             }
@@ -142,7 +151,7 @@ class InvitationAcceptanceController extends ApiController
     /** @return array{0: Role, 1: Collection<int, Project>, 2?: array<int, int>} */
     private function activeDependencies(UserInvitation $invitation, bool $lock = false): array
     {
-        $roleQuery = Role::query()->whereKey($invitation->role_id);
+        $roleQuery = Role::acrossWorkspaces()->whereKey($invitation->role_id);
         if ($lock) {
             $roleQuery->lockForUpdate();
         }
@@ -170,6 +179,20 @@ class InvitationAcceptanceController extends ApiController
         abort_if($projects->count() !== count($projectIds), 410, 'This invitation is invalid or no longer available.');
 
         return [$role, $projects, $projectIds];
+    }
+
+    /**
+     * The workspace the invitation belongs to. An invitation carries no
+     * workspace of its own, so it is read off the role it grants.
+     */
+    private function invitedWorkspace(Role $role): Workspace
+    {
+        $workspace = $role->workspace_id
+            ? Workspace::query()->whereKey($role->workspace_id)->first()
+            : null;
+        abort_unless($workspace, 410, 'This invitation is invalid or no longer available.');
+
+        return $workspace;
     }
 
     private function assertIdentityAvailable(string $identity, string $field): void
