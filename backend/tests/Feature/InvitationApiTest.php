@@ -9,6 +9,8 @@ use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\UserInvitation;
+use App\Support\CurrentWorkspace;
+use App\Support\WorkspaceProvisioner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -178,6 +180,51 @@ class InvitationApiTest extends TestCase
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'invitation.accept',
             'entity_id' => $invitation->id,
+            'user_id' => $user->id,
+        ]);
+    }
+
+    public function test_acceptance_joins_the_inviting_workspace_not_the_lowest_numbered_one(): void
+    {
+        // The invite link is opened signed out, so nothing in the request says
+        // which tenant it belongs to. With a second workspace in play, falling
+        // back to the lowest id would land the account in the seeded workspace
+        // instead of the one that invited them.
+        $second = WorkspaceProvisioner::provision($this->admin, 'Second workspace');
+        $this->assertGreaterThan(1, $second->id);
+        Sanctum::actingAs($this->admin->fresh());
+
+        [$role, $projects] = $this->workspace();
+        $this->assertSame($second->id, (int) $role->workspace_id);
+
+        $token = $this->postJson('/api/invitations', $this->payload(
+            'tenant@example.test',
+            $role,
+            $projects,
+        ))->assertCreated()->json('data.token');
+
+        // Signed out, the way the link is really opened: no session, so nothing
+        // resolves a current workspace for the acceptance to inherit.
+        Auth::forgetGuards();
+        app()->forgetInstance('request');
+        CurrentWorkspace::reset();
+
+        $this->postJson("/api/invitations/{$token}/accept", [
+            'first_name' => 'Tenant',
+            'username' => 'tenant-member',
+            'password' => 'SafePassword123!',
+            'password_confirmation' => 'SafePassword123!',
+        ])->assertCreated();
+
+        $user = User::query()->where('username', 'tenant-member')->firstOrFail();
+        $this->assertSame($second->id, (int) $user->active_workspace_id);
+        $this->assertDatabaseHas('workspace_user', [
+            'workspace_id' => $second->id,
+            'user_id' => $user->id,
+            'role_id' => $role->id,
+        ]);
+        $this->assertDatabaseMissing('workspace_user', [
+            'workspace_id' => 1,
             'user_id' => $user->id,
         ]);
     }
