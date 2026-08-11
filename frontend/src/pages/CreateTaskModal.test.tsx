@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { CreateTaskModal } from './CreateTaskModal'
@@ -222,6 +222,30 @@ describe('CreateTaskModal', () => {
       description: 'Helpful context',
       estimated_minutes: 90,
     }, [])
+  })
+
+  it('sets the due date from the calendar and submits the day that was clicked', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal()
+
+    await actor.type(title(), 'Ship campaign')
+    await openDetails(actor)
+
+    await actor.click(screen.getByRole('button', { name: 'Choose a due date' }))
+    const grid = await screen.findByRole('grid')
+    const cell = within(grid)
+      .getAllByRole('gridcell')
+      .find((node) => node.dataset.outside === undefined && within(node).queryByRole('button')?.textContent === '15')
+    if (!cell) throw new Error('No selectable 15th in the due date calendar.')
+    await actor.click(within(cell).getByRole('button'))
+
+    const picked = cell.dataset.day as string
+    // The typed field and the calendar are two ways into one value, so the
+    // input has to show what was clicked rather than keeping its own copy.
+    await waitFor(() => expect(screen.getByLabelText('Due date')).toHaveValue(picked))
+
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ due_date: picked }), [])
   })
 
   it('does not offer what the user lacks permission to set', async () => {

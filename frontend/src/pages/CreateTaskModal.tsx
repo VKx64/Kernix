@@ -8,9 +8,12 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { File, FileImage, FileVideo, Music, Trash2, X } from 'lucide-react'
+import { CalendarIcon, File, FileImage, FileVideo, Music, Trash2, X } from 'lucide-react'
+import { fromIsoDate, toIsoDate } from '@/components/date-picker'
 import { InlineMenu, type InlineMenuItem, type InlineMenuState } from '@/components/tasks/InlineMenu'
 import { Monogram, initialsOf } from '@/components/kernix/monogram'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { displayName, fieldLabel } from '../lib/api'
 import { MAX_ATTACHMENTS_PER_UPLOAD, MAX_ATTACHMENT_BYTES, fileKind, formatBytes, rejectionReason } from '../lib/attachments'
@@ -712,7 +715,11 @@ export function CreateTaskModal({
                   )}
                 </FieldRow>
               )}
-              <FieldRow label="Due" htmlFor="capture-due">
+              <FieldRow
+                label="Due"
+                htmlFor="capture-due"
+                action={<DueCalendar value={dueDate} onPick={(next) => setField('due', 'due_date', next)} />}
+              >
                 <input
                   id="capture-due"
                   aria-label="Due date"
@@ -988,6 +995,45 @@ export function CreateTaskModal({
  * One line of the detail panel: a 62px label gutter and a 32px row whose whole
  * width is the hit target, so a value opens its menu without aiming at the text.
  */
+/**
+ * The calendar behind the Due row. The typed field stays: a date is usually
+ * quicker to type than to click to, and the capture line sets it from phrases
+ * like "tomorrow" too. This is for the times you want to see the month.
+ *
+ * The popover is portalled to the body, where it competes on z-index with the
+ * modal it was opened from — the same reason the inline menu carries one.
+ */
+function DueCalendar({ value, onPick }: { value: string; onPick: (value: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const selected = fromIsoDate(value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Choose a due date"
+          className="flex size-6 flex-none items-center justify-center rounded-sm text-t3 hover:bg-line-soft hover:text-t1"
+        >
+          <CalendarIcon className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="z-[80] w-auto p-0">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected}
+          autoFocus
+          onSelect={(date) => {
+            onPick(date ? toIsoDate(date) : '')
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function FieldRow({
   label,
   value,
@@ -995,6 +1041,7 @@ function FieldRow({
   htmlFor,
   readOnly = false,
   onOpen,
+  action,
   children,
 }: {
   label: string
@@ -1003,6 +1050,8 @@ function FieldRow({
   htmlFor?: string
   readOnly?: boolean
   onOpen?: (event: MouseEvent<HTMLElement>) => void
+  /** A control at the end of the row. Sits outside the label, so clicking it does not reach the field. */
+  action?: ReactNode
   children?: ReactNode
 }) {
   const body = (
@@ -1025,6 +1074,15 @@ function FieldRow({
       >
         {body}
       </button>
+    )
+  }
+
+  if (action) {
+    return (
+      <div className="-mx-[9px] flex h-8 items-center gap-[9px] rounded-md px-[9px]">
+        <label htmlFor={htmlFor} className="flex min-w-0 flex-1 items-center gap-[9px]">{body}</label>
+        {action}
+      </div>
     )
   }
 
