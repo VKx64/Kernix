@@ -42,7 +42,7 @@ import { api, displayName, fieldLabel, unwrap } from '../lib/api'
 import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
 import { isAdministrator, useCan } from '../lib/permissions'
 import { taskDueDate, taskLoggedMinutes, taskProjectId, taskStatusValue, taskUrgencyValue } from '../lib/taskSignals'
-import { useTaskFolderCatalog } from '../lib/useTaskFolders'
+import { folderTree, useTaskFolderCatalog } from '../lib/useTaskFolders'
 import { useTaskLookups } from '../lib/useTaskLookups'
 import type { ApiEnvelope, EntityId, EstimateRequest, FieldValue, FormPayload, Note, Subtask, Task, TaskWorkRequest, UserSummary } from '../types/api'
 
@@ -256,7 +256,7 @@ export function TaskDetailPage() {
     ...(can('tasks.edit') ? [
       { name: 'title', label: 'Title', required: true, wide: true },
       { name: 'project_id', label: 'Project', type: 'select' as const, required: true, options: lookups.projects.map((project) => ({ label: project.name, value: project.id })), clearOnChange: ['task_folder_id'] },
-      { name: 'task_folder_id', label: 'Folder', type: 'select' as const, disabled: editProjectId === '' || (detailFolderCatalog.loading && detailFolders.length === 0), options: detailFolders.map((folder) => ({ label: folder.name, value: folder.id })), help: editProjectId === '' ? 'Choose a project to see its folders.' : detailFolderCatalog.loading && detailFolders.length === 0 ? 'Loading project folders…' : detailFolderCatalog.error ? 'Project folders could not be loaded.' : detailFolders.length ? 'Leave blank to keep the task Ungrouped.' : 'This project has no named folders yet.' },
+      { name: 'task_folder_id', label: 'Folder', type: 'select' as const, disabled: editProjectId === '' || (detailFolderCatalog.loading && detailFolders.length === 0), options: folderTree(detailFolders).map((node) => ({ label: node.path, value: node.folder.id })), help: editProjectId === '' ? 'Choose a project to see its folders.' : detailFolderCatalog.loading && detailFolders.length === 0 ? 'Loading project folders…' : detailFolderCatalog.error ? 'Project folders could not be loaded.' : detailFolders.length ? 'Leave blank to keep the task Ungrouped.' : 'This project has no named folders yet.' },
     ] : []),
     ...(can('tasks.assign') ? [{ name: 'assignee_user_id', label: 'Assignee', type: 'select' as const, options: lookups.users.map((person) => ({ label: displayName(person), value: person.id })) }] : []),
     // Complete is reached by submitting proof, so it is not offered here.

@@ -6,6 +6,7 @@ import { ProjectTabStrip } from '@/components/forms/ProjectTabStrip'
 import { MetricTile } from '@/components/kernix/metric-tile'
 import { PanelSection } from '@/components/kernix/panel-section'
 import { urgencyRail } from '@/components/kernix/rail'
+import { ProjectFoldersPanel } from '@/components/tasks/ProjectFoldersPanel'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, displayName, unwrap } from '@/lib/api'
@@ -148,6 +149,8 @@ export function ProjectDetailPage() {
               })}
             </PanelSection>
           )}
+
+          {tab === 'tasks' && can('tasks.view') && <ProjectFoldersPanel projectId={project.id} />}
 
           {(tab === 'overview' || tab === 'team') && (
             <PanelSection label="Team" empty={!project.team?.length && 'Nobody is assigned yet.'}>

@@ -8,6 +8,74 @@ export function folderSort(folder: TaskFolder) {
   return folder.sortOrder ?? folder.sort_order ?? 0
 }
 
+export function folderParentId(folder: TaskFolder): string {
+  const parent = folder.parentId ?? folder.parent_id ?? null
+  return parent === null || parent === undefined ? '' : String(parent)
+}
+
+export type FolderNode = { folder: TaskFolder; depth: number; path: string }
+
+/**
+ * A flat list in tree order, each entry carrying how deep it sits.
+ *
+ * The API already returns parents before children, but a client that has
+ * inserted a folder locally, or one reading a cached list, cannot rely on
+ * that — so the order is rebuilt here rather than trusted. A folder whose
+ * parent is missing or forms a cycle is appended at the top level instead of
+ * being dropped, because a folder nobody can see is a folder nobody can fix.
+ */
+export function folderTree(folders: TaskFolder[]): FolderNode[] {
+  const byParent = new Map<string, TaskFolder[]>()
+  folders.forEach((folder) => {
+    const key = folderParentId(folder)
+    byParent.set(key, [...(byParent.get(key) ?? []), folder])
+  })
+  byParent.forEach((group) => group.sort((left, right) => folderSort(left) - folderSort(right) || left.name.localeCompare(right.name)))
+
+  const nodes: FolderNode[] = []
+  const seen = new Set<string>()
+  const walk = (parentKey: string, depth: number, prefix: string) => {
+    ;(byParent.get(parentKey) ?? []).forEach((folder) => {
+      const id = String(folder.id)
+      if (seen.has(id)) return
+      seen.add(id)
+      const path = prefix ? `${prefix} / ${folder.name}` : folder.name
+      nodes.push({ folder, depth, path })
+      walk(id, depth + 1, path)
+    })
+  }
+  walk('', 0, '')
+
+  folders.forEach((folder) => {
+    if (seen.has(String(folder.id))) return
+    seen.add(String(folder.id))
+    nodes.push({ folder, depth: 0, path: folder.name })
+  })
+
+  return nodes
+}
+
+/** Ids of everything below a folder, for guarding a move against its own subtree. */
+export function folderDescendantIds(folders: TaskFolder[], folderId: EntityId): Set<string> {
+  const byParent = new Map<string, TaskFolder[]>()
+  folders.forEach((folder) => {
+    const key = folderParentId(folder)
+    byParent.set(key, [...(byParent.get(key) ?? []), folder])
+  })
+  const ids = new Set<string>()
+  const queue = [String(folderId)]
+  while (queue.length) {
+    const current = queue.shift() as string
+    ;(byParent.get(current) ?? []).forEach((child) => {
+      const id = String(child.id)
+      if (ids.has(id)) return
+      ids.add(id)
+      queue.push(id)
+    })
+  }
+  return ids
+}
+
 /**
  * Task folders, per project, fetched lazily and cached.
  *

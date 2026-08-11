@@ -24,6 +24,7 @@ import {
   suggestAssigneeUserId,
 } from '../lib/taskCapture'
 import { dueMeta, statusColor, urgencyColor } from '../lib/taskSignals'
+import { folderTree } from '../lib/useTaskFolders'
 import type { EntityId, FieldValue, Project, Task, TaskFolder, UserSummary } from '../types/api'
 
 /**
@@ -529,11 +530,11 @@ export function CreateTaskModal({
           title: 'Folder',
           items: [
             { key: '', label: 'Ungrouped', onSelect: () => pick('folder', 'task_folder_id')('') },
-            ...folders.map((folder) => ({
-              key: String(folder.id),
-              label: folder.name,
-              hint: String(folder.id) === folderId ? '✓' : undefined,
-              onSelect: () => pick('folder', 'task_folder_id')(String(folder.id)),
+            ...folderTree(folders).map((node) => ({
+              key: String(node.folder.id),
+              label: node.path,
+              hint: String(node.folder.id) === folderId ? '✓' : undefined,
+              onSelect: () => pick('folder', 'task_folder_id')(String(node.folder.id)),
             })),
           ],
         }

@@ -55,7 +55,7 @@ import {
   type TaskSort,
 } from '@/lib/taskTriage'
 import { useTaskQueue } from '@/lib/useTaskQueue'
-import { useTaskFolderCatalog } from '@/lib/useTaskFolders'
+import { folderTree, useTaskFolderCatalog } from '@/lib/useTaskFolders'
 import { useTaskLookups } from '@/lib/useTaskLookups'
 import { cn } from '@/lib/utils'
 import type { ApiEnvelope, EntityId, FieldValue, Note, Subtask, Task, TaskFolder } from '@/types/api'
@@ -488,10 +488,12 @@ export function TasksTriagePage() {
         return {
           title: 'Move to folder',
           items: [
-            ...folders.map((folder) => ({
-              key: String(folder.id),
-              label: folder.name,
-              onSelect: () => applyAndClose({ task_folder_id: folder.id }, 'Moved'),
+            // The full path, not the leaf name: two branches may each hold a
+            // "Drafts", and a flat menu gives no other way to tell them apart.
+            ...folderTree(folders).map((node) => ({
+              key: String(node.folder.id),
+              label: node.path,
+              onSelect: () => applyAndClose({ task_folder_id: node.folder.id }, 'Moved'),
             })),
             {
               key: 'none',

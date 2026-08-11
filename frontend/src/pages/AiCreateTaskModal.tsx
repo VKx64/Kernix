@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EmptyState } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { api, unwrap } from '../lib/api'
+import { folderTree } from '../lib/useTaskFolders'
 import type { AiTaskGeneration, ApiEnvelope, EntityId, Project, TaskFolder } from '../types/api'
 
 const STATUS_COPY: Record<string, string> = {
@@ -153,7 +154,7 @@ export function AiCreateTaskModal({ open, projects, initialProjectId, onClose, o
                     </SelectTrigger>
                     <SelectContent aria-label="Folder (optional)">
                       <SelectItem value="__unset__">Ungrouped</SelectItem>
-                      {folders.map((folder) => <SelectItem key={folder.id} value={String(folder.id)}>{folder.name}</SelectItem>)}
+                      {folderTree(folders).map((node) => <SelectItem key={node.folder.id} value={String(node.folder.id)}>{node.path}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

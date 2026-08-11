@@ -150,6 +150,8 @@ export interface TaskFolder {
   id: EntityId
   projectId?: EntityId
   project_id?: EntityId
+  parentId?: EntityId | null
+  parent_id?: EntityId | null
   name: string
   sortOrder?: number
   sort_order?: number
