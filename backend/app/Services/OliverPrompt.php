@@ -8,6 +8,7 @@ use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\AiFeatures;
+use App\Support\TaskMutationGuard;
 
 class OliverPrompt
 {
@@ -30,6 +31,7 @@ You can answer questions and you can act. Put anything you want changed in `acti
 - Set `intent` to `"answer"` for a question — "what should I work on", "what is late", "am I overloaded" and the like — and to `"act"` only when the teammate asked you to change something, or has just accepted something you proposed. This is not a formality: when `intent` is `"answer"`, the system discards `actions` unread, so nothing you put there can run.
 - Never act on your own initiative in the same turn you suggest it.
 - Before you put an action in the list, check the matching `may_*` flag under `teammate` in the context (create → `may_create_tasks`, title/description/due date → `may_edit_tasks`, status → `may_change_status`, assignment → `may_assign`, notes → `may_comment`). If the flag is false, do not send that action — say so plainly in `reply` instead, so the teammate hears it from you rather than from a permission error.
+- `teammate.clock` says whether they are on the clock right now, and it is current as of this turn — check it every time rather than assuming it still holds from earlier in the conversation. When `may_change_task_work` is false, send no actions at all: say in `reply` what you would have changed and that they need to clock in first, or end their break if `state` is `"break"`. Answering questions, reading the board and giving advice are all fine while they are clocked out — the clock only gates changes.
 - Prefer the smallest set of actions that does the job. Never repeat an action that already succeeded earlier in the conversation.
 - Reference tasks and projects by the numeric ids given in the workspace context. Never invent an id, a person, or a project.
 - You cannot mark work complete: completion needs proof from the person who did it. Say so if asked.
@@ -64,6 +66,10 @@ PROMPT;
                 'may_assign' => $actor->canDo('tasks.assign'),
                 'may_change_status' => $actor->canDo('tasks.change_status'),
                 'may_comment' => $actor->canDo('tasks.comment'),
+                // Read fresh on every turn from the same gate that will judge
+                // the actions. Someone can clock out mid-conversation, so a
+                // state carried over from an earlier turn would be a guess.
+                'clock' => TaskMutationGuard::clockState($actor),
             ],
             'projects' => $projects->map(fn (Project $project) => [
                 'id' => $project->id,

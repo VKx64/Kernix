@@ -34,6 +34,45 @@ class TaskMutationGuard
         );
     }
 
+    /**
+     * What the clock gate would decide for this person, without throwing.
+     *
+     * Anything that needs to *describe* the gate rather than apply it — telling
+     * the teammate why a change will be refused before attempting it — reads it
+     * from here, so the description and the enforcement can never drift apart.
+     *
+     * @return array{state: 'working'|'break'|'clocked_out', may_change_task_work: bool, since: ?string}
+     */
+    public static function clockState(User $user): array
+    {
+        $session = self::openSession($user);
+        $onBreak = (bool) $session?->breaks->isNotEmpty();
+
+        return [
+            'state' => ! $session ? 'clocked_out' : ($onBreak ? 'break' : 'working'),
+            'may_change_task_work' => (bool) $session && ! $onBreak,
+            'since' => optional($session?->clock_in_at)->toIso8601String(),
+        ];
+    }
+
+    /**
+     * The session the gate judges by. Deliberately narrower than a plain "not
+     * clocked out": a session left open longer than a day is stale rather than
+     * current, and the small forward window tolerates a clock skewed ahead of
+     * the server.
+     */
+    private static function openSession(User $user): ?TimeSession
+    {
+        TimeSessionCleanup::closeStale($user->id);
+
+        return TimeSession::with(['breaks' => fn ($breaks) => $breaks->whereNull('end_at')])
+            ->where('user_id', $user->id)
+            ->whereNull('clock_out_at')
+            ->whereBetween('clock_in_at', [now()->subDay(), now()->addMinutes(5)])
+            ->latest('clock_in_at')
+            ->first();
+    }
+
     public static function enforceUser(User $user, bool $override = false, ?Task $task = null, bool $checkAssignment = true): void
     {
         if ($task?->archived_at) {
@@ -43,13 +82,7 @@ class TaskMutationGuard
             ], 409));
         }
 
-        TimeSessionCleanup::closeStale($user->id);
-        $session = TimeSession::with(['breaks' => fn ($breaks) => $breaks->whereNull('end_at')])
-            ->where('user_id', $user->id)
-            ->whereNull('clock_out_at')
-            ->whereBetween('clock_in_at', [now()->subDay(), now()->addMinutes(5)])
-            ->latest('clock_in_at')
-            ->first();
+        $session = self::openSession($user);
 
         if ($session?->breaks->isNotEmpty()) {
             throw new HttpResponseException(response()->json([

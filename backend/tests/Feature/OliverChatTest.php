@@ -183,12 +183,95 @@ class OliverChatTest extends TestCase
         $this->assertSame(0, OliverAction::query()->count());
     }
 
+    public function test_the_clock_state_reaches_the_model_and_follows_a_change_made_mid_conversation(): void
+    {
+        // Clocked in by setUp, so the first turn sees a working teammate.
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'What is on my plate?'])->assertOk();
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('working', $clock['state']);
+        $this->assertTrue($clock['may_change_task_work']);
+        $this->assertNotNull($clock['since']);
+
+        // Clocking out between turns has to show up on the next one rather than
+        // being remembered from the first.
+        TimeSession::query()->where('user_id', $this->admin->id)->update(['clock_out_at' => now()]);
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'Still there?'])->assertOk();
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('clocked_out', $clock['state']);
+        $this->assertFalse($clock['may_change_task_work']);
+    }
+
+    public function test_a_teammate_on_a_break_is_described_as_such_rather_than_as_clocked_out(): void
+    {
+        $session = TimeSession::query()->where('user_id', $this->admin->id)->firstOrFail();
+        $session->breaks()->create(['start_at' => now()]);
+
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'Anything urgent?'])->assertOk();
+
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('break', $clock['state']);
+        $this->assertFalse($clock['may_change_task_work']);
+    }
+
+    public function test_the_context_agrees_with_what_the_gate_would_actually_do(): void
+    {
+        // The whole point of reading both from one place: a turn that reports
+        // the teammate may change work must be a turn whose actions survive.
+        TimeSession::query()->where('user_id', $this->admin->id)->update(['clock_out_at' => now()]);
+        $context = $this->captureContext('Adding that task.', [
+            $this->action('create_task', ['project_id' => $this->project->id, 'title' => 'Blocked by the clock']),
+        ], 'act');
+
+        $response = $this->postJson('/api/oliver/messages', ['body' => 'Add a task for the reshoot'])->assertOk();
+
+        $this->assertFalse($context()['teammate']['clock']['may_change_task_work']);
+        $this->assertSame('refused', $response->json('data.message.actions.0.status'));
+        $this->assertDatabaseMissing('tasks', ['title' => 'Blocked by the clock']);
+    }
+
     public function test_oliver_is_unavailable_while_the_feature_is_switched_off(): void
     {
         SystemSetting::query()->firstOrFail()->update([AiFeatures::enabledColumn(AiFeatures::OLIVER) => false]);
 
         $this->getJson('/api/oliver')->assertOk()->assertJsonPath('data.available', false);
         $this->postJson('/api/oliver/messages', ['body' => 'Hello?'])->assertStatus(409);
+    }
+
+    /**
+     * Stands in for the model and hands back the context it was given.
+     *
+     * The context is what the model reasons from, so asserting on the reply
+     * would only prove the stub said what it was told to. Returns a closure
+     * because the call has not happened yet when this is set up.
+     *
+     * @param  array<int, array<string, mixed>>  $actions
+     * @return callable(): array<string, mixed>
+     */
+    private function captureContext(string $reply = 'Noted.', array $actions = [], string $intent = 'answer'): callable
+    {
+        $seen = null;
+        $client = Mockery::mock(OpenRouterClient::class);
+        $client->shouldReceive('structured')
+            ->once()
+            ->andReturnUsing(function (...$arguments) use (&$seen, $reply, $actions, $intent): array {
+                $seen = json_decode((string) $arguments[2], true, 512, JSON_THROW_ON_ERROR);
+
+                return [
+                    'output' => ['reply' => $reply, 'intent' => $intent, 'actions' => $actions],
+                    'cost_usd' => 0.0,
+                    'actual_model' => 'test/model',
+                ];
+            });
+        $this->app->instance(OpenRouterClient::class, $client);
+
+        return function () use (&$seen): array {
+            $this->assertIsArray($seen, 'The model was never called, so no context was captured.');
+
+            return $seen;
+        };
     }
 
     /**
