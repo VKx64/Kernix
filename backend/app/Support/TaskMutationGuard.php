@@ -83,7 +83,7 @@ class TaskMutationGuard
         if (! $task || $user->isAdmin() || $user->canDo('tasks.work_unassigned')) {
             return;
         }
-        if ((int) $task->assignee_user_id === (int) $user->id) {
+        if ($task->hasAssignee($user)) {
             return;
         }
         // A task defaults to the project's manager as assignee, so whoever
