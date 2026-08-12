@@ -74,10 +74,7 @@ function rememberProjectId(projectId: string) {
 export type CreateTaskPayload = Record<string, unknown> & {
   project_id?: EntityId
   title: string
-  /**
-   * A task belongs to one person, so several owners means several tasks: the
-   * page creates one copy per id. Absent leaves the owner to the server.
-   */
+  /** Everyone the task is on, in the order they were picked. Absent leaves the owner to the server. */
   assignee_user_ids?: string[]
   subtasks?: Array<{ title: string }>
 }
@@ -334,9 +331,9 @@ export function CreateTaskModal({
 
   /**
    * Assignee is the one field that holds a list, so it toggles rather than
-   * replaces — the menu stays open while several people are picked. Passing an
-   * empty list is "Unassigned", which is a choice too and still marks the field
-   * as touched so the text stops overwriting it.
+   * replaces — the menu stays open while several people are put on the task.
+   * Passing an empty list is "Unassigned", which is a choice too and still
+   * marks the field as touched so the text stops overwriting it.
    */
   const setAssignees = (next: string[]) => {
     dismissErrors()
@@ -374,7 +371,7 @@ export function CreateTaskModal({
     }
     if (parsed.assigneeUserIds) {
       // Mentions add to whoever is already on the task rather than replacing
-      // them: "@ana" then "@marco" is two owners, not a correction.
+      // them: "@ana" then "@marco" puts both on it, it is not a correction.
       const merged = dirty.assignee ? draft.assignee_user_ids : resolved.assignee ?? NO_ASSIGNEES
       facts.assignee = [...merged, ...parsed.assigneeUserIds.filter((id) => !merged.includes(id))]
       cleared.assignee = false
@@ -594,7 +591,7 @@ export function CreateTaskModal({
         // select — closing after each name would make picking three people
         // three trips.
         return {
-          title: 'Assignee · one task each',
+          title: 'Assignee',
           items: [
             {
               key: '',
@@ -1030,7 +1027,7 @@ export function CreateTaskModal({
           <span className="flex-1" />
 
           <span
-            title="Type @owner for the assignee — repeat it to hand the same task to several people, one copy each. !high sets urgency, #project files it, and a date like Friday or in 3 days sets the due date."
+            title="Type @owner for the assignee — repeat it to put several people on the task. !high sets urgency, #project files it, and a date like Friday or in 3 days sets the due date."
             className="mr-0.5 grid size-[26px] cursor-help place-items-center rounded-full text-t4 hover:bg-[#1f1f24] hover:text-t1"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1057,8 +1054,7 @@ export function CreateTaskModal({
               canCreate ? 'bg-t1 text-bg hover:brightness-[1.08]' : 'pointer-events-none bg-[#1f1f24] text-t4',
             )}
           >
-            {/* Several owners means several tasks, and that has to be legible before the click, not after it. */}
-            {busy ? 'Creating…' : assignees.length > 1 ? `Create ${assignees.length} tasks` : 'Create'}
+            {busy ? 'Creating…' : 'Create'}
             <span aria-hidden="true" className="font-mono text-[10px] opacity-50">↵</span>
           </button>
         </div>

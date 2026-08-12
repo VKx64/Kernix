@@ -117,7 +117,7 @@ describe('CreateTaskModal', () => {
     }, [])
   })
 
-  it('hands one task to each of several people picked from the menu', async () => {
+  it('puts several people on the task from one trip through the menu', async () => {
     const actor = userEvent.setup()
     const { onSubmit } = renderModal()
 
@@ -131,10 +131,8 @@ describe('CreateTaskModal', () => {
     await actor.keyboard('{Escape}')
 
     expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Casey Worker +1')
-    // What is about to happen is on the button, not left to be discovered after.
-    const create = await screen.findByRole('button', { name: 'Create 2 tasks' })
 
-    await actor.click(create)
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Ship campaign', assignee_user_ids: ['9', '12'] }),
       [],
