@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { Inbox, Plus, Search, Sparkles } from 'lucide-react'
+import { ChevronLeft, Inbox, Plus, Search, Sparkles } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { EmptyState, ErrorBanner, Avatar } from '@/components/shared'
 import { ActionItemsBar, type ActionItem } from '@/components/messages/ActionItemsBar'
@@ -212,6 +212,17 @@ export function MessagesPage() {
     navigate(`/messages/${message.id}`)
   }, [navigate])
 
+  /**
+   * Which of the two panes a phone is on. The route decides it, not a piece of
+   * state: a conversation in the URL means the reader asked for it, so Back
+   * out of a conversation is the browser's own Back as well as the header's.
+   */
+  const reading = Boolean(messageId)
+
+  const backToInbox = useCallback(() => {
+    navigate({ pathname: '/messages', search: searchParams.toString() })
+  }, [navigate, searchParams])
+
   // J/K/R/X/Enter, ignored while the caret is in a field.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -404,8 +415,18 @@ export function MessagesPage() {
 
   return (
     <>
-      <div className="-mx-4 -mt-4 -mb-14 flex min-h-0 flex-1 md:-mx-7 md:-mt-[18px]">
-        <div className="flex w-[292px] flex-none flex-col border-r border-line-soft">
+      <div className="-mx-4 -mt-4 -mb-14 flex min-h-0 min-w-0 flex-1 md:-mx-7 md:-mt-[18px]">
+        <div
+          data-pane="inbox"
+          className={cn(
+            'w-full min-w-0 flex-none flex-col md:w-[292px] md:border-r md:border-line-soft',
+            // Two panes do not fit a phone, so the screen shows one of them: the
+            // inbox until a conversation is picked, then the conversation. Side
+            // by side below `md` is what put the placeholder pane half off the
+            // right edge with the list running underneath it.
+            reading ? 'hidden md:flex' : 'flex',
+          )}
+        >
           <div className="flex-none px-3.5 pt-[18px] pb-2.5">
             <div className="mb-3 flex items-center gap-2.5">
               <h1 className="flex-1 text-h1 text-title-strong">Messages</h1>
@@ -529,14 +550,27 @@ export function MessagesPage() {
           )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div data-pane="conversation" className={cn('min-w-0 flex-1 flex-col', reading ? 'flex' : 'hidden md:flex')}>
           {detailLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 text-body-sm text-t3">
               <Skeleton className="size-4 rounded-full" /> Opening conversation…
             </div>
           ) : selected ? (
             <>
-              <header className="flex flex-none items-center gap-3 border-b border-line-soft px-5 py-3.5">
+              {/* Wraps below `md`: the two AI chips and Mark read do not fit on
+                  one line next to a name at 390px, and squeezing them there
+                  leaves the name a few pixels wide. */}
+              <header className="flex flex-none flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3 md:flex-nowrap md:px-5 md:py-3.5">
+                {/* The list is the other half of this screen on a phone, and it
+                    is not on it while a conversation is open. */}
+                <button
+                  type="button"
+                  aria-label="Back to inbox"
+                  onClick={backToInbox}
+                  className="grid size-8 flex-none place-items-center rounded-[7px] text-t2 hover:bg-sidebar-accent hover:text-t1 md:hidden"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
                 <Avatar user={partner} className="size-8" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -552,19 +586,23 @@ export function MessagesPage() {
                   </div>
                   <span className="text-meta-sm text-t3">{task ? `Thread on ${task.title}` : 'Direct message'}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void toggleUnread()}
-                  className="h-[26px] flex-none rounded-[7px] px-2.5 text-meta text-t3 hover:bg-sidebar-accent hover:text-t1"
-                >
-                  {isUnread(selected) ? 'Mark read' : 'Mark unread'}
-                </button>
-                <AiChip busy={aiKind === 'summary'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('summary')}>
-                  {aiKind === 'summary' ? 'Summarising…' : 'Summarise'}
-                </AiChip>
-                <AiChip busy={aiKind === 'actions'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('actions')}>
-                  {aiKind === 'actions' ? 'Reading…' : 'Action items'}
-                </AiChip>
+                {/* `md:contents` dissolves this row above the breakpoint, so the
+                    desktop header stays the single line it has always been. */}
+                <div className="flex w-full items-center gap-2 md:contents">
+                  <button
+                    type="button"
+                    onClick={() => void toggleUnread()}
+                    className="h-[26px] flex-none rounded-[7px] px-2.5 text-meta text-t3 hover:bg-sidebar-accent hover:text-t1"
+                  >
+                    {isUnread(selected) ? 'Mark read' : 'Mark unread'}
+                  </button>
+                  <AiChip busy={aiKind === 'summary'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('summary')}>
+                    {aiKind === 'summary' ? 'Summarising…' : 'Summarise'}
+                  </AiChip>
+                  <AiChip busy={aiKind === 'actions'} disabled={Boolean(aiKind)} onClick={() => void runThreadAi('actions')}>
+                    {aiKind === 'actions' ? 'Reading…' : 'Action items'}
+                  </AiChip>
+                </div>
               </header>
 
               {detailError && <div className="px-5 pt-3"><ErrorBanner message={detailError} /></div>}
@@ -647,14 +685,22 @@ export function MessagesPage() {
               )}
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center p-6">
+            /* A conversation in the URL that produced nothing is a failed open,
+               not an idle pane — and on a phone the inbox is not on screen to
+               fall back to, so the way out has to be here. */
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+              {reading && detailError && <div className="w-full max-w-sm"><ErrorBanner message={detailError} /></div>}
               <EmptyState
                 icon={Inbox}
-                title="Select a conversation"
-                description="Pick one on the left, ask Oliver, or start a new conversation with someone."
-                action={can('tasks.comment')
-                  ? <Button onClick={() => setComposerOpen(true)}><Plus /> Start a conversation</Button>
-                  : undefined}
+                title={reading ? 'This conversation could not be opened' : 'Select a conversation'}
+                description={reading
+                  ? 'It may have been removed, or the request did not go through. Go back and pick another.'
+                  : 'Pick one on the left, ask Oliver, or start a new conversation with someone.'}
+                action={reading
+                  ? <Button variant="outline" onClick={backToInbox}>Back to inbox</Button>
+                  : can('tasks.comment')
+                    ? <Button onClick={() => setComposerOpen(true)}><Plus /> Start a conversation</Button>
+                    : undefined}
               />
             </div>
           )}
