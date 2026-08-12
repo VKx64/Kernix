@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Services\TaskMutationService;
 use App\Support\CurrentWorkspace;
 use App\Support\SingleClient;
+use App\Support\TaskAssigneeSync;
 use App\Support\TaskMutationGuard;
 use App\Support\TaskSignals;
 use App\Support\TaskStatuses;
@@ -37,7 +38,7 @@ class TaskController extends ApiController
         $request->validate(['view' => ['sometimes', 'nullable', Rule::in(self::VIEWS)]]);
 
         $base = $this->archived(Task::query()->with([
-            'project.client', 'folder', 'status', 'type', 'urgency', 'assignee',
+            'project.client', 'folder', 'status', 'type', 'urgency', 'assignee', 'assignees',
         ])->withCount([
             'subtasks',
             'subtasks as completed_subtasks_count' => fn ($subtasks) => $subtasks->whereNotNull('completed_at'),
@@ -50,7 +51,7 @@ class TaskController extends ApiController
                 ->orWhereHas('project', fn ($project) => $project->where('name', 'like', "%{$search}%")));
         }
         if ($request->boolean('mine')) {
-            $base->where('assignee_user_id', $request->user()->id);
+            $this->whereAssignedTo($base, $request->user()->id);
         }
         if ($request->boolean('urgent')) {
             $base->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', ['urgent', 'high']));
@@ -62,9 +63,9 @@ class TaskController extends ApiController
         }
         if ($request->filled('assignee_user_id')) {
             if (strtolower($request->string('assignee_user_id')->toString()) === 'none') {
-                $base->whereNull('assignee_user_id');
+                $this->whereUnassigned($base);
             } else {
-                $base->where('assignee_user_id', $request->integer('assignee_user_id'));
+                $this->whereAssignedTo($base, $request->integer('assignee_user_id'));
             }
         }
 
@@ -104,12 +105,36 @@ class TaskController extends ApiController
         $doneIds = TaskSignals::statusValueIdsForRoles(['done']);
         match ($view) {
             'all' => $query->whereNotIn('status_value_id', $doneIds),
-            'mine' => $query->whereNotIn('status_value_id', $doneIds)->where('assignee_user_id', $request->user()->id),
-            'unassigned' => $query->whereNotIn('status_value_id', $doneIds)->whereNull('assignee_user_id'),
+            'mine' => $this->whereAssignedTo($query->whereNotIn('status_value_id', $doneIds), $request->user()->id),
+            'unassigned' => $this->whereUnassigned($query->whereNotIn('status_value_id', $doneIds)),
             'done' => $query->whereIn('status_value_id', $doneIds),
             'triage' => $this->applyTriage($query, $doneIds),
             default => null,
         };
+    }
+
+    /**
+     * "Assigned to X" is pivot membership OR a matching `assignee_user_id` —
+     * the same union `Task::hasAssignee()` uses, and for the same reason: a
+     * bulk `Builder::update()` at an out-of-scope call site can set the
+     * column without ever touching the pivot, so the pivot alone cannot be
+     * trusted as complete. Expressed via `whereHas`/`whereDoesntHave` rather
+     * than a join: `viewCounts()` clones this query and calls `count()` per
+     * view, and `index()` paginates it — a join would inflate both for a
+     * task with more than one assignee. Soft-deleted users are excluded from
+     * the pivot side for free by `User`'s own global scope.
+     */
+    private function whereAssignedTo(Builder $query, int $userId): Builder
+    {
+        return $query->where(fn ($q) => $q
+            ->where('assignee_user_id', $userId)
+            ->orWhereHas('assignees', fn ($assignees) => $assignees->whereKey($userId)));
+    }
+
+    /** Unassigned means neither side of the union above resolves to anyone. */
+    private function whereUnassigned(Builder $query): Builder
+    {
+        return $query->whereNull('assignee_user_id')->whereDoesntHave('assignees');
     }
 
     /** @param array<int, int> $doneIds */
@@ -125,8 +150,7 @@ class TaskController extends ApiController
                 ->where('due_date', '<=', $today)
                 ->orWhereIn('status_value_id', $blockedIds)
                 ->orWhereIn('status_value_id', $reviewIds)
-                ->orWhere(fn ($unassignedUrgent) => $unassignedUrgent
-                    ->whereNull('assignee_user_id')
+                ->orWhere(fn ($unassignedUrgent) => $this->whereUnassigned($unassignedUrgent)
                     ->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', $urgentSlugs))));
     }
 
@@ -146,15 +170,21 @@ class TaskController extends ApiController
             ->where('status', 'active')
             ->whereNull('archived_at')
             ->value('id');
-        $data['assignee_user_id'] ??= $activeManager ?: $request->user()->id;
+        $assigneeIds = $this->resolveAssigneeIds($data);
+        if ($assigneeIds === null || $assigneeIds === []) {
+            // No explicit assignees supplied (including an explicit null
+            // scalar) — default to the project manager, or the actor.
+            $assigneeIds = [$activeManager ?: $request->user()->id];
+        }
         $pendingStatusValueId = $this->defaultValue('task_status', 'pending');
         $data += [
             'status_value_id' => $pendingStatusValueId,
             'type_value_id' => $this->defaultValue('task_type', 'task'),
             'urgency_value_id' => $this->defaultValue('task_urgency', 'normal'),
         ];
-        $task = DB::transaction(function () use ($request, $data, $subtaskDrafts, $pendingStatusValueId) {
+        $task = DB::transaction(function () use ($request, $data, $subtaskDrafts, $pendingStatusValueId, $assigneeIds) {
             $task = Task::create($data + ['actual_minutes' => 0, 'created_by' => $request->user()->id]);
+            TaskAssigneeSync::apply($task, $assigneeIds);
             foreach ($subtaskDrafts as $index => $subtaskDraft) {
                 $task->subtasks()->create([
                     'title' => $subtaskDraft['title'],
@@ -164,11 +194,14 @@ class TaskController extends ApiController
                     'created_by' => $request->user()->id,
                 ]);
             }
-            if ($task->assignee_user_id && (int) $task->assignee_user_id !== (int) $request->user()->id) {
-                $actor = trim($request->user()->first_name.' '.$request->user()->last_name) ?: $request->user()->username;
+            $actorName = trim($request->user()->first_name.' '.$request->user()->last_name) ?: $request->user()->username;
+            foreach ($assigneeIds as $assigneeId) {
+                if ((int) $assigneeId === (int) $request->user()->id) {
+                    continue;
+                }
                 $message = $task->notes()->create([
-                    'body' => "{$actor} assigned this task to you.",
-                    'assigned_user_id' => $task->assignee_user_id,
+                    'body' => "{$actorName} assigned this task to you.",
+                    'assigned_user_id' => $assigneeId,
                     'created_by' => $request->user()->id,
                     'is_message' => true,
                 ]);
@@ -177,7 +210,7 @@ class TaskController extends ApiController
 
             return $task;
         });
-        $this->audit($request, 'task.create', $task, $task->toArray());
+        $this->audit($request, 'task.create', $task, $task->toArray() + ['assignee_user_ids' => $assigneeIds]);
         if ($subtaskDrafts !== []) {
             foreach ($task->subtasks()->orderBy('sort_order')->orderBy('id')->get() as $subtask) {
                 $this->audit($request, 'task.subtask.create', $task, [
@@ -204,6 +237,10 @@ class TaskController extends ApiController
         TaskMutationGuard::enforce($request, $task);
         $this->withinClient($task);
         $data = $this->validated($request, true);
+        $assigneeIds = $this->resolveAssigneeIds($data);
+        if ($assigneeIds !== null) {
+            $data['assignee_user_ids'] = $assigneeIds;
+        }
         if (isset($data['project_id'])) {
             $this->assertProjectVisible((int) $data['project_id']);
         }
@@ -219,7 +256,10 @@ class TaskController extends ApiController
         );
         $this->assertCompletionIsProven($request, $task, $data);
         $before = $this->taskMutations->updateTask($task, $data, $request->user());
-        $this->audit($request, 'task.update', $task, ['before' => $before, 'after' => $task->getAttributes()]);
+        $this->audit($request, 'task.update', $task, [
+            'before' => $before,
+            'after' => $task->getAttributes() + ['assignee_user_ids' => $task->assignees()->pluck('users.id')->all()],
+        ]);
 
         return $this->data($this->present($task->fresh(), $request));
     }
@@ -292,7 +332,12 @@ class TaskController extends ApiController
             'type_value_id' => ['sometimes', 'nullable', $this->fieldValueRule('task_type')],
             'urgency_value_id' => ['sometimes', 'nullable', $this->fieldValueRule('task_urgency')],
             'due_date' => ['sometimes', 'nullable', 'date'],
-            'assignee_user_id' => ['sometimes', 'nullable', Rule::exists('users', 'id')->where('status', 'active')->whereNull('archived_at')->whereNull('deleted_at')],
+            // Membership + active/non-archived/workspace-scoping are checked
+            // explicitly in assertAssigneesValid(), which can express the
+            // workspace scope; Rule::exists cannot join workspace_user.
+            'assignee_user_id' => ['sometimes', 'nullable', 'integer'],
+            'assignee_user_ids' => ['sometimes', 'array'],
+            'assignee_user_ids.*' => ['integer'],
             'estimated_minutes' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:1000000'],
             'actual_minutes' => ['prohibited'],
             'subtasks' => [$partial ? 'prohibited' : 'sometimes', 'array', 'list', 'max:50'],
@@ -316,7 +361,7 @@ class TaskController extends ApiController
             $this->permission($request, 'tasks.change_status');
             $authorized = true;
         }
-        if (array_key_exists('assignee_user_id', $requested)) {
+        if (array_key_exists('assignee_user_id', $requested) || array_key_exists('assignee_user_ids', $requested)) {
             $this->permission($request, 'tasks.assign');
             $authorized = true;
         }
@@ -345,6 +390,66 @@ class TaskController extends ApiController
         }
 
         return false;
+    }
+
+    /**
+     * Accepts either the legacy scalar `assignee_user_id` or the array
+     * `assignee_user_ids` and coerces both into the array shape everything
+     * downstream expects. Both keys are removed from $data — neither is a
+     * real column write; `assignee_user_id` is a derived mirror maintained
+     * by `TaskAssigneeSync`, and `assignee_user_ids` isn't a column at all.
+     *
+     * Returns null when the caller touched neither key at all (a partial
+     * update that leaves assignment untouched). An explicit null scalar, or
+     * an explicit empty array, means "detach everyone" and returns [].
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<int, int>|null
+     */
+    private function resolveAssigneeIds(array &$data): ?array
+    {
+        $hasArray = array_key_exists('assignee_user_ids', $data);
+        $hasScalar = array_key_exists('assignee_user_id', $data);
+        if (! $hasArray && ! $hasScalar) {
+            return null;
+        }
+
+        $ids = $hasArray
+            ? array_values(array_unique(array_map('intval', $data['assignee_user_ids'])))
+            : ($data['assignee_user_id'] === null ? [] : [(int) $data['assignee_user_id']]);
+
+        unset($data['assignee_user_ids'], $data['assignee_user_id']);
+
+        if ($ids !== []) {
+            $this->assertAssigneesValid($ids);
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Active, non-archived, and — this is the security fix from the plan
+     * review — a member of the workspace the task itself is scoped to.
+     * Without this, attaching a foreign-workspace user as an assignee would
+     * grant them mutation rights through TaskMutationGuard::enforceAssignment.
+     *
+     * @param  array<int, int>  $userIds
+     */
+    private function assertAssigneesValid(array $userIds): void
+    {
+        $workspaceId = CurrentWorkspace::id();
+        $valid = User::query()
+            ->whereIn('id', $userIds)
+            ->where('status', 'active')
+            ->whereNull('archived_at')
+            ->when($workspaceId, fn ($query) => $query->inWorkspace($workspaceId))
+            ->count();
+
+        if ($valid !== count($userIds)) {
+            throw ValidationException::withMessages([
+                'assignee_user_ids' => ['Select an active user from this workspace.'],
+            ]);
+        }
     }
 
     /**
@@ -455,7 +560,7 @@ class TaskController extends ApiController
     private function present(Task $task, Request $request): Task
     {
         $relations = [
-            'project.client', 'project.status', 'project.manager', 'folder', 'status', 'type', 'urgency', 'assignee', 'creator',
+            'project.client', 'project.status', 'project.manager', 'folder', 'status', 'type', 'urgency', 'assignee', 'assignees', 'creator',
             'notes' => fn ($query) => $query->with(['author', 'assignedUser', 'attachments'])->latest(),
             'subtasks' => fn ($query) => $query->with(['status', 'assignee'])->orderBy('sort_order')->orderBy('id'),
             'attachments' => fn ($query) => $query->with('uploader')->orderByDesc('id'),
@@ -499,6 +604,16 @@ class TaskController extends ApiController
         $task->setRelation('project', $this->summaryRelation($this->projectSummary($task->project)));
         $task->setRelation('assignee', $this->summaryRelation($this->userSummary($task->assignee)));
         $task->setRelation('creator', $this->summaryRelation($this->userSummary($task->creator)));
+        // `task_assignees`, not `assignees`: BootstrapController already emits
+        // an unrelated `assignees` field (the selectable-user lookup list),
+        // and reusing the name on a per-task payload would be confusing for
+        // any consumer reading both shapes side by side. The `assignees`
+        // relation is unset below so it never leaks into the JSON body under
+        // its own name.
+        $task->setAttribute('task_assignees', $task->assignees->map(
+            fn (User $assignee) => collect($this->userSummary($assignee))
+        )->values());
+        $task->unsetRelation('assignees');
         $totals = [
             'taskEstimated' => (int) ($task->estimated_minutes ?? 0),
             'taskActual' => (int) ($task->actual_minutes ?? 0),
@@ -522,6 +637,10 @@ class TaskController extends ApiController
     {
         $task->setRelation('project', $this->summaryRelation($this->projectSummary($task->project)));
         $task->setRelation('assignee', $this->summaryRelation($this->userSummary($task->assignee)));
+        $task->setAttribute('task_assignees', $task->assignees->map(
+            fn (User $assignee) => collect($this->userSummary($assignee))
+        )->values());
+        $task->unsetRelation('assignees');
 
         return $task;
     }

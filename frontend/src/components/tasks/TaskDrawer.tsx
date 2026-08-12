@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { Check, ChevronLeft, ChevronRight, ExternalLink, SendHorizontal, Timer, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ExternalLink, SendHorizontal, Timer, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { LabelRow } from '@/components/kernix/label-row'
 import { Avatar } from '@/components/shared'
 import { TaskDrawerFiles } from '@/components/tasks/TaskDrawerFiles'
+import { TaskDrawerSubtasks } from '@/components/tasks/TaskDrawerSubtasks'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -74,6 +75,9 @@ export function TaskDrawer({
   canManageFiles,
   filesAdminOverride,
   onFilesChanged,
+  canCreateSubtasks,
+  subtasksAdminOverride,
+  onSubtasksChanged,
 }: {
   task: Task | null
   loading: boolean
@@ -102,6 +106,10 @@ export function TaskDrawer({
   canManageFiles: boolean
   filesAdminOverride?: boolean
   onFilesChanged: () => void | Promise<void>
+  /** Whether the viewer may add a subtask from the drawer. */
+  canCreateSubtasks: boolean
+  subtasksAdminOverride?: boolean
+  onSubtasksChanged: () => void | Promise<void>
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -121,7 +129,6 @@ export function TaskDrawer({
 
   const subtasks = task?.subtasks ?? []
   const attachments = task?.attachments ?? []
-  const doneSubtasks = subtasks.filter((subtask) => Boolean(subtask.completedAt ?? subtask.completed_at)).length
   const logged = formatMinutes(taskLoggedMinutes(task ?? ({} as Task)))
   const done = task ? isTaskDone(task) : false
 
@@ -233,45 +240,14 @@ export function TaskDrawer({
                 dragContainerRef={panelRef}
               />
 
-              {subtasks.length > 0 && (
-                <section className="flex flex-col gap-[9px]">
-                  <div className="flex items-center gap-2.5">
-                    <LabelRow>Checklist</LabelRow>
-                    <span className="font-mono text-[11px] text-label-fg">{doneSubtasks}/{subtasks.length}</span>
-                    <span className="h-0.5 flex-1 overflow-hidden rounded-full bg-rail">
-                      <span
-                        className="block h-full rounded-full bg-good"
-                        style={{ width: `${Math.round((doneSubtasks / subtasks.length) * 100)}%` }}
-                      />
-                    </span>
-                  </div>
-                  <div className="-mx-2 flex flex-col">
-                    {subtasks.map((subtask) => {
-                      const subtaskDone = Boolean(subtask.completedAt ?? subtask.completed_at)
-                      return (
-                        <button
-                          key={String(subtask.id)}
-                          type="button"
-                          onClick={() => onToggleSubtask(subtask)}
-                          className="flex items-center gap-[11px] rounded-[7px] p-2 text-left hover:bg-[#16161a]"
-                        >
-                          <span
-                            className={cn(
-                              'grid size-4 flex-none place-items-center rounded-full border-[1.5px] text-bg',
-                              subtaskDone ? 'border-good bg-good' : 'border-[#55555f]',
-                            )}
-                          >
-                            {subtaskDone && <Check className="size-2.5" strokeWidth={3.5} />}
-                          </span>
-                          <span className={cn('text-body-lg', subtaskDone ? 'text-t4 line-through' : 'text-[#a8a8b0]')}>
-                            {subtask.title}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </section>
-              )}
+              <TaskDrawerSubtasks
+                taskId={task.id}
+                subtasks={subtasks}
+                canManage={canCreateSubtasks}
+                adminOverride={subtasksAdminOverride}
+                onToggle={onToggleSubtask}
+                onCreated={onSubtasksChanged}
+              />
 
               <section className="flex flex-col gap-3.5">
                 <div className="flex items-center gap-2.5">

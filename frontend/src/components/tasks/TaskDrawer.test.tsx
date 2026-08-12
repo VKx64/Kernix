@@ -1,15 +1,24 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import type { ComponentProps } from 'react'
 import { TaskDrawer } from './TaskDrawer'
-import type { Task } from '../../types/api'
+import type { Subtask, Task } from '../../types/api'
+
+const apiPost = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return { ...actual, api: { ...actual.api, post: apiPost } }
+})
 
 /**
  * The task shown in the drawer already carries its attachments (the detail
  * fetch that feeds the drawer loads them alongside notes and subtasks), so
  * this only has to prove the drawer wires `task.attachments` and the file
  * permissions through to `TaskDrawerFiles`. `TaskDrawerFiles.test.tsx` covers
- * the FILES section's own layout rules in depth.
+ * the FILES section's own layout rules in depth, and `TaskDrawerSubtasks`
+ * covers the SUBTASKS section's own request handling the same way.
  */
 function baseTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -47,6 +56,8 @@ function renderDrawer(task: Task | null, overrides: Partial<ComponentProps<typeo
         onToggleTimer={() => {}}
         canManageFiles={false}
         onFilesChanged={() => {}}
+        canCreateSubtasks={false}
+        onSubtasksChanged={() => {}}
         {...overrides}
       />
     </MemoryRouter>,
@@ -81,5 +92,88 @@ describe('TaskDrawer attachments', () => {
     expect(screen.getByText('Files')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
     expect(screen.getByText('browse')).toBeInTheDocument()
+  })
+})
+
+describe('TaskDrawer subtasks', () => {
+  beforeEach(() => { apiPost.mockClear() })
+
+  const subtask = (overrides: Partial<Subtask> = {}): Subtask => ({
+    id: 9,
+    task_id: 48,
+    title: 'Draft outline',
+    ...overrides,
+  })
+
+  it('hides the Add control from a viewer without tasks.subtasks', () => {
+    renderDrawer(baseTask({ subtasks: [subtask()] }), { canCreateSubtasks: false })
+
+    expect(screen.getByText('Subtasks')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+  })
+
+  it('is reachable on a task with zero subtasks once the viewer can create one', () => {
+    renderDrawer(baseTask({ subtasks: [] }), { canCreateSubtasks: true })
+
+    expect(screen.getByText('Subtasks')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
+  })
+
+  it('hides the whole section for a viewer who cannot create subtasks when there are none', () => {
+    renderDrawer(baseTask({ subtasks: [] }), { canCreateSubtasks: false })
+
+    expect(screen.queryByText('Subtasks')).not.toBeInTheDocument()
+  })
+
+  it('posts a new subtask on Enter and keeps the input open', async () => {
+    const user = userEvent.setup()
+    renderDrawer(baseTask({ subtasks: [] }), { canCreateSubtasks: true })
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const input = screen.getByLabelText('New subtask title')
+    await user.type(input, 'Check camera batteries')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(apiPost).toHaveBeenCalledWith('/api/tasks/48/subtasks', { title: 'Check camera batteries', admin_override: undefined })
+    })
+    const reopenedInput = screen.getByLabelText('New subtask title')
+    expect(reopenedInput).toBeInTheDocument()
+    // Rendered isn't enough — the whole point of staying open is that the
+    // next title can be typed immediately, which only works if focus is
+    // still on the input, not merely that it still exists in the DOM.
+    await waitFor(() => expect(document.activeElement).toBe(reopenedInput))
+  })
+
+  it('does not post a subtask for whitespace-only input', async () => {
+    const user = userEvent.setup()
+    renderDrawer(baseTask({ subtasks: [] }), { canCreateSubtasks: true })
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const input = screen.getByLabelText('New subtask title')
+    await user.type(input, '   ')
+    await user.keyboard('{Enter}')
+
+    expect(apiPost).not.toHaveBeenCalled()
+  })
+
+  it('cancels the input on Escape without letting the key bubble up to close the drawer', async () => {
+    // Mirrors the window-level Escape handler that actually closes the
+    // drawer in TasksTriagePage — proving the input stops the key before it
+    // gets there, not just that the drawer's own onClose was never called.
+    const onWindowEscape = vi.fn()
+    const listener = (event: KeyboardEvent) => { if (event.key === 'Escape') onWindowEscape() }
+    window.addEventListener('keydown', listener)
+
+    const user = userEvent.setup()
+    renderDrawer(baseTask({ subtasks: [] }), { canCreateSubtasks: true })
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByLabelText('New subtask title')).not.toBeInTheDocument()
+    expect(onWindowEscape).not.toHaveBeenCalled()
+
+    window.removeEventListener('keydown', listener)
   })
 })

@@ -36,7 +36,7 @@ export function ProjectCard({
 
   return (
     <div
-      className="relative flex w-full max-w-sm flex-col rounded-[11px] border border-rail bg-surface"
+      className="relative flex w-full flex-col rounded-[11px] border border-rail bg-surface"
       style={{ borderLeft: `2px solid ${health.color}` }}
     >
       <button
@@ -45,9 +45,18 @@ export function ProjectCard({
         className="flex flex-col gap-2.5 rounded-[11px] px-[17px] pb-[15px] pt-4 text-left hover:bg-elev-low/40"
       >
         {/* Right padding keeps the title and state pill clear of the actions,
-            which float over the card rather than sitting in its flow. */}
-        <div className={cn('flex items-center gap-2.5', actions && 'pr-16')}>
-          <span className="min-w-0 flex-1 truncate text-card-title text-t1">{name}</span>
+            which float over the card rather than sitting in its flow. The
+            worst case is three size-7 (28px) action buttons — sparkle, edit,
+            delete — with two 4px gaps between them (92px), sitting at
+            right-2.5 (10px) from the card edge: 102px, minus the button's
+            own 17px right padding, needs at least 85px reserved. pr-24
+            (96px) is the nearest real Tailwind step above that. If a fourth
+            action button is ever added to this cluster, this needs to grow
+            too. min-h-5 keeps the row's height at the state pill's 20px
+            even when there's no pill, so the actions offset below (derived
+            for a 20px row) stays correct either way. */}
+        <div className={cn('flex min-h-5 items-center gap-2.5', actions && 'pr-24')}>
+          <span className="min-w-0 flex-1 truncate text-title text-t1">{name}</span>
           {stateLabel && (
             <span className="inline-flex h-5 flex-none items-center rounded-md bg-[#1f1a12] px-2 text-[11px] font-[550] text-warn">
               {stateLabel}
@@ -94,7 +103,16 @@ export function ProjectCard({
         </div>
       </button>
 
-      {actions && <div className="absolute right-2.5 top-2.5">{actions}</div>}
+      {/* Unlike ClientTile, the header row here has no fixed-height element
+          like a Monogram to anchor to: `text-title` (13.5px / 1.3 line-height
+          ≈ 17.6px) is shorter than the optional state pill's h-5 (20px), so
+          without a floor the row's height would depend on whether a project
+          has a state label. min-h-5 above pins it at 20px either way. The
+          action buttons are size-7 (28px), taller than that 20px row, so
+          matching top offsets like ClientTile does would not centre them —
+          it needs an explicit offset: pt-4 (16px) to the row's top, plus
+          half the 8px height difference, giving top-3 (12px). */}
+      {actions && <div className="absolute right-2.5 top-3">{actions}</div>}
     </div>
   )
 }

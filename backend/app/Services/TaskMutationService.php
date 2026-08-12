@@ -6,6 +6,7 @@ use App\Models\Task;
 use App\Models\TaskNote;
 use App\Models\TaskSubtask;
 use App\Models\User;
+use App\Support\TaskAssigneeSync;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -13,27 +14,55 @@ class TaskMutationService
 {
     public function __construct(private readonly ProjectMemoryService $projectMemory) {}
 
+    /**
+     * `assignee_user_ids`, when present, replaces the whole assignee set (the
+     * controller has already coerced a legacy scalar `assignee_user_id` into
+     * this shape). It never reaches `$task->update()` — the column doesn't
+     * exist — it is stripped here and applied through `TaskAssigneeSync`
+     * inside the same transaction as the rest of the update.
+     *
+     * Only *newly added* assignees are notified, one directed note each, so
+     * reassigning a task away from someone and back doesn't spam either
+     * party and someone already on the task isn't renotified.
+     */
     public function updateTask(Task $task, array $data, User $actor): array
     {
-        $before = $task->getAttributes();
-        $task->update($data);
-        $this->projectMemory->afterTaskUpdate($task, isset($before['status_value_id']) ? (int) $before['status_value_id'] : null);
-
-        if (array_key_exists('assignee_user_id', $data)
-            && (int) $data['assignee_user_id'] !== (int) ($before['assignee_user_id'] ?? 0)
-            && $data['assignee_user_id']
-            && (int) $data['assignee_user_id'] !== (int) $actor->id) {
-            $actorName = trim($actor->first_name.' '.$actor->last_name) ?: $actor->username;
-            $message = $task->notes()->create([
-                'body' => "{$actorName} assigned this task to you.",
-                'assigned_user_id' => $data['assignee_user_id'],
-                'created_by' => $actor->id,
-                'is_message' => true,
-            ]);
-            $message->update(['conversation_id' => $message->id]);
+        $assigneeIds = null;
+        if (array_key_exists('assignee_user_ids', $data)) {
+            $assigneeIds = array_values(array_unique(array_map('intval', $data['assignee_user_ids'])));
+            unset($data['assignee_user_ids']);
         }
 
-        return $before;
+        return DB::transaction(function () use ($task, $data, $actor, $assigneeIds) {
+            $beforeAssigneeIds = $task->assignees()->pluck('users.id')->all();
+            $before = $task->getAttributes();
+            $before['assignee_user_ids'] = $beforeAssigneeIds;
+
+            $task->update($data);
+
+            $assigneeIdsChanged = $assigneeIds !== null && $assigneeIds !== $beforeAssigneeIds;
+            $afterAssigneeIds = $assigneeIdsChanged
+                ? TaskAssigneeSync::apply($task, $assigneeIds)
+                : $beforeAssigneeIds;
+
+            $this->projectMemory->afterTaskUpdate($task, isset($before['status_value_id']) ? (int) $before['status_value_id'] : null);
+
+            $actorName = trim($actor->first_name.' '.$actor->last_name) ?: $actor->username;
+            foreach (array_diff($afterAssigneeIds, $beforeAssigneeIds) as $newlyAssignedId) {
+                if ((int) $newlyAssignedId === (int) $actor->id) {
+                    continue;
+                }
+                $message = $task->notes()->create([
+                    'body' => "{$actorName} assigned this task to you.",
+                    'assigned_user_id' => $newlyAssignedId,
+                    'created_by' => $actor->id,
+                    'is_message' => true,
+                ]);
+                $message->update(['conversation_id' => $message->id]);
+            }
+
+            return $before;
+        });
     }
 
     public function createNote(Task $task, array $data, User $actor): TaskNote

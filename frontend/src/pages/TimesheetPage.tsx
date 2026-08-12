@@ -202,7 +202,7 @@ function Lane({
     <section className="flex flex-col">
       <div className="flex items-center gap-2.5 pb-[9px]">
         <Monogram name={lane.client} color={color} size="sm" initials={initialsOf(lane.client, 1)} />
-        <span className="whitespace-nowrap text-card-title text-t1">{lane.client}</span>
+        <span className="whitespace-nowrap text-title text-t1">{lane.client}</span>
         <span className="whitespace-nowrap text-meta text-t4">
           {lane.entry_count} {lane.entry_count === 1 ? 'entry' : 'entries'}
         </span>

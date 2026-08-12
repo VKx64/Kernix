@@ -57,9 +57,11 @@ export function ClientTile({
         onClick={onOpen}
         className="flex flex-col gap-2.5 rounded-[11px] px-3.5 pb-3 pt-3.5 text-left hover:bg-elev-low/40"
       >
-        <div className="flex items-center gap-2.5">
+        {/* Right padding keeps the name and health label clear of the actions,
+            which float over the card rather than sitting in its flow. */}
+        <div className={cn('flex items-center gap-2.5', actions && 'pr-16')}>
           <Monogram name={name} color={health.color} size="md" />
-          <span className="min-w-0 flex-1 truncate text-card-title text-t1">{name}</span>
+          <span className="min-w-0 flex-1 truncate text-title text-t1">{name}</span>
           <span className="flex-none text-meta font-semibold" style={{ color: health.color }}>
             {health.label}
           </span>
@@ -89,7 +91,12 @@ export function ClientTile({
         </div>
       </button>
 
-      {actions && <div className="absolute right-2 top-2">{actions}</div>}
+      {/* top-3.5 matches the button's own pt-3.5, so the actions start where
+          the header row starts. The monogram (28px) and the icon buttons
+          (size-7, also 28px) are the same height, so matching tops also
+          matches centres — the name never wraps (it's truncated), so this
+          holds regardless of client name length. */}
+      {actions && <div className="absolute right-2 top-3.5">{actions}</div>}
     </div>
   )
 }
