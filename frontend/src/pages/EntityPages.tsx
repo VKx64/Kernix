@@ -481,19 +481,42 @@ export function ClientsPage() {
     address: mutation.selected.address ?? '', city: mutation.selected.city ?? '', province: mutation.selected.province ?? '',
     zip_code: mutation.selected.zipCode ?? mutation.selected.zip_code ?? '', country: mutation.selected.country ?? '', notes: mutation.selected.notes ?? '',
   } : undefined
+  // A search narrows the list; it does not empty the workspace. Both the count
+  // and the empty state have to say which of the two happened, or a query that
+  // matches nothing reads as lost data and gets "fixed" by re-adding clients
+  // that are still there.
+  const query = search.trim()
+  const scope = archived ? 'archived' : 'active'
+  const one = collection.meta.total === 1
+  const accounts = one ? 'client account' : 'client accounts'
   return (
     <div className="@container space-y-4">
-      <PageHeader eyebrow="Relationships" title="Clients" description={`${collection.meta.total} ${archived ? 'archived' : 'active'} client accounts.`} actions={!archived && can('clients.create') ? <Button onClick={mutation.create}><Plus /> New client</Button> : undefined} />
+      <PageHeader
+        eyebrow="Relationships"
+        title="Clients"
+        description={query
+          ? `${collection.meta.total} ${scope} ${accounts} ${one ? 'matches' : 'match'} your search.`
+          : `${collection.meta.total} ${scope} ${accounts}.`}
+        actions={!archived && can('clients.create') ? <Button onClick={mutation.create}><Plus /> New client</Button> : undefined}
+      />
       {(collection.error || mutation.error) && <ErrorBanner message={collection.error || mutation.error} />}
       <SearchToolbar search={search} onSearch={setSearch} placeholder="Search clients…">
         <ArchivedToggle archived={archived} onChange={setArchived} />
       </SearchToolbar>
       {collection.loading && !collection.data.length && <LoadingRows rows={3} columns={1} />}
       {!collection.loading && !collection.data.length && (
-        <EmptyState
-          title={archived ? 'No archived clients' : 'No clients yet'}
-          description={archived ? 'Archived clients will appear here.' : 'Add the first client account to begin.'}
-        />
+        query ? (
+          <EmptyState
+            title="No clients match your search"
+            description={`Nothing ${archived ? 'archived ' : ''}matches “${query}”. Clear the search to see the full list.`}
+            action={<Button variant="outline" onClick={() => setSearch('')}>Clear search</Button>}
+          />
+        ) : (
+          <EmptyState
+            title={archived ? 'No archived clients' : 'No clients yet'}
+            description={archived ? 'Archived clients will appear here.' : 'Add the first client account to begin.'}
+          />
+        )
       )}
       <div className="grid gap-2.5 @[640px]:grid-cols-2 @[1000px]:grid-cols-3">
         {collection.data.map((client) => (
