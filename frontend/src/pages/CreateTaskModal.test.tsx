@@ -13,7 +13,10 @@ import { CreateTaskModal } from './CreateTaskModal'
 
 const projects = [{ id: 5, name: 'Launch campaign' }]
 const folders = [{ id: 11, project_id: 5, name: 'Pre-production' }]
-const users = [{ id: 9, first_name: 'Casey', last_name: 'Worker' }]
+const users = [
+  { id: 9, first_name: 'Casey', last_name: 'Worker' },
+  { id: 12, first_name: 'Marco', last_name: 'Diaz' },
+]
 const statusOptions = [{ id: 21, label: 'In progress' }]
 const typeOptions = [{ id: 31, label: 'Milestone' }]
 const urgencyOptions = [{ id: 41, label: 'High' }]
@@ -110,8 +113,69 @@ describe('CreateTaskModal', () => {
       project_id: '5',
       title: 'Ship campaign',
       urgency_value_id: '41',
-      assignee_user_id: '9',
+      assignee_user_ids: ['9'],
     }, [])
+  })
+
+  it('hands one task to each of several people picked from the menu', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal()
+
+    await actor.type(title(), 'Ship campaign')
+    await openDetails(actor)
+
+    // The menu stays open across picks — three people should not be three trips.
+    await actor.click(screen.getByRole('button', { name: 'Assignee' }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'Casey Worker' }))
+    await actor.click(await screen.findByRole('menuitem', { name: 'Marco Diaz' }))
+    await actor.keyboard('{Escape}')
+
+    expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Casey Worker +1')
+    // What is about to happen is on the button, not left to be discovered after.
+    const create = await screen.findByRole('button', { name: 'Create 2 tasks' })
+
+    await actor.click(create)
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Ship campaign', assignee_user_ids: ['9', '12'] }),
+      [],
+    )
+  })
+
+  it('takes a person off the task again, and drops them all for Unassigned', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal()
+
+    await actor.type(title(), 'Ship campaign @casey @marco ')
+    await openDetails(actor)
+    expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Casey Worker +1')
+
+    // A picked name carries a ✓ into its accessible name, so match on the person.
+    await actor.click(screen.getByRole('button', { name: 'Assignee' }))
+    await actor.click(await screen.findByRole('menuitem', { name: /Casey Worker/ }))
+    await actor.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Marco Diaz')
+
+    await actor.click(screen.getByRole('button', { name: 'Assignee' }))
+    await actor.click(await screen.findByRole('menuitem', { name: /Unassigned/ }))
+
+    expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Unassigned')
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ assignee_user_ids: expect.anything() }),
+      [],
+    )
+  })
+
+  it('collects several @mentions from the sentence instead of only the first', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal()
+
+    await actor.type(title(), 'Ship campaign @casey @marco{Enter}')
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Ship campaign', assignee_user_ids: ['9', '12'] }),
+      [],
+    )
   })
 
   it('toggles the detail panel on ⌘↵ and keeps a field the user set by hand', async () => {

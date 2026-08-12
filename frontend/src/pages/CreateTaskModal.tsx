@@ -45,6 +45,8 @@ import type { EntityId, FieldValue, Project, Task, TaskFolder, UserSummary } fro
  */
 
 const MAX_SUBTASKS = 50
+/** Faces shown on the assignee row before the label takes over the counting. */
+const MAX_ASSIGNEE_FACES = 3
 const LAST_PROJECT_STORAGE_KEY = 'kernix.create-task.last-project-id'
 const AI_DRAFT_DELAY_MS = 850
 /** How long the fields wait for the panel to paint before taking focus. */
@@ -72,6 +74,11 @@ function rememberProjectId(projectId: string) {
 export type CreateTaskPayload = Record<string, unknown> & {
   project_id?: EntityId
   title: string
+  /**
+   * A task belongs to one person, so several owners means several tasks: the
+   * page creates one copy per id. Absent leaves the owner to the server.
+   */
+  assignee_user_ids?: string[]
   subtasks?: Array<{ title: string }>
 }
 
@@ -111,10 +118,13 @@ interface CreateTaskModalProps {
 /** Every field the detail panel can hand back to the parser once untouched. */
 type DraftField = 'project' | 'folder' | 'assignee' | 'status' | 'type' | 'urgency' | 'due' | 'estimate'
 
+/** The single-value half of the draft — everything `setField` can write. */
+type TextDraftKey = Exclude<keyof CaptureDraft, 'assignee_user_ids'>
+
 interface CaptureDraft {
   project_id: string
   task_folder_id: string
-  assignee_user_id: string
+  assignee_user_ids: string[]
   status_value_id: string
   type_value_id: string
   urgency_value_id: string
@@ -129,15 +139,18 @@ interface CaptureDraft {
  */
 interface ResolvedFacts {
   project?: string
-  assignee?: string
+  assignee?: string[]
   urgency?: string
   due?: string
 }
 
+/** Shared so an unset assignee list keeps a stable identity across renders. */
+const NO_ASSIGNEES: string[] = []
+
 const EMPTY_DRAFT: CaptureDraft = {
   project_id: '',
   task_folder_id: '',
-  assignee_user_id: '',
+  assignee_user_ids: NO_ASSIGNEES,
   status_value_id: '',
   type_value_id: '',
   urgency_value_id: '',
@@ -256,7 +269,7 @@ export function CreateTaskModal({
    * it — a resolved token, an inference, and then nothing.
    */
   const projectId = dirty.project ? draft.project_id : resolved.project ?? guessedProjectId
-  const assigneeUserId = dirty.assignee ? draft.assignee_user_id : resolved.assignee ?? ''
+  const assigneeUserIds = dirty.assignee ? draft.assignee_user_ids : resolved.assignee ?? NO_ASSIGNEES
   const urgencyValueId = dirty.urgency ? draft.urgency_value_id : resolved.urgency ?? ''
   const dueDate = dirty.due ? draft.due_date : resolved.due ?? ''
   const statusValueId = dirty.status ? draft.status_value_id : ''
@@ -265,11 +278,16 @@ export function CreateTaskModal({
   const estimateText = dirty.estimate ? draft.estimate_text : ''
 
   const project = projects.find((candidate) => String(candidate.id) === String(projectId))
-  const assignee = users.find((candidate) => String(candidate.id) === assigneeUserId)
+  // Kept in the order they were picked, so the chips and the field read back the
+  // way the person built them up.
+  const assignees = useMemo(
+    () => assigneeUserIds.map((id) => users.find((candidate) => String(candidate.id) === id)).filter(Boolean) as UserSummary[],
+    [assigneeUserIds, users],
+  )
 
   const suggestedAssigneeId = useMemo(
-    () => (canAssign && !assigneeUserId ? suggestAssigneeUserId(projectId, tasks) : ''),
-    [assigneeUserId, canAssign, projectId, tasks],
+    () => (canAssign && !assigneeUserIds.length ? suggestAssigneeUserId(projectId, tasks) : ''),
+    [assigneeUserIds, canAssign, projectId, tasks],
   )
   const suggestedAssignee = users.find((candidate) => String(candidate.id) === suggestedAssigneeId)
   const suggestedDue = useMemo(() => {
@@ -299,7 +317,7 @@ export function CreateTaskModal({
     if (error) onErrorDismiss?.()
   }, [error, onErrorDismiss])
 
-  const setField = (field: DraftField, key: keyof CaptureDraft, value: string) => {
+  const setField = (field: DraftField, key: TextDraftKey, value: string) => {
     dismissErrors()
     setDirty((current) => ({ ...current, [field]: true }))
     setDraft((current) => ({
@@ -312,6 +330,26 @@ export function CreateTaskModal({
       setDirty((current) => ({ ...current, folder: false }))
       rememberProjectId(value)
     }
+  }
+
+  /**
+   * Assignee is the one field that holds a list, so it toggles rather than
+   * replaces — the menu stays open while several people are picked. Passing an
+   * empty list is "Unassigned", which is a choice too and still marks the field
+   * as touched so the text stops overwriting it.
+   */
+  const setAssignees = (next: string[]) => {
+    dismissErrors()
+    setDirty((current) => ({ ...current, assignee: true }))
+    setDraft((current) => ({ ...current, assignee_user_ids: next }))
+  }
+
+  const toggleAssignee = (userId: string) => {
+    setAssignees(
+      assigneeUserIds.includes(userId)
+        ? assigneeUserIds.filter((id) => id !== userId)
+        : [...assigneeUserIds, userId],
+    )
   }
 
   /**
@@ -334,8 +372,11 @@ export function CreateTaskModal({
       facts.project = parsed.projectId
       cleared.project = false
     }
-    if (parsed.assigneeUserId) {
-      facts.assignee = parsed.assigneeUserId
+    if (parsed.assigneeUserIds) {
+      // Mentions add to whoever is already on the task rather than replacing
+      // them: "@ana" then "@marco" is two owners, not a correction.
+      const merged = dirty.assignee ? draft.assignee_user_ids : resolved.assignee ?? NO_ASSIGNEES
+      facts.assignee = [...merged, ...parsed.assigneeUserIds.filter((id) => !merged.includes(id))]
       cleared.assignee = false
     }
     if (parsed.urgencyValueId) {
@@ -389,9 +430,11 @@ export function CreateTaskModal({
     }
     setAiBusy(true)
     window.setTimeout(() => {
-      const owner = assigneeUserId || suggestedAssigneeId
-      const inferredOwner = !assigneeUserId && owner
-        ? firstNameOf(users.find((candidate) => String(candidate.id) === owner))
+      const owners = assigneeUserIds.length
+        ? assigneeUserIds
+        : suggestedAssigneeId ? [suggestedAssigneeId] : NO_ASSIGNEES
+      const inferredOwner = !assigneeUserIds.length && owners.length
+        ? firstNameOf(users.find((candidate) => String(candidate.id) === owners[0]))
         : ''
       const result = draftTaskWithAi(title, inferredOwner)
       const escalated = urgencyOptions.find((option) => fieldLabel(option).trim().toLowerCase() === result.urgency)
@@ -404,7 +447,7 @@ export function CreateTaskModal({
       setDraft((current) => ({
         ...current,
         project_id: projectId,
-        assignee_user_id: canAssign ? owner : '',
+        assignee_user_ids: canAssign ? owners : NO_ASSIGNEES,
         urgency_value_id: urgency,
         due_date: dueDate || suggestedDue,
         estimate_text: canEstimate ? `${Math.round(result.estimateMinutes / 60)}h` : '',
@@ -479,8 +522,13 @@ export function CreateTaskModal({
     optional(payload, 'status_value_id', statusValueId)
     optional(payload, 'type_value_id', typeValueId)
     optional(payload, 'urgency_value_id', dirty.urgency ? draft.urgency_value_id : settled.urgencyValueId ?? urgencyValueId)
-    optional(payload, 'assignee_user_id', dirty.assignee ? draft.assignee_user_id : settled.assigneeUserId ?? assigneeUserId)
     optional(payload, 'due_date', dirty.due ? draft.due_date : settled.dueDate ?? dueDate)
+    // A mention settled on submit joins whoever was already picked, the same way
+    // it would have while typing.
+    const finalAssignees = settled.assigneeUserIds
+      ? [...assigneeUserIds, ...settled.assigneeUserIds.filter((id) => !assigneeUserIds.includes(id))]
+      : assigneeUserIds
+    if (finalAssignees.length) payload.assignee_user_ids = finalAssignees
     if (notes.trim()) payload.description = notes.trim()
     const minutes = parseEstimateMinutes(estimateText)
     if (canEstimate && minutes !== null) payload.estimated_minutes = minutes
@@ -513,7 +561,7 @@ export function CreateTaskModal({
   const closeMenu = () => setMenu(null)
 
   const menuItems = ((): { title: string; items: InlineMenuItem[] } => {
-    const pick = (field: DraftField, key: keyof CaptureDraft) => (value: string) => {
+    const pick = (field: DraftField, key: TextDraftKey) => (value: string) => {
       setField(field, key, value)
       closeMenu()
     }
@@ -542,15 +590,27 @@ export function CreateTaskModal({
           ],
         }
       case 'assignee':
+        // The only menu that picks more than one thing, so it stays open on
+        // select — closing after each name would make picking three people
+        // three trips.
         return {
-          title: 'Assignee',
+          title: 'Assignee · one task each',
           items: [
-            { key: '', label: 'Unassigned', onSelect: () => pick('assignee', 'assignee_user_id')('') },
+            {
+              key: '',
+              label: 'Unassigned',
+              hint: assigneeUserIds.length === 0 ? '✓' : undefined,
+              onSelect: () => {
+                setAssignees(NO_ASSIGNEES)
+                closeMenu()
+              },
+            },
             ...users.map((user) => ({
               key: String(user.id),
               label: displayName(user),
-              hint: String(user.id) === assigneeUserId ? '✓' : undefined,
-              onSelect: () => pick('assignee', 'assignee_user_id')(String(user.id)),
+              hint: assigneeUserIds.includes(String(user.id)) ? '✓' : undefined,
+              keepOpen: true,
+              onSelect: () => toggleAssignee(String(user.id)),
             })),
           ],
         }
@@ -593,10 +653,18 @@ export function CreateTaskModal({
 
   if (!open) return null
 
+  // The whole list is already spelled out in the chips above, so the row itself
+  // only has to stay countable at a glance.
+  const assigneeLabel = assignees.length > 1
+    ? `${displayName(assignees[0])} +${assignees.length - 1}`
+    : assignees.length === 1 ? displayName(assignees[0]) : undefined
+
   const due = dueMeta(dueDate)
   const chips: Array<{ key: string; label: string; color: string }> = []
   if (project) chips.push({ key: 'project', label: project.name, color: IDENTITY_DOT })
-  if (assignee) chips.push({ key: 'assignee', label: displayName(assignee), color: IDENTITY_DOT })
+  for (const person of assignees) {
+    chips.push({ key: `assignee-${person.id}`, label: displayName(person), color: IDENTITY_DOT })
+  }
   if (urgencyValueId) {
     const option = urgencyOptions.find((candidate) => String(candidate.id) === urgencyValueId)
     if (option) chips.push({ key: 'urgency', label: fieldLabel(option), color: urgencyColor(option) })
@@ -706,12 +774,21 @@ export function CreateTaskModal({
               {canAssign && (
                 <FieldRow
                   label="Assignee"
-                  value={assignee ? displayName(assignee) : undefined}
+                  value={assigneeLabel}
                   placeholder="Unassigned"
                   onOpen={openMenu('assignee')}
                 >
-                  {assignee && (
-                    <Monogram size="xs" name={displayName(assignee)} initials={initialsOf(displayName(assignee))} />
+                  {assignees.length > 0 && (
+                    <span className="flex flex-none -space-x-1.5">
+                      {assignees.slice(0, MAX_ASSIGNEE_FACES).map((person) => (
+                        <Monogram
+                          key={person.id}
+                          size="xs"
+                          name={displayName(person)}
+                          initials={initialsOf(displayName(person))}
+                        />
+                      ))}
+                    </span>
                   )}
                 </FieldRow>
               )}
@@ -953,7 +1030,7 @@ export function CreateTaskModal({
           <span className="flex-1" />
 
           <span
-            title="Type @owner for the assignee, !high for urgency, #project to file it, and a date like Friday or in 3 days."
+            title="Type @owner for the assignee — repeat it to hand the same task to several people, one copy each. !high sets urgency, #project files it, and a date like Friday or in 3 days sets the due date."
             className="mr-0.5 grid size-[26px] cursor-help place-items-center rounded-full text-t4 hover:bg-[#1f1f24] hover:text-t1"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -980,7 +1057,8 @@ export function CreateTaskModal({
               canCreate ? 'bg-t1 text-bg hover:brightness-[1.08]' : 'pointer-events-none bg-[#1f1f24] text-t4',
             )}
           >
-            {busy ? 'Creating…' : 'Create'}
+            {/* Several owners means several tasks, and that has to be legible before the click, not after it. */}
+            {busy ? 'Creating…' : assignees.length > 1 ? `Create ${assignees.length} tasks` : 'Create'}
             <span aria-hidden="true" className="font-mono text-[10px] opacity-50">↵</span>
           </button>
         </div>

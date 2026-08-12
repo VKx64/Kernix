@@ -3,6 +3,7 @@ import type { FieldValue, Project, UserSummary } from '../types/api'
 
 const users: UserSummary[] = [
   { id: 9, first_name: 'Casey', last_name: 'Worker', username: 'caseyw' },
+  { id: 12, first_name: 'Marco', last_name: 'Diaz', username: 'marcod' },
 ]
 const urgencyOptions: FieldValue[] = [
   { id: 41, label: 'High' },
@@ -31,12 +32,30 @@ describe('parseTaskDraftTitle', () => {
   it('lifts an @mention matched by first name', () => {
     const result = parseTaskDraftTitle('Call the client @casey', context())
     expect(result.title).toBe('Call the client')
-    expect(result.assigneeUserId).toBe('9')
+    expect(result.assigneeUserIds).toEqual(['9'])
   })
 
   it('lifts an @mention matched by username', () => {
     const result = parseTaskDraftTitle('Call the client @caseyw', context())
-    expect(result.assigneeUserId).toBe('9')
+    expect(result.assigneeUserIds).toEqual(['9'])
+  })
+
+  it('lifts every @mention, in the order they were typed', () => {
+    const result = parseTaskDraftTitle('Call the client @marco @casey', context())
+    expect(result.title).toBe('Call the client')
+    expect(result.assigneeUserIds).toEqual(['12', '9'])
+  })
+
+  it('names the same person once however many times they are mentioned', () => {
+    const result = parseTaskDraftTitle('Call the client @casey and @caseyw', context())
+    expect(result.title).toBe('Call the client and')
+    expect(result.assigneeUserIds).toEqual(['9'])
+  })
+
+  it('keeps the mentions it knows when one of them matches nobody', () => {
+    const result = parseTaskDraftTitle('Call the client @casey @nobody about it', context())
+    expect(result.title).toBe('Call the client @nobody about it')
+    expect(result.assigneeUserIds).toEqual(['9'])
   })
 
   it('lifts a #project matched on its name with the spaces removed', () => {
@@ -67,7 +86,7 @@ describe('parseTaskDraftTitle', () => {
   it('leaves an @mention that matches nobody untouched', () => {
     const result = parseTaskDraftTitle('Call the client @nobody', context())
     expect(result.title).toBe('Call the client @nobody')
-    expect(result.assigneeUserId).toBeUndefined()
+    expect(result.assigneeUserIds).toBeUndefined()
   })
 
   it('maps !high directly to the matching urgency option', () => {
@@ -154,14 +173,14 @@ describe('parseTaskDraftTitle', () => {
     const result = parseTaskDraftTitle('Ship copy tomorrow @casey !urgent', context())
     expect(result.title).toBe('Ship copy')
     expect(result.dueDate).toBe('2026-08-06')
-    expect(result.assigneeUserId).toBe('9')
+    expect(result.assigneeUserIds).toEqual(['9'])
     expect(result.urgencyValueId).toBe('41')
   })
 
   it('never mutates the title when nothing matches', () => {
     const result = parseTaskDraftTitle('Just a plain title', context())
     expect(result.title).toBe('Just a plain title')
-    expect(result.assigneeUserId).toBeUndefined()
+    expect(result.assigneeUserIds).toBeUndefined()
     expect(result.urgencyValueId).toBeUndefined()
     expect(result.dueDate).toBeUndefined()
   })
@@ -172,7 +191,7 @@ describe('parseTaskDraftTitle', () => {
     it('leaves a trailing token alone so a longer name can still be typed', () => {
       const result = parseTaskDraftTitle('Call the client @casey', typing)
       expect(result.title).toBe('Call the client @casey')
-      expect(result.assigneeUserId).toBeUndefined()
+      expect(result.assigneeUserIds).toBeUndefined()
     })
 
     it('resolves the same token once something follows it', () => {
@@ -180,14 +199,20 @@ describe('parseTaskDraftTitle', () => {
       // The space the user just pressed is kept, so the next word does not run
       // into the previous one.
       expect(result.title).toBe('Call the client ')
-      expect(result.assigneeUserId).toBe('9')
+      expect(result.assigneeUserIds).toEqual(['9'])
+    })
+
+    it('resolves the mentions already finished while the last one is still being typed', () => {
+      const result = parseTaskDraftTitle('Call the client @casey @mar', typing)
+      expect(result.title).toBe('Call the client @mar')
+      expect(result.assigneeUserIds).toEqual(['9'])
     })
 
     it('resolves an earlier token while the last one is still being typed', () => {
       const result = parseTaskDraftTitle('Ship it !high @cas', typing)
       expect(result.urgencyValueId).toBe('41')
       expect(result.title).toBe('Ship it @cas')
-      expect(result.assigneeUserId).toBeUndefined()
+      expect(result.assigneeUserIds).toBeUndefined()
     })
 
     it('holds a trailing date until it is followed by something', () => {

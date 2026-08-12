@@ -760,34 +760,58 @@ export function TasksTriagePage() {
 
   // --- create --------------------------------------------------------------
 
+  /**
+   * A task belongs to one person, so handing one out to several is a copy each
+   * — same title, project, urgency, checklist and files, one owner apiece.
+   * They go out one at a time so a rejection stops the run rather than leaving
+   * a scatter of half-made tasks behind an error nobody reads.
+   */
   const create = async (values: CreateTaskPayload, files: File[] = []) => {
     if (!guardClock()) return
     setCreateBusy(true)
     setCreateError('')
+    const { assignee_user_ids: assignees = [], ...base } = values
+    // Nobody picked is still one task; the server chooses its owner.
+    const owners: Array<string | null> = assignees.length ? assignees : [null]
+    const created: Task[] = []
+    let failure = ''
     try {
-      const response = await api.post<ApiEnvelope<Task> | Task>('/api/tasks', {
-        ...values,
-        admin_override: adminOverride ? 1 : undefined,
-      } as Record<string, unknown>)
-      const task = unwrap(response)
-      // The task exists from here on, so a failed upload must not discard it —
-      // it is reported against the created task instead.
-      if (files.length) {
-        try {
-          await uploadTaskAttachments(task.id, files, adminOverride)
-        } catch (reason) {
-          toast.error(reason instanceof Error ? reason.message : 'The task was created, but its files could not be uploaded.')
-        }
+      for (const owner of owners) {
+        const response = await api.post<ApiEnvelope<Task> | Task>('/api/tasks', {
+          ...base,
+          ...(owner ? { assignee_user_id: owner } : {}),
+          admin_override: adminOverride ? 1 : undefined,
+        } as Record<string, unknown>)
+        created.push(unwrap(response))
       }
-      setCreateOpen(false)
-      await reload()
-      setParam('open', String(task.id))
     } catch (reason) {
       if (isClockGate(reason)) setClockBlocked(true)
-      setCreateError(reason instanceof Error ? reason.message : 'Unable to create the task.')
-    } finally {
-      setCreateBusy(false)
+      failure = reason instanceof Error ? reason.message : 'Unable to create the task.'
     }
+
+    if (!created.length) {
+      setCreateError(failure || 'Unable to create the task.')
+      setCreateBusy(false)
+      return
+    }
+
+    // The tasks exist from here on, so neither a failed upload nor a copy that
+    // never got made may discard them — both are reported against what was
+    // created. Reopening the modal would only make the same copies twice.
+    if (failure) {
+      toast.error(`${failure} ${created.length} of ${owners.length} tasks were created.`)
+    }
+    if (files.length) {
+      try {
+        await Promise.all(created.map((task) => uploadTaskAttachments(task.id, files, adminOverride)))
+      } catch (reason) {
+        toast.error(reason instanceof Error ? reason.message : 'The tasks were created, but their files could not be uploaded.')
+      }
+    }
+    setCreateOpen(false)
+    await reload()
+    setParam('open', String(created[0].id))
+    setCreateBusy(false)
   }
 
   // --- header --------------------------------------------------------------

@@ -3,7 +3,8 @@ import type { FieldValue, Project, UserSummary } from '../types/api'
 export interface ParsedTaskDraft {
   /** The title with every recognised token removed and whitespace collapsed. */
   title: string
-  assigneeUserId?: string
+  /** Every `@mention` that resolved, in the order they were typed. Omitted when none did. */
+  assigneeUserIds?: string[]
   urgencyValueId?: string
   projectId?: string
   /** ISO `YYYY-MM-DD`. */
@@ -187,8 +188,8 @@ function removeSpans(title: string, spans: Span[], settled: boolean): string {
 }
 
 /**
- * Pulls `@assignee`, `!priority`, `#project`, and due-date tokens out of a task
- * title.
+ * Pulls `@assignee` (any number of them), `!priority`, `#project`, and due-date
+ * tokens out of a task title.
  * Only ever removes a token it can actually resolve — an `@name` matching no
  * one, or an unrecognised `!word`, is left in the title untouched.
  *
@@ -203,15 +204,20 @@ export function parseTaskDraftTitle(rawTitle: string, context: ParseTaskDraftCon
   const result: ParsedTaskDraft = { title: rawTitle }
   const finished = (end: number) => context.settled || end < rawTitle.length
 
-  const mention = /@([A-Za-z0-9_.'-]+)/.exec(rawTitle)
-  if (mention) {
+  // Every mention counts, not just the first: a task can be handed to several
+  // people at once, and "@ana @marco" reads as two owners rather than as one
+  // owner followed by stray text. The same person named twice is still one.
+  const assigneeUserIds: string[] = []
+  const mentions = /@([A-Za-z0-9_.'-]+)/g
+  for (let mention = mentions.exec(rawTitle); mention; mention = mentions.exec(rawTitle)) {
     const end = mention.index + mention[0].length
     const user = findUser(mention[1], context.users)
-    if (user && finished(end)) {
-      result.assigneeUserId = String(user.id)
-      spans.push({ start: mention.index, end })
-    }
+    if (!user || !finished(end)) continue
+    const id = String(user.id)
+    if (!assigneeUserIds.includes(id)) assigneeUserIds.push(id)
+    spans.push({ start: mention.index, end })
   }
+  if (assigneeUserIds.length) result.assigneeUserIds = assigneeUserIds
 
   const priority = /!(urgent|high|normal|low)\b/i.exec(rawTitle)
   if (priority) {
