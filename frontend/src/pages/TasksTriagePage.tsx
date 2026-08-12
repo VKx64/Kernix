@@ -1369,6 +1369,9 @@ function TaskDrawerConnected({
       canManageFiles={can('tasks.attachments')}
       filesAdminOverride={adminOverride && canAdminOverride}
       onFilesChanged={async () => { await load(); await onReload() }}
+      canCreateSubtasks={can('tasks.subtasks')}
+      subtasksAdminOverride={adminOverride && canAdminOverride}
+      onSubtasksChanged={async () => { await load(); await onReload() }}
     />
   )
 }
