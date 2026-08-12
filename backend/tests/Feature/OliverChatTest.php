@@ -203,6 +203,62 @@ class OliverChatTest extends TestCase
         $this->assertFalse($clock['may_change_task_work']);
     }
 
+    public function test_the_first_turn_of_a_conversation_opened_while_clocked_out_says_so(): void
+    {
+        // Nothing to carry over here: this is the opening turn, and the person
+        // has never been on the clock at all. Reading the gate rather than the
+        // conversation is what makes that turn honest.
+        TimeSession::query()->where('user_id', $this->admin->id)->delete();
+
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'Morning — what should I pick up?'])->assertOk();
+
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('clocked_out', $clock['state']);
+        $this->assertFalse($clock['may_change_task_work']);
+        $this->assertNull($clock['since']);
+    }
+
+    public function test_a_session_left_open_overnight_is_reported_as_clocked_out_because_the_gate_treats_it_that_way(): void
+    {
+        // Still open on paper, and the person may well believe they are on the
+        // clock. The gate does not count it, so neither may the context — this
+        // is the case where "has a session" and "may change work" come apart.
+        TimeSession::query()->where('user_id', $this->admin->id)
+            ->update(['clock_in_at' => now()->subDays(2)]);
+
+        $context = $this->captureContext('I would have added it, but you are clocked out.', [
+            $this->action('create_task', ['project_id' => $this->project->id, 'title' => 'Left open overnight']),
+        ], 'act');
+
+        $response = $this->postJson('/api/oliver/messages', ['body' => 'Add a task for the reshoot'])->assertOk();
+
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('clocked_out', $clock['state']);
+        $this->assertFalse($clock['may_change_task_work']);
+        $this->assertSame('refused', $response->json('data.message.actions.0.status'));
+        $this->assertDatabaseMissing('tasks', ['title' => 'Left open overnight']);
+    }
+
+    public function test_clocking_in_mid_conversation_is_picked_up_on_the_next_turn(): void
+    {
+        // The other direction of the same rule. A conversation that opened while
+        // clocked out must not keep describing them that way once they clock in.
+        TimeSession::query()->where('user_id', $this->admin->id)->delete();
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'Anything urgent?'])->assertOk();
+        $this->assertSame('clocked_out', $context()['teammate']['clock']['state']);
+
+        TimeSession::query()->create(['user_id' => $this->admin->id, 'clock_in_at' => now()]);
+        $context = $this->captureContext();
+        $this->postJson('/api/oliver/messages', ['body' => 'Right, I am on now.'])->assertOk();
+
+        $clock = $context()['teammate']['clock'];
+        $this->assertSame('working', $clock['state']);
+        $this->assertTrue($clock['may_change_task_work']);
+        $this->assertNotNull($clock['since']);
+    }
+
     public function test_a_teammate_on_a_break_is_described_as_such_rather_than_as_clocked_out(): void
     {
         $session = TimeSession::query()->where('user_id', $this->admin->id)->firstOrFail();
