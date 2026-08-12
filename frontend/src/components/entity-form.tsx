@@ -132,8 +132,14 @@ export function EntityForm({
     values: defaults,
   })
 
+  // Read during render on purpose. `formState` is a subscription proxy: touching
+  // it only inside a handler leaves this component unsubscribed, so the snapshot
+  // the handler closes over stays at its first-render value and a rejected field
+  // keeps its message even after the person fixes it.
+  const { isSubmitted } = form.formState
+
   const handleChange = (name: string, value: FormValue, clear?: string[]) => {
-    form.setValue(name, value, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
+    form.setValue(name, value, { shouldDirty: true, shouldValidate: isSubmitted })
     clear?.forEach((other) => form.setValue(other, '', { shouldDirty: true }))
     onValuesChange?.({ ...form.getValues(), [name]: value, ...Object.fromEntries((clear ?? []).map((other) => [other, ''])) })
   }
@@ -177,6 +183,11 @@ export function EntityForm({
                         <Select
                           value={String(field.value ?? '')}
                           disabled={spec.disabled}
+                          // Puts `aria-required` on the trigger, which is the
+                          // only thing the asterisk in the label meant until
+                          // now — it is `aria-hidden`, so nothing but sighted
+                          // reading ever picked it up.
+                          required={spec.required}
                           onValueChange={(value) => {
                             // Radix's Select only ever hands back the string
                             // it was given (SelectItem's value is always
@@ -189,7 +200,11 @@ export function EntityForm({
                           }}
                         >
                           <FormControl>
-                            <SelectTrigger className="w-full">
+                            {/* The trigger is what react-hook-form focuses when
+                                this field is the first to fail; without the ref
+                                a rejected select is announced but never
+                                reached. */}
+                            <SelectTrigger ref={field.ref} className="w-full">
                               <SelectValue placeholder="Select…" />
                             </SelectTrigger>
                           </FormControl>
@@ -208,6 +223,7 @@ export function EntityForm({
                               {...field}
                               value={String(field.value ?? '')}
                               disabled={spec.disabled}
+                              required={spec.required}
                               placeholder={spec.placeholder}
                               onChange={(event) => handleChange(spec.name, event.target.value, spec.clearOnChange)}
                             />
@@ -217,6 +233,10 @@ export function EntityForm({
                               type={spec.type ?? 'text'}
                               value={String(field.value ?? '')}
                               disabled={spec.disabled}
+                              // The form carries `noValidate`, so this is
+                              // semantics only — zod still decides, and the
+                              // browser never puts its own bubble on top.
+                              required={spec.required}
                               placeholder={spec.placeholder}
                               min={spec.min}
                               step={spec.step}

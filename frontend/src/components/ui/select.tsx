@@ -28,14 +28,57 @@ function SelectTrigger({
   className,
   size = "default",
   children,
+  ref: forwardedRef,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null)
+  const setRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      triggerRef.current = node
+      if (typeof forwardedRef === "function") forwardedRef(node)
+      else if (forwardedRef) forwardedRef.current = node
+    },
+    [forwardedRef],
+  )
+
+  // Inside a <form>, Radix renders a visually hidden native <select> as this
+  // trigger's next sibling so the value can take part in native submission. It
+  // carries aria-hidden together with tabindex="-1" — hidden from the tree, yet
+  // still focusable, which is the pairing `aria-hidden-focus` forbids: anything
+  // walking focusable nodes reports a second, unlabelled combobox beside every
+  // real one. Nothing here submits natively (react-hook-form owns the values and
+  // the forms are noValidate), so the bubble is marked inert and leaves the
+  // accessibility tree. Radix exposes no prop for this — see BubbleInput in
+  // @radix-ui/react-select.
+  React.useEffect(() => {
+    const trigger = triggerRef.current
+    const parent = trigger?.parentElement
+    if (!trigger || !parent) return
+    const hideBubble = () => {
+      const bubble = trigger.nextElementSibling
+      if (
+        bubble instanceof HTMLSelectElement &&
+        bubble.getAttribute("aria-hidden") === "true" &&
+        !bubble.hasAttribute("inert")
+      ) {
+        bubble.setAttribute("inert", "")
+      }
+    }
+    hideBubble()
+    // Radix remounts the bubble whenever its set of options changes, and the
+    // replacement arrives without the attribute.
+    const observer = new MutationObserver(hideBubble)
+    observer.observe(parent, { childList: true })
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
+      ref={setRef}
       className={cn(
         "flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className

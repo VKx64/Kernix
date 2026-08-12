@@ -145,6 +145,10 @@ function FormMessage({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="form-message"
       id={formMessageId}
+      // A validation message appears after the submit that caused it, so it has
+      // to announce itself: `aria-describedby` alone is only read once the
+      // field is reached again.
+      role="alert"
       className={cn("text-sm text-destructive", className)}
       {...props}
     >
