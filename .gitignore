@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+# Template only — the real mcp/.env.production stays on the server.
+!mcp/.env.production.example
 
 backend/.env
 backend/vendor/
