@@ -930,8 +930,15 @@ export interface TimesheetRow {
   description: string
   generated: string
   edited: boolean
-  minutes: number
-  hours: number
+  /** Null until somebody puts a number on it. Not the same as zero. */
+  minutes: number | null
+  hours: number | null
+  /** What the clock accounted for, before any hours were typed over it. */
+  tracked_minutes: number | null
+  /** Finished work with no hours on it yet, waiting for the person. */
+  needs_hours: boolean
+  /** The hours came from a person rather than the clock. */
+  typed: boolean
   task_title: string
 }
 

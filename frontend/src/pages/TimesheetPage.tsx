@@ -7,7 +7,7 @@ import { Monogram, initialsOf } from '@/components/kernix/monogram'
 import { Segmented } from '@/components/kernix/segmented'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { copyText, countRows, formatSheetDate, hoursLabel, timesheetText } from '@/lib/timesheet'
+import { copyText, countRows, formatSheetDate, hoursLabel, parseHours, timesheetText } from '@/lib/timesheet'
 import { useTimesheet } from '@/lib/useTimesheet'
 import { cn } from '@/lib/utils'
 import type { EntityId, TimesheetCutoff, TimesheetLane, TimesheetRow } from '@/types/api'
@@ -37,7 +37,7 @@ export function TimesheetPage() {
   const cutoff = (params.get('cutoff') as TimesheetCutoff) ?? 'semi'
   const offset = Number(params.get('offset') ?? 0) || 0
   const withHeader = params.get('header') === '1'
-  const { data, loading, error, reload, describe } = useTimesheet(cutoff, offset)
+  const { data, loading, error, reload, describe, setHours } = useTimesheet(cutoff, offset)
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -139,6 +139,7 @@ export function TimesheetPage() {
                 widest={Math.max(1, ...data.lanes.map((other) => other.minutes))}
                 onCopy={() => void copy(lane.client_id, lane.client)}
                 onDescribe={describe}
+                onSetHours={setHours}
               />
             ))}
           </div>
@@ -190,6 +191,7 @@ function Lane({
   widest,
   onCopy,
   onDescribe,
+  onSetHours,
 }: {
   lane: TimesheetLane
   color: string
@@ -197,6 +199,7 @@ function Lane({
   widest: number
   onCopy: () => void
   onDescribe: (taskId: EntityId, date: string, body: string) => Promise<void>
+  onSetHours: (taskId: EntityId, date: string, minutes: number | null) => Promise<void>
 }) {
   return (
     <section className="flex flex-col">
@@ -223,6 +226,7 @@ function Lane({
           row={row}
           separated={index > 0}
           onDescribe={onDescribe}
+          onSetHours={onSetHours}
         />
       ))}
     </section>
@@ -233,12 +237,15 @@ function Row({
   row,
   separated,
   onDescribe,
+  onSetHours,
 }: {
   row: TimesheetRow
   separated: boolean
   onDescribe: (taskId: EntityId, date: string, body: string) => Promise<void>
+  onSetHours: (taskId: EntityId, date: string, minutes: number | null) => Promise<void>
 }) {
   const [draft, setDraft] = useState<string | null>(null)
+  const [hoursDraft, setHoursDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const editing = draft !== null
 
@@ -251,6 +258,25 @@ function Row({
       await onDescribe(row.task_id, row.date, body)
     } catch (reason) {
       toast(reason instanceof Error ? reason.message : 'Could not save that description.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const commitHours = async () => {
+    const text = hoursDraft ?? ''
+    setHoursDraft(null)
+    const minutes = parseHours(text)
+    if (minutes === null && text.trim()) {
+      toast('Write the hours as 1.5, 1:30, or 90m.')
+      return
+    }
+    if (minutes === row.minutes) return
+    setBusy(true)
+    try {
+      await onSetHours(row.task_id, row.date, minutes)
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : 'Could not save those hours.')
     } finally {
       setBusy(false)
     }
@@ -291,7 +317,42 @@ function Row({
           {row.description}
         </button>
       )}
-      <span className="text-right font-mono text-body-sm text-[#d4d4d9]">{row.hours}</span>
+      {hoursDraft !== null ? (
+        <input
+          autoFocus
+          value={hoursDraft}
+          disabled={busy}
+          inputMode="decimal"
+          onChange={(event) => setHoursDraft(event.target.value)}
+          onBlur={() => void commitHours()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') { event.preventDefault(); void commitHours() }
+            if (event.key === 'Escape') { event.stopPropagation(); setHoursDraft(null) }
+          }}
+          aria-label={`Hours for ${row.task_title} on ${row.date}`}
+          className="-my-1 w-full rounded-sm border border-line-strong bg-inset px-1.5 py-1 text-right font-mono text-body-sm text-t1 outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setHoursDraft(row.hours === null ? '' : String(row.hours))}
+          title={
+            row.needs_hours
+              ? 'Finished with no time tracked — click to put the hours in'
+              : row.typed
+                ? 'You entered these hours — click to change'
+                : 'Tracked — click to correct'
+          }
+          className={cn(
+            'text-right font-mono text-body-sm text-[#d4d4d9] hover:text-t1',
+            // An empty cell has to look like it wants filling, or it reads as
+            // a rendering fault rather than an invitation.
+            row.needs_hours && 'text-warn',
+          )}
+        >
+          {row.hours ?? 'Add'}
+        </button>
+      )}
     </div>
   )
 }

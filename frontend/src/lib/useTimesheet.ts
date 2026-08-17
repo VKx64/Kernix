@@ -48,5 +48,16 @@ export function useTimesheet(cutoff: TimesheetCutoff, offset: number) {
     })
   }, [])
 
-  return { data, loading, error, reload: () => load(), describe }
+  /**
+   * The hours for a row the clock never saw. A full reload afterwards rather
+   * than patching the row in place: this number moves the lane's total and the
+   * period's, and a screen that shows a new figure beside stale totals is
+   * worse than one that takes a moment.
+   */
+  const setHours = useCallback(async (taskId: EntityId, date: string, minutes: number | null) => {
+    await api.put<ApiEnvelope<TimesheetRow>>('/api/timesheet/hours', { task_id: taskId, date, minutes })
+    await load()
+  }, [load])
+
+  return { data, loading, error, reload: () => load(), describe, setHours }
 }

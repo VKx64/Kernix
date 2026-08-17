@@ -181,3 +181,51 @@ it('admits to time that has no task rather than hiding it', async () => {
 
   expect(await screen.findByText(/45m tracked without a task is not in these rows/)).toBeInTheDocument()
 })
+
+
+/**
+ * The row that used to be missing entirely: work somebody finished without a
+ * timer running. It has to look like a cell wanting a number, not like a
+ * rendering fault, and typing into it has to reach the server.
+ */
+it('shows finished work with no time as a cell waiting to be filled', async () => {
+  state.data = timesheet({
+    total_minutes: 0,
+    entry_count: 1,
+    lanes: [
+      {
+        client_id: 4,
+        client: 'Northwind Creative',
+        minutes: 0,
+        entry_count: 1,
+        rows: [
+          {
+            task_id: 87,
+            date: '2026-08-05',
+            description: 'Fixed broken checkout links',
+            generated: 'Fixed broken checkout links',
+            edited: false,
+            minutes: null,
+            hours: null,
+            tracked_minutes: null,
+            needs_hours: true,
+            typed: false,
+            task_title: 'Fix broken checkout links',
+          },
+        ],
+      },
+    ],
+  })
+  const actor = userEvent.setup()
+  renderPage()
+
+  const cell = await screen.findByRole('button', { name: 'Add' })
+  await actor.click(cell)
+  await actor.type(screen.getByLabelText('Hours for Fix broken checkout links on 2026-08-05'), '1.5{Enter}')
+
+  await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/api/timesheet/hours', {
+    task_id: 87,
+    date: '2026-08-05',
+    minutes: 90,
+  }))
+})

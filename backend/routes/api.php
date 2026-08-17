@@ -116,6 +116,7 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::middleware('feature:timesheet')->group(function () {
         Route::get('/timesheet', [TimesheetController::class, 'index']);
         Route::put('/timesheet/description', [TimesheetController::class, 'updateDescription']);
+        Route::put('/timesheet/hours', [TimesheetController::class, 'updateHours']);
     });
 
     Route::middleware('feature:messages')->group(function () {

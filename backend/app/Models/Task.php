@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Support\TaskAssigneeSync;
+use App\Support\TaskSignals;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,7 +16,7 @@ class Task extends DomainModel
 
     protected function casts(): array
     {
-        return ['due_date' => 'date', 'archived_at' => 'datetime'];
+        return ['due_date' => 'date', 'archived_at' => 'datetime', 'completed_at' => 'datetime'];
     }
 
     /**
@@ -33,6 +34,26 @@ class Task extends DomainModel
      */
     protected static function booted(): void
     {
+        // Stamped here rather than in the one controller that changes status,
+        // because status is changed from several places — the task screen, the
+        // extension, Oliver, a batch of AI-written tasks — and a completion
+        // date that only some of them record is worse than none.
+        static::saving(function (Task $task) {
+            if (! $task->isDirty('status_value_id')) {
+                return;
+            }
+            $done = in_array((int) $task->status_value_id, TaskSignals::statusValueIdsForRoles(['done']), true);
+            if ($done && ! $task->completed_at) {
+                $task->completed_at = now();
+            }
+            // Reopening clears it: a task that is not finished has no date on
+            // which it was, and leaving the old one would put it back on a
+            // timesheet it no longer belongs to.
+            if (! $done) {
+                $task->completed_at = null;
+            }
+        });
+
         static::saved(function (Task $task) {
             TaskAssigneeSync::reconcileFromColumn($task);
         });

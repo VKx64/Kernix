@@ -40,7 +40,9 @@ export function timesheetText(lanes: TimesheetLane[], options: SheetOptions = {}
   const { dateFormat = 'short', header = false, clientId } = options
   const scoped = clientId === undefined ? lanes : lanes.filter((lane) => lane.client_id === clientId)
   const lines = scoped.flatMap((lane) =>
-    lane.rows.map((row) => [lane.client, formatSheetDate(row.date, dateFormat), row.description, row.hours].join('\t')),
+    // A row with no hours yet copies with the cell empty. Pasting the word
+    // "null" into a payroll sheet would be worse than pasting nothing.
+    lane.rows.map((row) => [lane.client, formatSheetDate(row.date, dateFormat), row.description, row.hours ?? ''].join('\t')),
   )
   if (header) lines.unshift(SHEET_COLUMNS.join('\t'))
   return lines.join('\n')
@@ -81,6 +83,32 @@ export async function copyText(text: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * Reads what somebody types into the hours cell.
+ *
+ * People write the same span three ways depending on the day — `1.5`, `1:30`,
+ * `90m` — and all three mean ninety minutes. Returns null for anything that is
+ * not one of them, and for an empty box, which clears the cell.
+ */
+export function parseHours(input: string): number | null {
+  const text = input.trim().toLowerCase()
+  if (!text) return null
+
+  const clock = /^(\d{1,2}):([0-5]\d)$/.exec(text)
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2])
+
+  const minutes = /^(\d+(?:\.\d+)?)\s*m(?:ins?|inutes?)?$/.exec(text)
+  if (minutes) return Math.round(Number(minutes[1]))
+
+  const hours = /^(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)?$/.exec(text)
+  if (hours) return Math.round(Number(hours[1]) * 60)
+
+  const bare = /^\d+(?:\.\d+)?$/.exec(text)
+  if (bare) return Math.round(Number(text) * 60)
+
+  return null
 }
 
 /** `2h 8m` as the timesheet writes it: hours and minutes, never bare minutes. */

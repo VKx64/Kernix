@@ -1,4 +1,4 @@
-import { countRows, formatSheetDate, hoursLabel, timesheetText } from './timesheet'
+import { countRows, formatSheetDate, hoursLabel, parseHours, timesheetText } from './timesheet'
 import type { TimesheetLane } from '../types/api'
 
 /**
@@ -111,4 +111,35 @@ describe('hours label', () => {
     expect(hoursLabel(95)).toBe('1h 35m')
     expect(hoursLabel(0)).toBe('0m')
   })
+})
+
+
+/**
+ * People write the same span three ways depending on the day, and a payroll
+ * cell that only accepts one of them gets worked around rather than used.
+ */
+it('reads hours however somebody happens to write them', () => {
+  expect(parseHours('1.5')).toBe(90)
+  expect(parseHours('2')).toBe(120)
+  expect(parseHours('1:30')).toBe(90)
+  expect(parseHours('0:45')).toBe(45)
+  expect(parseHours('90m')).toBe(90)
+  expect(parseHours('90 mins')).toBe(90)
+  expect(parseHours('2h')).toBe(120)
+  expect(parseHours('1.5 hrs')).toBe(90)
+  expect(parseHours('  45m  ')).toBe(45)
+})
+
+it('treats an empty box as clearing the cell, not as zero', () => {
+  expect(parseHours('')).toBeNull()
+  expect(parseHours('   ')).toBeNull()
+  // Zero is a person saying the task took no billable time, and survives.
+  expect(parseHours('0')).toBe(0)
+})
+
+it('refuses what it cannot read rather than guessing a number', () => {
+  expect(parseHours('half an hour')).toBeNull()
+  expect(parseHours('1:75')).toBeNull()
+  expect(parseHours('-2')).toBeNull()
+  expect(parseHours('2pm')).toBeNull()
 })

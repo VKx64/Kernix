@@ -61,4 +61,40 @@ class TimesheetController extends ApiController
 
         return $this->data($row);
     }
+
+    /**
+     * The hours for a row the clock never saw — a task finished without a
+     * timer running, which is most of them for anybody who works in one sitting
+     * and marks it done at the end.
+     *
+     * An absent value clears what was typed and leaves the row blank again.
+     * That is deliberately different from sending zero, which is a person
+     * saying the task took no billable time.
+     */
+    public function updateHours(Request $request): JsonResponse
+    {
+        $this->permission($request, 'time.track');
+        $data = $request->validate([
+            'task_id' => ['required', 'integer', 'exists:tasks,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            // A day has 1440 minutes; anything past that is a typo, not a shift.
+            'minutes' => ['present', 'nullable', 'integer', 'min:0', 'max:1440'],
+        ]);
+
+        $row = $this->timesheet->setHours(
+            $request->user(),
+            (int) $data['task_id'],
+            $data['date'],
+            $data['minutes'] === null ? null : (int) $data['minutes'],
+        );
+        abort_if($row === null, 422, 'That task has no timesheet row of yours on that date.');
+
+        $this->audit($request, 'timesheet.hours', null, [
+            'task_id' => $data['task_id'],
+            'date' => $data['date'],
+            'minutes' => $data['minutes'],
+        ]);
+
+        return $this->data($row);
+    }
 }
