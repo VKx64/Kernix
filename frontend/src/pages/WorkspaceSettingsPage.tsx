@@ -10,6 +10,7 @@ import { api, ApiError, displayName, normalizePage, unwrap } from '@/lib/api'
 import type { ApiEnvelope, Paginated, User, WorkspaceFeature } from '@/types/api'
 import { SettingsNav } from './EntityPages'
 import { McpAccessPanel } from './McpAccessPanel'
+import { WhatsAppPanel } from './WhatsAppPanel'
 
 interface DependentDataError {
   message?: string
@@ -245,6 +246,8 @@ export function WorkspaceSettingsPage() {
       </Panel>
 
       <McpAccessPanel />
+
+      <WhatsAppPanel />
     </div>
   )
 }

@@ -27,6 +27,8 @@ final class WorkspaceFeatures
 
     public const MESSAGES = 'messages';
 
+    public const WHATSAPP = 'whatsapp';
+
     /**
      * @var array<string, array{label: string, description: string, requires: array<int, string>}>
      */
@@ -61,10 +63,15 @@ final class WorkspaceFeatures
             'description' => 'The messages inbox, plus the work-request and estimate-request workflows that deliver through it.',
             'requires' => [],
         ],
+        self::WHATSAPP => [
+            'label' => 'WhatsApp',
+            'description' => 'Sends notifications to linked WhatsApp numbers and acts on replies. Off until a workspace links an account.',
+            'requires' => [self::MESSAGES],
+        ],
     ];
 
     /** Keys shown as a switch on the workspace settings screen. */
-    private const RENDERED = [self::CONTACTS, self::TIMESHEET, self::MESSAGES, self::OLIVER, self::CLIENTS, self::PROJECTS];
+    private const RENDERED = [self::CONTACTS, self::TIMESHEET, self::MESSAGES, self::WHATSAPP, self::OLIVER, self::CLIENTS, self::PROJECTS];
 
     /**
      * @return array<int, string>

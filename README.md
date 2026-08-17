@@ -182,6 +182,94 @@ Stop that variant with the same file selection:
 docker compose -f compose.yaml -f compose.dev.yaml down
 ```
 
+## WhatsApp
+
+Kernix speaks through **one** WhatsApp account — the studio's. That account
+messages employees, project managers, and clients, sits in project group chats,
+and turns what is said in them into work. Nobody enrols: numbers are matched
+against the ones already on personnel records and client contacts.
+
+**Read this first.** The bridge is [Baileys](https://github.com/WhiskeySockets/Baileys),
+an unofficial WhatsApp Web client. WhatsApp does not sanction third-party clients
+and can permanently ban a number it decides is automated. Link a number the
+business can afford to lose, and expect the protocol to change under it. The
+sanctioned alternative is Meta's WhatsApp Cloud API, which needs a business
+number, Meta verification, and per-conversation fees; swapping to it would touch
+only `App\Services\WhatsAppClient`.
+
+### Setting it up
+
+1. Set `WHATSAPP_BRIDGE_TOKEN` in `.env` to a private value, then
+   `docker compose up --build -d whatsapp`.
+2. Turn **WhatsApp** on for the workspace in **Administration → Workspace**. It is
+   the one feature switch that defaults to off.
+3. In that screen's **WhatsApp** panel, choose **Show QR** and scan it from the
+   phone whose account will speak for the studio (`settings.edit` required).
+4. Add the group chats you want it in on the phone, as you would any participant.
+   Each chat then appears in the panel's **Chats** list.
+5. Point each group at a project — in the panel, or by saying
+   `kernix link project 12` in the group itself. Until a chat has a project,
+   nothing can be raised from it.
+
+Employees and client contacts are recognised automatically from `phone_1` /
+`phone_2` on their records; a number matching nobody is logged and answered with
+silence.
+
+### What it does
+
+**In a project group** it stays quiet until addressed. Say `kernix` and then:
+
+| Message | Effect |
+| --- | --- |
+| `kernix task` | Reads the recent conversation and raises the work in it — one task per thing actually asked for, assigned to whoever was named, otherwise to the project manager. |
+| `kernix task only the API bits` | Same, narrowed to what you say. |
+| `kernix link project 12` | Tells it which project this group is (`tasks.assign`). |
+| `kernix status` / `kernix tasks` | Your own clock and your own task list. |
+| `kernix mute` / `unmute` | Stops and resumes everything it sends there. |
+
+Every other message in the group is logged silently and becomes the context the
+next `kernix task` reads.
+
+**From a client** nothing is ever a command. What they write is logged as the
+project's conversation, and the assistant decides — conservatively — what it is: a
+reported defect or a clear request becomes a task on their project, assigned and
+acknowledged; a question is passed to the project manager verbatim rather than
+answered; thanks and small talk get no reply at all. This applies both in their
+own chat and in a project group, since a bug usually arrives as a complaint
+dropped into the group everybody shares. An unrecognised number in a group with
+no project is ignored entirely.
+
+**One to one with an employee**, their own account's commands, under their own
+permissions and the same clock rules as the web client: `in`, `out`, `break`,
+`back`, `status`, `tasks`, `start 123`, `stop`, `note 123 text`, `reply text`,
+`ask …` (Oliver answers; his actions are never run over WhatsApp). Plain text
+answers their newest message thread.
+
+### What it sends, unprompted
+
+| When | Who | What |
+| --- | --- | --- |
+| Weekdays 08:30 | Project managers | Overdue, unassigned, and anything raised from a chat in the last day, on their own projects (`whatsapp:manager-brief`) |
+| Weekdays 09:00 | Employees | What they have overdue and due today (`whatsapp:due-reminders`) |
+| Weekdays 17:30 | Employees | Hours short of target, or a clock left running (`whatsapp:daily-nudge`) |
+| Mondays 09:30 | Client chats and project groups | What was finished, what is in progress, what the studio is waiting on them for (`whatsapp:client-digest`) |
+
+Plus, as they happen: task messages, and being put on a task. Every command takes
+`--dry-run` to see the wording without sending anything. An employee can turn
+their own WhatsApp notifications off in the panel; replies and commands keep
+working.
+
+### Operating it
+
+The **Chats** list is the control surface: which project a chat feeds, whether it
+may be read for work at all, and a mute switch per chat. Every message in either
+direction, including refusals, is in `whatsapp_messages` and readable at
+`GET /api/whatsapp/messages` with `settings.view`. Tasks raised from a chat carry
+a note saying which chat and why, and an audit row. Deleting the `whatsapp_auth`
+volume force-unlinks the account. Reading conversations needs **AI task creation**
+switched on with an OpenRouter key and model; everything else works without AI.
+See `whatsapp/README.md` for the bridge's own configuration.
+
 ## Browser companion extension
 
 Build and verify the private Chrome/Edge companion independently of Docker:

@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\TaskNote;
+use App\Observers\TaskNoteWhatsAppObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -22,6 +24,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Directed task messages are what WhatsApp delivers, so the model that
+        // carries them is watched once here rather than in every workflow that
+        // writes one.
+        TaskNote::observe(TaskNoteWhatsAppObserver::class);
+
         // The rest of the app throttles inline (`throttle:N,1`), but a public
         // form submission needs a composite key — slug + ip — which the
         // inline form cannot express. Keying on ip alone would let one

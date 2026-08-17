@@ -24,6 +24,13 @@ x-backend-worker: &backend-worker
     DB_PASSWORD: ${DB_PASSWORD:-production_v2_local_password}
     CACHE_STORE: file
     QUEUE_CONNECTION: database
+    # The queue worker is what actually sends WhatsApp messages, so it needs the
+    # bridge address and secret as much as the API does.
+    WHATSAPP_BRIDGE_URL: ${WHATSAPP_BRIDGE_URL:-http://whatsapp:8790}
+    WHATSAPP_BRIDGE_TOKEN: ${WHATSAPP_BRIDGE_TOKEN:-kernix-local-whatsapp-bridge-secret}
+    WHATSAPP_TRIGGER: ${WHATSAPP_TRIGGER:-kernix}
+    WHATSAPP_COUNTRY_CODE: ${WHATSAPP_COUNTRY_CODE:-63}
+    WHATSAPP_ACTOR_USER_ID: ${WHATSAPP_ACTOR_USER_ID:-}
     RUN_MIGRATIONS: "false"
     RUN_SEEDERS: "false"
   depends_on:
@@ -81,6 +88,11 @@ services:
       FILESYSTEM_DISK: local
       MAIL_MAILER: log
       MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-}
+      WHATSAPP_BRIDGE_URL: ${WHATSAPP_BRIDGE_URL:-http://whatsapp:8790}
+      WHATSAPP_BRIDGE_TOKEN: ${WHATSAPP_BRIDGE_TOKEN:-kernix-local-whatsapp-bridge-secret}
+      WHATSAPP_TRIGGER: ${WHATSAPP_TRIGGER:-kernix}
+      WHATSAPP_COUNTRY_CODE: ${WHATSAPP_COUNTRY_CODE:-63}
+      WHATSAPP_ACTOR_USER_ID: ${WHATSAPP_ACTOR_USER_ID:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env (minimum 12 characters)}
       RUN_MIGRATIONS: "true"
@@ -141,6 +153,36 @@ services:
       backend:
         condition: service_healthy
 
+  # The linked WhatsApp account lives here and nowhere else. It is not published
+  # to the host: the API and the queue worker reach it over the Compose network,
+  # and nothing outside the stack has any business talking to it.
+  #
+  # This connects a real WhatsApp account through an unofficial client. WhatsApp
+  # does not sanction that, and an account it flags can be banned. Link a number
+  # you are willing to lose, not the company's only one.
+  whatsapp:
+    build:
+      context: ./whatsapp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      KERNIX_WHATSAPP_HOST: 0.0.0.0
+      KERNIX_WHATSAPP_PORT: 8790
+      KERNIX_WHATSAPP_TOKEN: ${WHATSAPP_BRIDGE_TOKEN:-kernix-local-whatsapp-bridge-secret}
+      KERNIX_WHATSAPP_AUTH_DIR: /app/auth
+      # Container-to-container: the bridge posts each inbound message to the API.
+      KERNIX_BASE_URL: http://backend:8000
+      # Shown in WhatsApp's own "linked devices" list on the phone.
+      KERNIX_WHATSAPP_DEVICE_NAME: ${WHATSAPP_DEVICE_NAME:-Kernix}
+      KERNIX_WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-warn}
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      # The WhatsApp session. Lose this volume and the QR has to be scanned
+      # again; deleting it is how an account is force-unlinked.
+      - whatsapp_auth:/app/auth
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -167,3 +209,4 @@ services:
 volumes:
   backend_storage:
   mysql_data:
+  whatsapp_auth:

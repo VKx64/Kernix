@@ -24,6 +24,23 @@ return [
         'url' => env('MCP_PUBLIC_URL'),
     ],
 
+    // The WhatsApp bridge container. It holds the linked account and the socket;
+    // Kernix only ever talks to it over this address, with this shared secret,
+    // and the same secret is what the bridge presents on the inbound callback.
+    'whatsapp' => [
+        'url' => env('WHATSAPP_BRIDGE_URL'),
+        'token' => env('WHATSAPP_BRIDGE_TOKEN'),
+        'timeout' => (int) env('WHATSAPP_BRIDGE_TIMEOUT', 15),
+        // What the assistant answers to in a group chat. It stays silent in a
+        // group until it is addressed by this word.
+        'trigger' => env('WHATSAPP_TRIGGER', 'kernix'),
+        // Fills in a locally-written number: `09171234567` is `639171234567`.
+        'country_code' => env('WHATSAPP_COUNTRY_CODE', '63'),
+        // The account tasks raised from a chat are authored by. Blank means the
+        // project's manager, which is usually what a studio wants.
+        'actor_user_id' => env('WHATSAPP_ACTOR_USER_ID'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

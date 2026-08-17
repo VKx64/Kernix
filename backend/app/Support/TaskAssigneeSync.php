@@ -3,7 +3,10 @@
 namespace App\Support;
 
 use App\Models\Task;
+use App\Models\User;
+use App\Services\WhatsAppNotifier;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * `task_assignees` is the pivot everything this slice writes through;
@@ -54,6 +57,8 @@ class TaskAssigneeSync
     public static function apply(Task $task, array $userIds): array
     {
         $ordered = array_values(array_unique(array_map('intval', $userIds)));
+        $before = array_map('intval', $task->assignees()->newPivotStatement()
+            ->where('task_id', $task->getKey())->pluck('user_id')->all());
 
         DB::transaction(function () use ($task, $ordered) {
             $task->assignees()->newPivotStatement()->where('task_id', $task->getKey())->delete();
@@ -67,8 +72,38 @@ class TaskAssigneeSync
         });
 
         $task->unsetRelation('assignees');
+        self::announce($task, array_values(array_diff($ordered, $before)));
 
         return $ordered;
+    }
+
+    /**
+     * Being given a task writes no message — see TaskMutationService — but a
+     * phone is not the messages inbox, and "this is yours now" is exactly what
+     * somebody away from their desk needs. Only newly added assignees hear
+     * about it, so reordering or removing nobody says nothing.
+     *
+     * Notification must never be able to fail an assignment: the pivot is
+     * already written, and a WhatsApp bridge that is down is not a reason to
+     * refuse somebody's save.
+     *
+     * @param  array<int, int>  $addedUserIds
+     */
+    private static function announce(Task $task, array $addedUserIds): void
+    {
+        if ($addedUserIds === []) {
+            return;
+        }
+
+        try {
+            $notifier = app(WhatsAppNotifier::class);
+            $actor = auth()->user();
+            foreach (User::query()->whereKey($addedUserIds)->get() as $assignee) {
+                $notifier->taskAssigned($task, $assignee, $actor instanceof User ? $actor : null);
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**

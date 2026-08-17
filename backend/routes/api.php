@@ -38,8 +38,11 @@ use App\Http\Controllers\Api\TimerController;
 use App\Http\Controllers\Api\TimesheetController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserSettingsController;
+use App\Http\Controllers\Api\WhatsAppController;
+use App\Http\Controllers\Api\WhatsAppWebhookController;
 use App\Http\Controllers\Api\WorkspaceController;
 use App\Http\Middleware\RequireWorkspace;
+use App\Http\Middleware\VerifyWhatsAppBridge;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/extension/pairings/exchange', [ExtensionPairingController::class, 'exchange'])
@@ -49,6 +52,11 @@ Route::post('/extension/pairings/exchange', [ExtensionPairingController::class, 
 // moment earlier to a signed-in person, and has no session of its own to prove.
 Route::post('/mcp/authorize/claim', [McpAccessController::class, 'claim'])
     ->middleware('throttle:10,1');
+
+// Spent by the WhatsApp bridge container, which has no session and no user: it
+// proves itself with the shared secret and hands over one message at a time.
+Route::post('/whatsapp/inbound', [WhatsAppWebhookController::class, 'inbound'])
+    ->middleware([VerifyWhatsAppBridge::class, 'throttle:240,1']);
 
 Route::get('/invitations/{token}', [InvitationAcceptanceController::class, 'preview'])
     ->where('token', '[A-Fa-f0-9]{64}')
@@ -97,6 +105,17 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
 
     Route::get('/me/settings', [UserSettingsController::class, 'show']);
     Route::patch('/me/settings', [UserSettingsController::class, 'update']);
+
+    // Not behind `feature:whatsapp`: the account has to be linked before the
+    // switch is worth turning on, and every send checks the switch itself.
+    Route::get('/whatsapp/bridge', [WhatsAppController::class, 'bridge']);
+    Route::post('/whatsapp/bridge/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:10,1');
+    Route::post('/whatsapp/bridge/pair-code', [WhatsAppController::class, 'pairCode'])->middleware('throttle:10,1');
+    Route::post('/whatsapp/bridge/logout', [WhatsAppController::class, 'logout'])->middleware('throttle:10,1');
+    Route::get('/whatsapp/chats', [WhatsAppController::class, 'chats']);
+    Route::patch('/whatsapp/chats/{chat}', [WhatsAppController::class, 'updateChat']);
+    Route::post('/whatsapp/chats/{chat}/test', [WhatsAppController::class, 'test'])->middleware('throttle:10,1');
+    Route::get('/whatsapp/messages', [WhatsAppController::class, 'messages']);
 
     Route::get('/time', [TimeController::class, 'status']);
     Route::post('/time/clock-in', [TimeController::class, 'clockIn']);

@@ -16,6 +16,12 @@ frontend/dist/
 mcp/node_modules/
 mcp/dist/
 mcp/*.tsbuildinfo
+whatsapp/node_modules/
+whatsapp/dist/
+whatsapp/*.tsbuildinfo
+# The linked WhatsApp session, if the bridge is ever run outside Docker. These
+# files are credentials for a real account and must never be committed.
+whatsapp/auth/
 # Names the site and its ports; lives on the server only.
 mcp/.env.production
 

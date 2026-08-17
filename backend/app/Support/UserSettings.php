@@ -13,8 +13,9 @@ use Illuminate\Validation\Rule;
  * that person has ever opened the settings screen or not, and a value that has
  * gone stale in the database falls back rather than reaching a screen.
  *
- * Only the first eight of these drive server or client behaviour today. The rest
- * are stored so a toggle remembers itself; nothing acts on them yet.
+ * Only the first eight of these, plus `notify_whatsapp`, drive server or client
+ * behaviour today. The rest are stored so a toggle remembers itself; nothing
+ * acts on them yet.
  */
 class UserSettings
 {
@@ -34,6 +35,11 @@ class UserSettings
         'notify_mentions' => ['type' => 'bool', 'default' => true],
         'notify_due' => ['type' => 'bool', 'default' => true],
         'notify_oliver' => ['type' => 'bool', 'default' => true],
+        // On by default, unlike the other channels: the studio runs one WhatsApp
+        // account and this is how people are told about their own work. It is an
+        // opt-out, and turning it off silences everything but a direct answer to
+        // something the person themselves sent.
+        'notify_whatsapp' => ['type' => 'bool', 'default' => true],
         'daily_digest' => ['type' => 'enum', 'default' => 'off', 'options' => ['off', 'am', 'pm']],
         'break_reminders' => ['type' => 'bool', 'default' => false],
         'idle_detection' => ['type' => 'bool', 'default' => false],
