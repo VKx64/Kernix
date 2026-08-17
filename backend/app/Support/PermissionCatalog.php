@@ -49,6 +49,7 @@ final class PermissionCatalog
                 ['key' => 'tasks.change_status', 'label' => 'Change task status', 'description' => 'Change task status and complete or reopen subtasks while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.comment', 'label' => 'Comment on tasks', 'description' => 'Add task notes and manage eligible notes you authored while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.log_time', 'label' => 'Log task time', 'description' => 'Add or change time on task notes while clocked in.', 'requires' => ['tasks.comment']],
+                ['key' => 'tasks.adjust_time', 'label' => 'Correct logged time', 'description' => 'Set what a task actually cost, including downwards — for a timer left running or a mistyped figure.', 'requires' => ['tasks.log_time', 'tasks.assign']],
                 ['key' => 'tasks.subtasks', 'label' => 'Manage subtasks', 'description' => 'Create, edit, reorder, and remove subtasks while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.assign', 'label' => 'Assign tasks', 'description' => 'Assign tasks and subtasks to workspace users while clocked in.', 'requires' => ['tasks.view', 'time.track']],
                 ['key' => 'tasks.estimate', 'label' => 'Set task estimates', 'description' => 'Change task and subtask estimates while clocked in.', 'requires' => ['tasks.view', 'time.track']],

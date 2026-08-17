@@ -12,6 +12,7 @@ use App\Models\TaskWorkRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\TaskMutationService;
+use App\Services\TimeEntryService;
 use App\Support\CurrentWorkspace;
 use App\Support\SingleClient;
 use App\Support\TaskAssigneeSync;
@@ -29,7 +30,10 @@ use Illuminate\Validation\ValidationException;
 
 class TaskController extends ApiController
 {
-    public function __construct(private readonly TaskMutationService $taskMutations) {}
+    public function __construct(
+        private readonly TaskMutationService $taskMutations,
+        private readonly TimeEntryService $timeEntries,
+    ) {}
 
     private const VIEWS = ['triage', 'mine', 'all', 'unassigned', 'done'];
 
@@ -195,6 +199,7 @@ class TaskController extends ApiController
                     'created_by' => $request->user()->id,
                 ]);
             }
+
             // Being given a task is not a conversation. It shows in the
             // assignee's own list and in the task's activity; opening a thread
             // for it buried the messages that are actually somebody talking —
@@ -254,6 +259,68 @@ class TaskController extends ApiController
             'reason' => 'Raised this task and asked to work on it.',
             'status' => TaskWorkRequest::PENDING,
         ]);
+    }
+
+    /**
+     * Correct what a task actually cost.
+     *
+     * Logged time is recomputed from the timer entries and the minutes on the
+     * task's notes, so it could only ever go up: a timer left running through
+     * lunch, or a mistyped 300, stayed on the record. This writes the
+     * difference as a note of its own, which means the correction survives the
+     * next recompute, shows in the task's own history, and says who made it.
+     *
+     * The minutes land on whoever was doing the work rather than whoever fixed
+     * the number, because the figure being corrected is theirs — it is their
+     * timesheet that was wrong.
+     */
+    public function adjustTime(Request $request, Task $task): JsonResponse
+    {
+        $this->permission($request, 'tasks.adjust_time');
+        TaskMutationGuard::enforceOversight($request, $task);
+        $this->withinClient($task);
+        abort_if($task->archived_at, 409, 'Archived tasks are read-only.');
+
+        $data = $request->validate([
+            // A task that took more than a fortnight of solid hours is a typo,
+            // not a correction.
+            'minutes' => ['required', 'integer', 'min:0', 'max:100000'],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
+        ]);
+
+        $target = (int) $data['minutes'];
+        $before = (int) $task->actual_minutes;
+        $difference = $target - $before;
+
+        if ($difference !== 0) {
+            $reason = trim((string) ($data['reason'] ?? ''));
+            $task->notes()->create([
+                'body' => $reason !== '' ? $reason : $this->correctionLine($before, $target),
+                'time_minutes' => $difference,
+                // Whose time this is, not who typed it. Falls back to the
+                // person making the correction when nobody is assigned.
+                'time_logged_by' => $task->assignee_user_id ?? $request->user()->id,
+                'created_by' => $request->user()->id,
+                'is_message' => false,
+            ]);
+            $this->timeEntries->reconcile($task->id);
+        }
+
+        $this->audit($request, 'task.time.adjust', $task, [
+            'before_minutes' => $before,
+            'after_minutes' => $target,
+        ]);
+
+        return $this->data($this->present($task->fresh(), $request));
+    }
+
+    private function correctionLine(int $before, int $after): string
+    {
+        $spoken = fn (int $minutes) => $minutes >= 60
+            ? rtrim(rtrim(number_format($minutes / 60, 2, '.', ''), '0'), '.').'h'
+            : $minutes.'m';
+
+        return "Corrected the logged time from {$spoken($before)} to {$spoken($after)}.";
     }
 
     public function show(Request $request, Task $task): JsonResponse

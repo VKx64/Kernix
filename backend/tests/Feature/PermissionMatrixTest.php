@@ -132,6 +132,7 @@ class PermissionMatrixTest extends TestCase
             ]),
             'tasks.comment' => $this->taskChildRequest($actor, 'notes', ['body' => 'Matrix comment']),
             'tasks.log_time' => $this->taskChildRequest($actor, 'notes', ['body' => 'Matrix time log', 'time_minutes' => 15]),
+            'tasks.adjust_time' => $this->request('PUT', '/api/tasks/'.$this->task($actor)->id.'/time', ['minutes' => 30], 200, true),
             'tasks.subtasks' => $this->taskChildRequest($actor, 'subtasks', ['title' => 'Matrix subtask']),
             'tasks.assign' => $this->taskPatchRequest($actor, [
                 'assignee_user_id' => User::factory()->create()->id,
@@ -666,6 +667,7 @@ class PermissionMatrixTest extends TestCase
     {
         return in_array($key, [
             'tasks.create', 'tasks.edit', 'tasks.change_status', 'tasks.comment', 'tasks.log_time',
+            'tasks.adjust_time',
             'tasks.subtasks', 'tasks.assign', 'tasks.estimate', 'tasks.archive', 'tasks.attachments', 'tasks.review_completion',
             'tasks.request_estimate', 'tasks.review_estimate_requests',
             'tasks.work_unassigned', 'tasks.request_work', 'tasks.review_work_requests',

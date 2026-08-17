@@ -179,6 +179,7 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
 
     Route::post('/tasks/{task}/archive', [TaskController::class, 'archive']);
     Route::post('/tasks/{task}/restore', [TaskController::class, 'restore']);
+    Route::put('/tasks/{task}/time', [TaskController::class, 'adjustTime']);
     Route::get('/tasks/{task}/activity', [TaskController::class, 'activity']);
     Route::get('/task-work-requests/pending', [TaskWorkRequestController::class, 'pending']);
     Route::get('/tasks/{task}/work-requests', [TaskWorkRequestController::class, 'index']);

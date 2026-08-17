@@ -32,6 +32,9 @@ final class DefaultRoles
                     'tasks.change_status',
                     'tasks.comment',
                     'tasks.log_time',
+                    // Correcting a total is a manager's job. An employee logs
+                    // their own time and cannot rewrite it afterwards.
+                    'tasks.adjust_time',
                     'tasks.subtasks',
                     'tasks.assign',
                     'tasks.estimate',

@@ -73,7 +73,9 @@ export function TaskDrawer({
   timerBusy,
   canTrackTime,
   canLogTime,
+  canAdjustTime,
   onToggleTimer,
+  onAdjustTime,
   canManageFiles,
   filesAdminOverride,
   onFilesChanged,
@@ -98,6 +100,7 @@ export function TaskDrawer({
   onNext: () => void
   onToggleSubtask: (subtask: Subtask) => void
   onComment: (body: string, minutes: number) => Promise<void>
+  onAdjustTime: (minutes: number) => Promise<void>
   onComplete: () => void
   /** True only when the timer is running against *this* task. */
   timerRunning: boolean
@@ -106,6 +109,8 @@ export function TaskDrawer({
   timerBusy: boolean
   canTrackTime: boolean
   canLogTime: boolean
+  /** Correcting the total is a manager's job, not the assignee's. */
+  canAdjustTime: boolean
   onToggleTimer: () => void
   /** Whether the viewer may upload or delete files from the drawer. */
   canManageFiles: boolean
@@ -133,6 +138,8 @@ export function TaskDrawer({
   }, [taskId])
 
   const [minutesDraft, setMinutesDraft] = useState('')
+  const [totalDraft, setTotalDraft] = useState<string | null>(null)
+  const [totalBusy, setTotalBusy] = useState(false)
   const subtasks = task?.subtasks ?? []
   const attachments = task?.attachments ?? []
   // The run in progress counts towards the total on screen. Without it the
@@ -148,6 +155,24 @@ export function TaskDrawer({
       .filter(Boolean)
       .join('  ·  ')
   }, [task, logged])
+
+  /**
+   * A correction is the new total, not a delta: "this took two hours" is what
+   * somebody knows, and working out the difference from a number they think is
+   * wrong is not their job.
+   */
+  const commitTotal = async () => {
+    const text = totalDraft ?? ''
+    setTotalDraft(null)
+    const minutes = parseMinutes(text)
+    if (!text.trim() || minutes === loggedMinutes) return
+    setTotalBusy(true)
+    try {
+      await onAdjustTime(minutes)
+    } finally {
+      setTotalBusy(false)
+    }
+  }
 
   const send = async () => {
     const body = draft.trim()
@@ -370,6 +395,33 @@ export function TaskDrawer({
                 <Timer className="size-[13px]" />
                 {timerRunning ? 'Stop timer' : 'Start timer'}
               </Button>
+            )}
+            {canAdjustTime && !timerRunning && (
+              totalDraft !== null ? (
+                <input
+                  autoFocus
+                  value={totalDraft}
+                  disabled={totalBusy}
+                  inputMode="decimal"
+                  onChange={(event) => setTotalDraft(event.target.value)}
+                  onBlur={() => void commitTotal()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); void commitTotal() }
+                    if (event.key === 'Escape') { event.stopPropagation(); setTotalDraft(null) }
+                  }}
+                  aria-label="Total time on this task"
+                  className="w-20 rounded-sm border border-line-strong bg-inset px-1.5 py-1 text-right font-mono text-body-sm text-t1 outline-none"
+                />
+              ) : (
+                <Button
+                  variant="ghost"
+                  disabled={totalBusy}
+                  onClick={() => setTotalDraft(loggedMinutes ? String(loggedMinutes) : '')}
+                  title="Correct what this task actually cost"
+                >
+                  {logged ? `${logged} logged` : 'Set time'}
+                </Button>
+              )
             )}
             {timerRunning && (
               // A running clock with nothing on screen counting is

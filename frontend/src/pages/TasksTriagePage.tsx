@@ -1365,6 +1365,24 @@ function TaskDrawerConnected({
     return [...comments, ...events].sort((a, b) => a.at - b.at)
   }, [task.notes, activity, showEvents])
 
+  /**
+   * Correcting the total, which only a manager sees. The API takes the new
+   * total and writes the difference as a note, so the change lands in the
+   * task's own history rather than silently rewriting a number.
+   */
+  const adjustTime = async (minutes: number) => {
+    try {
+      await api.put(`/api/tasks/${id}/time`, {
+        minutes,
+        admin_override: adminOverride ? 1 : undefined,
+      })
+      await load()
+      await onReload()
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'That time did not save.')
+    }
+  }
+
   const comment = async (body: string, minutes = 0) => {
     setCommentBusy(true)
     try {
@@ -1422,6 +1440,8 @@ function TaskDrawerConnected({
       timerBusy={timer.busy}
       canTrackTime={can('time.track')}
       canLogTime={can('tasks.log_time')}
+      canAdjustTime={can('tasks.adjust_time')}
+      onAdjustTime={adjustTime}
       onToggleTimer={() => void (timerRunning ? timer.stop() : timer.start(task.id))}
       canManageFiles={can('tasks.attachments')}
       filesAdminOverride={adminOverride && canAdminOverride}

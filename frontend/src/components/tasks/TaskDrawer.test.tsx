@@ -55,6 +55,8 @@ function renderDrawer(task: Task | null, overrides: Partial<ComponentProps<typeo
         timerBusy={false}
         canTrackTime={false}
         canLogTime={false}
+        canAdjustTime={false}
+        onAdjustTime={async () => {}}
         onToggleTimer={() => {}}
         canManageFiles={false}
         onFilesChanged={() => {}}
@@ -230,4 +232,24 @@ it('keeps the time box away from anybody who may not log time', () => {
   renderDrawer(baseTask(), { canComment: true, canLogTime: false })
 
   expect(screen.queryByLabelText('Time spent')).not.toBeInTheDocument()
+})
+
+
+it('lets a manager correct the total, and keeps it away from everyone else', async () => {
+  const onAdjustTime = vi.fn(async () => {})
+  const actor = userEvent.setup()
+  const { unmount } = renderDrawer(baseTask({ actual_minutes: 240 }), { canAdjustTime: true, onAdjustTime })
+
+  // The current total is what you edit — not a difference somebody has to
+  // work out from a figure they already think is wrong.
+  await actor.click(await screen.findByRole('button', { name: '4h logged' }))
+  const field = screen.getByLabelText('Total time on this task')
+  await actor.clear(field)
+  await actor.type(field, '2.5h{Enter}')
+
+  await waitFor(() => expect(onAdjustTime).toHaveBeenCalledWith(150))
+  unmount()
+
+  renderDrawer(baseTask({ actual_minutes: 240 }), { canAdjustTime: false })
+  expect(screen.queryByRole('button', { name: '4h logged' })).not.toBeInTheDocument()
 })
