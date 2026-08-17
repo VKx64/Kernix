@@ -9,6 +9,7 @@ import { useFeature } from './lib/features'
 import { useCan } from './lib/permissions'
 import { TimerProvider } from './lib/useTimer'
 import { ClientsPage, ContactsPage, FieldsPage, ProjectsPage, RolesPage, UsersPage } from './pages/EntityPages'
+import { AssistantAuthorizePage } from './pages/AssistantAuthorizePage'
 import { ClientDetailPage } from './pages/ClientDetailPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DesignSystemPage } from './pages/DesignSystemPage'
@@ -140,6 +141,9 @@ export default function App() {
         <Route path="roles" element={<Navigate to="/settings/roles" replace />} />
         <Route path="fields" element={<Navigate to="/settings/fields" replace />} />
         <Route path="profile" element={<ProfilePage />} />
+        {/* Where an assistant's sign-in lands. Behind the same guard as the
+            rest — arriving as a guest sends you to log in and back here. */}
+        <Route path="assistant/authorize" element={<AssistantAuthorizePage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

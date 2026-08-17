@@ -34,6 +34,21 @@ export interface Config {
   /** Public origin this deployment answers on, used in setup instructions. */
   publicUrl: string | null;
   /**
+   * Where the Kernix web app lives, as a person's browser reaches it.
+   *
+   * The authorization flow hands the browser to Kernix to sign in and approve,
+   * so this is the one address the MCP server needs that is not the API.
+   */
+  appUrl: string;
+  /**
+   * Seals the authorization flow's client registrations and codes.
+   *
+   * It has to be the same value after a restart, or every connector that has
+   * already registered stops being recognised. Empty turns the flow off rather
+   * than inventing a value that would not survive the next restart.
+   */
+  oauthSecret: string;
+  /**
    * Tools that write are opt-in. A project manager that can only read is a
    * useful and much safer default, and an assistant cannot talk its way past
    * this because the tools are never registered in the first place.
@@ -109,6 +124,10 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): Config {
     host: process.env.KERNIX_MCP_HOST ?? '127.0.0.1',
     port,
     publicUrl: process.env.KERNIX_MCP_PUBLIC_URL?.replace(/\/+$/, '') ?? null,
+    // The API commonly sits on a path under the app's own origin, so that is
+    // the assumption when nobody says otherwise — and it is only a default.
+    appUrl: (process.env.KERNIX_APP_URL ?? baseUrl.replace(/\/(backend|api)$/, '')).replace(/\/+$/, ''),
+    oauthSecret: process.env.KERNIX_MCP_OAUTH_SECRET ?? '',
     allowWrites: envFlag('KERNIX_ALLOW_WRITES', false),
     adminOverride: envFlag('KERNIX_ADMIN_OVERRIDE', false),
     timeoutSeconds: Number(process.env.KERNIX_TIMEOUT_SECONDS ?? 30),

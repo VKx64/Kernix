@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
 import { loadConfig, type Config } from './config.js';
+import { mountOAuth, originOf } from './oauth.js';
 import { buildServer } from './server.js';
 
 const config = loadConfig();
@@ -25,6 +26,11 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  // The token endpoint is form-encoded by convention, and most OAuth clients
+  // send it that way even where JSON would be accepted.
+  app.use(express.urlencoded({ extended: false, limit: '64kb' }));
+
+  const oauth = mountOAuth(app, config);
 
   app.get('/healthz', (_request, response) => {
     response.json({
@@ -32,6 +38,7 @@ async function main(): Promise<void> {
       kernix: config.baseUrl,
       auth: config.tokenSource,
       writes: config.allowWrites,
+      oauth,
     });
   });
 
@@ -39,10 +46,17 @@ async function main(): Promise<void> {
     const token = resolveToken(request, config);
     if (!token) {
       // 401 with a challenge, so an MCP client knows to prompt for credentials
-      // rather than reporting the server as broken.
+      // rather than reporting the server as broken. Pointing at the resource
+      // document is what turns that prompt into a sign-in: a client that cannot
+      // hold a pasted token follows it to the authorization flow.
       response
         .status(401)
-        .set('WWW-Authenticate', 'Bearer realm="Kernix"')
+        .set(
+          'WWW-Authenticate',
+          oauth
+            ? `Bearer realm="Kernix", resource_metadata="${originOf(request, config)}/.well-known/oauth-protected-resource"`
+            : 'Bearer realm="Kernix"',
+        )
         .json({
           jsonrpc: '2.0',
           error: {
@@ -100,6 +114,7 @@ async function main(): Promise<void> {
     console.error(
       `kernix-mcp ready on ${origin}/mcp · ${config.baseUrl} · ` +
         `auth ${config.tokenSource === 'request' ? 'per request' : 'from environment'} · ` +
+        `sign-in ${oauth ? `via ${config.appUrl}` : 'off (set KERNIX_MCP_OAUTH_SECRET)'} · ` +
         `writes ${config.allowWrites ? 'enabled' : 'disabled'}`,
     );
   });

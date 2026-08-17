@@ -45,6 +45,11 @@ use Illuminate\Support\Facades\Route;
 Route::post('/extension/pairings/exchange', [ExtensionPairingController::class, 'exchange'])
     ->middleware('throttle:5,1');
 
+// Spent by the MCP server, not a browser: it holds a one-time handoff issued a
+// moment earlier to a signed-in person, and has no session of its own to prove.
+Route::post('/mcp/authorize/claim', [McpAccessController::class, 'claim'])
+    ->middleware('throttle:10,1');
+
 Route::get('/invitations/{token}', [InvitationAcceptanceController::class, 'preview'])
     ->where('token', '[A-Fa-f0-9]{64}')
     ->middleware('throttle:30,1');
@@ -87,6 +92,8 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::get('/mcp/access', [McpAccessController::class, 'index']);
     Route::post('/mcp/access', [McpAccessController::class, 'store']);
     Route::delete('/mcp/access/{token}', [McpAccessController::class, 'destroy']);
+    Route::post('/mcp/authorize', [McpAccessController::class, 'authorize'])
+        ->middleware('throttle:10,1');
 
     Route::get('/me/settings', [UserSettingsController::class, 'show']);
     Route::patch('/me/settings', [UserSettingsController::class, 'update']);

@@ -6,6 +6,7 @@ use App\Models\Workspace;
 use App\Support\CurrentWorkspace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -70,6 +71,67 @@ class McpAccessController extends ApiController
             'token' => $token->plainTextToken,
             'connection' => $this->present($token->accessToken),
         ], 201);
+    }
+
+    /**
+     * Approve a connector that cannot be handed a token directly.
+     *
+     * ChatGPT's connectors offer OAuth or nothing — there is no field to paste
+     * a token into — so the MCP server runs the authorization flow and sends
+     * the person here to sign in and say yes. This is the moment they say it.
+     *
+     * The token is not returned. It is held against a one-time handoff that the
+     * MCP server spends from its own side, which keeps the token out of the
+     * browser's address bar and out of anything that logs URLs.
+     */
+    public function authorize(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'client' => ['required', 'string', 'max:60'],
+        ]);
+
+        $label = Str::limit(Str::squish(strip_tags($data['client'])), 60, '') ?: 'AI assistant';
+        $token = $request->user()->createToken(self::LABEL.$label, ['web-api']);
+
+        $this->audit($request, 'mcp.token.create', $token->accessToken, [
+            'name' => $label,
+            'via' => 'oauth',
+        ]);
+
+        $handoff = bin2hex(random_bytes(32));
+        // Long enough to survive a redirect, short enough that a value left in
+        // a browser's history is worth nothing by the time anyone finds it.
+        Cache::put(self::handoffKey($handoff), $token->plainTextToken, now()->addSeconds(120));
+
+        return $this->data([
+            'handoff' => $handoff,
+            'connection' => $this->present($token->accessToken),
+        ], 201);
+    }
+
+    /**
+     * Spend a handoff for the token it stands for.
+     *
+     * Called by the MCP server rather than a browser, and unauthenticated by
+     * necessity — the caller has no session, only the handoff. What protects it
+     * is that the handoff is 64 random hex characters, lives two minutes, and
+     * is gone the moment it is read.
+     */
+    public function claim(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'handoff' => ['required', 'string', 'size:64', 'regex:/^[a-f0-9]+$/'],
+        ]);
+
+        $token = Cache::pull(self::handoffKey($data['handoff']));
+        abort_if($token === null, 404, 'That approval has already been used, or it expired. Start again from the connector.');
+
+        return $this->data(['token' => $token]);
+    }
+
+    private static function handoffKey(string $handoff): string
+    {
+        return 'mcp.oauth.handoff.'.$handoff;
     }
 
     public function destroy(Request $request, int $token): JsonResponse

@@ -135,16 +135,56 @@ Running it locally as a spawned process instead, with the token in the environme
 ## Connecting ChatGPT
 
 ChatGPT connectors fetch MCP over HTTP rather than spawning a process, so they need the
-hosted endpoint. Add it under **Settings → Connectors** as a custom MCP connector:
+hosted endpoint. They also have nowhere to put a token: the custom connector form offers
+OAuth or no authentication, and nothing in between. So the server signs people in instead.
+
+Under **Settings → Connectors**, with developer mode on (Settings → Connectors → Advanced),
+add a custom connector:
 
 ```
-URL:    https://mcp.ibmclients.com/mcp
-Auth:   Bearer token
-Token:  your-token-here
+MCP Server URL:  https://mcp.ibmclients.com/mcp
+Authentication:  OAuth
 ```
+
+Leave client ID and secret empty — the server registers the client itself. Saving opens a
+Kernix window; approve there and the connector is live. The approval mints an ordinary
+personal access token, so it shows up beside the others under **Settings → Workspace →
+AI assistant access** and is revoked the same way.
 
 ChatGPT reaches the endpoint over the public internet, so it must be published over HTTPS —
 a tunnel (`cloudflared`, `ngrok`) in front of the local port will do for testing.
+
+### How the sign-in works
+
+Worth knowing before debugging it, because it is deliberately split across two services.
+
+The MCP server speaks the OAuth half — discovery, dynamic client registration, an
+authorization code with PKCE — and stores nothing. Every value that has to survive a round
+trip is sealed into the string handed to the other side: the client registration is the
+client id, and the authorization code carries the Kernix token, encrypted rather than
+merely signed so a code in a URL gives nothing away.
+
+Kernix owns the person. The authorize endpoint redirects the browser to
+`KERNIX_APP_URL/assistant/authorize`, which already knows who is signed in, shows what is
+being allowed, and on approval mints the token and holds it against a one-time handoff.
+The MCP server spends that handoff server to server, so the token never travels through
+the browser.
+
+The access token handed back to ChatGPT **is** the Kernix token. There is no second notion
+of identity here — every later request arrives as `Authorization: Bearer <kernix token>`
+exactly as a pasted one would, and Kernix applies the account's own permissions to it.
+
+Two settings turn it on:
+
+```bash
+KERNIX_APP_URL=https://ibmclients.com        # where a browser reaches Kernix
+KERNIX_MCP_OAUTH_SECRET=$(openssl rand -hex 32)
+```
+
+Generate the secret once and leave it. It is what makes a registered connector still valid
+after the process restarts; change it and every connector has to be added again. Without
+it, `/healthz` reports `"oauth": false`, the OAuth endpoints answer 501, and clients that
+carry a token keep working untouched.
 
 ## Writing
 
@@ -180,6 +220,8 @@ KERNIX_MCP_HOSTED=1                          # take the token from each request
 KERNIX_MCP_HOST=0.0.0.0
 KERNIX_MCP_PORT=8765
 KERNIX_MCP_PUBLIC_URL=https://mcp.ibmclients.com/mcp
+KERNIX_APP_URL=https://ibmclients.com        # for connectors that sign in
+KERNIX_MCP_OAUTH_SECRET=<openssl rand -hex 32, generated once>
 KERNIX_ALLOW_WRITES=1                        # a ceiling; roles still apply
 ```
 

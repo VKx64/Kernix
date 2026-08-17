@@ -128,6 +128,13 @@ services:
       KERNIX_MCP_HOST: 0.0.0.0
       KERNIX_MCP_PORT: 8765
       KERNIX_MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://127.0.0.1:8765}
+      # Where a browser reaches the app, for the sign-in a connector sends
+      # somebody through. The API address above is no use here — it is the
+      # container's, and the browser is not in the container.
+      KERNIX_APP_URL: ${MCP_APP_URL:-http://localhost:${FRONTEND_PORT:-5173}}
+      # Fixed rather than random so a registered connector survives a restart.
+      # Any long string will do locally; production uses its own.
+      KERNIX_MCP_OAUTH_SECRET: ${MCP_OAUTH_SECRET:-kernix-local-assistant-sign-in-secret}
       KERNIX_ALLOW_WRITES: ${MCP_ALLOW_WRITES:-1}
       KERNIX_ADMIN_OVERRIDE: ${MCP_ADMIN_OVERRIDE:-0}
     depends_on:

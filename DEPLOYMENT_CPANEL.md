@@ -387,11 +387,18 @@ Keep the port here and in `.env.production` the same.
 ```bash
 cd ~/kernix/mcp
 cp .env.production.example .env.production
+echo "KERNIX_MCP_OAUTH_SECRET=$(openssl rand -hex 32)" >> .env.production
 ```
 
 Defaults in that file are correct for this account. Do **not** add
 `KERNIX_API_TOKEN`: in hosted mode each caller presents their own, and a token
 here would hand every caller that one account.
+
+The secret generated above is what signs and seals the connector sign-in flow
+(section 11.6). Generate it **once** and leave it alone: change it and every
+connector that has already registered stops being recognised and has to be
+added again. It is not in `.env.production.example` for that reason — a shared
+example value would be no secret at all.
 
 ### 11.3 Tell Kernix where it lives
 
@@ -435,7 +442,39 @@ uptime monitoring at.
 Then in Kernix: **Settings → Workspace → AI assistant access** → create a
 connection and paste the config it prints into Claude or ChatGPT.
 
-### 11.6 Known limits of this arrangement
+### 11.6 Connectors that sign in instead of holding a token
+
+Claude Desktop and Claude Code take a Kernix token pasted into their config.
+ChatGPT's connectors do not — the form offers OAuth or no authentication at
+all, with nowhere to put a token — so the MCP server runs the sign-in flow
+itself and hands back a Kernix token at the end of it.
+
+Nothing extra is deployed for this; it is the same process. It needs two
+values in `mcp/.env.production`:
+
+```
+KERNIX_APP_URL=https://ibmclients.com
+KERNIX_MCP_OAUTH_SECRET=<the value generated in 11.2>
+```
+
+`KERNIX_APP_URL` is where a **browser** reaches Kernix, which is not the same
+as `KERNIX_BASE_URL` — that one ends in `/backend` and is for API calls. The
+sign-in sends the person to `KERNIX_APP_URL/assistant/authorize`, where Kernix
+asks them to approve, mints the token, and passes it back to the MCP server
+through a handoff that expires in two minutes and can be spent once.
+
+Confirm it is on:
+
+```bash
+curl -s https://mcp.ibmclients.com/healthz          # "oauth":true
+curl -s https://mcp.ibmclients.com/.well-known/oauth-authorization-server
+```
+
+With no secret set, `"oauth":false` and those endpoints answer 501. Everything
+else keeps working — a missing secret costs you ChatGPT, not the connections
+that already hold tokens.
+
+### 11.7 Known limits of this arrangement
 
 - **Up to a minute of downtime per crash.** cron is the supervisor, so a dead
   process is not noticed until the next run. Acceptable for an assistant;
@@ -447,7 +486,7 @@ connection and paste the config it prints into Claude or ChatGPT.
 If Setup Node.js App is ever enabled on this plan, Passenger removes all three
 limits and the `.htaccess` proxy and cron entry can go.
 
-### 11.7 If it will not start
+### 11.8 If it will not start
 
 - **Check `~/logs/kernix-mcp.log`** first — a missing `KERNIX_BASE_URL` exits
   at boot with the reason, rather than failing on the first call.
@@ -457,6 +496,11 @@ limits and the `.htaccess` proxy and cron entry can go.
   header carries the whole credential and has to arrive intact.
 - **The public URL returns the cPanel default page** — the `.htaccess` rule is
   not being applied; confirm it sits in the subdomain's own document root.
+- **ChatGPT says the connector could not be added** — check `/healthz` reports
+  `"oauth":true`. If it says `false`, `KERNIX_MCP_OAUTH_SECRET` is missing.
+- **Sign-in opens a Kernix page that refuses the request** — `KERNIX_APP_URL`
+  and `KERNIX_MCP_PUBLIC_URL` disagree with what Kernix itself has in
+  `MCP_PUBLIC_URL`. Kernix only accepts approvals bound for its own MCP server.
 
 ---
 

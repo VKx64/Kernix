@@ -287,14 +287,14 @@ const STEPS: Record<ClientKey, { intro: string; steps: string[]; note?: string }
   },
   chatgpt: {
     intro:
-      'ChatGPT reaches this server over the internet rather than running it on your machine, so it needs the address and token separately rather than a config file.',
+      'ChatGPT has nowhere to paste a token — it signs in instead. You do not need to create a connection here first; approving the sign-in creates one for you.',
     steps: [
       'Open ChatGPT → Settings → Connectors. This needs a paid plan; connectors are not on the free tier.',
       'Under Advanced settings, turn on Developer mode. Custom MCP connectors are hidden until you do.',
       'Back on Connectors, choose Create (or Add custom connector).',
-      'Name it Kernix, and paste the URL from the block above as the MCP Server URL.',
-      'For authentication pick the access-token option and paste the token on its own. If it asks for a header instead, the name is Authorization and the value is Bearer followed by a space and the token.',
-      'Save, then approve the connector when ChatGPT asks whether you trust it.',
+      'Name it Kernix and paste the URL above as the MCP Server URL.',
+      'For authentication choose OAuth. Leave any client ID or secret fields empty — Kernix hands those out by itself.',
+      'Save. ChatGPT opens a Kernix window: sign in if you are not already, then choose Allow.',
       'In a new chat, open the + menu and switch Kernix on for that conversation.',
     ],
     note:
@@ -307,16 +307,9 @@ function snippetFor(client: ClientKey, endpoint: string, token: string): string 
     return `claude mcp add --transport http kernix ${endpoint} \\\n  --header "Authorization: Bearer ${token}"`
   }
   if (client === 'chatgpt') {
-    // ChatGPT has no config file to paste into — these are the three values its
-    // form asks for, laid out so they can be copied one line at a time.
-    return [
-      `MCP Server URL:  ${endpoint}`,
-      `Authentication:  Access token / API key`,
-      `Token:           ${token}`,
-      ``,
-      `If it asks for a header instead:`,
-      `  Authorization: Bearer ${token}`,
-    ].join('\n')
+    // ChatGPT has no config file to paste into, and no token field either — it
+    // signs in, so the form only ever needs these two lines.
+    return [`MCP Server URL:  ${endpoint}`, `Authentication:  OAuth`].join('\n')
   }
   return JSON.stringify(
     {
