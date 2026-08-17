@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\TimeSession;
 use App\Models\User;
+use App\Support\CurrentWorkspace;
 use App\Support\SingleClient;
 use App\Support\TimeSessionCleanup;
 use Illuminate\Http\JsonResponse;
@@ -51,8 +52,18 @@ class BootstrapController extends ApiController
         if ($canSeeRoles && $user->isAdmin()) {
             $roles = Role::query()->select(['id', 'name', 'key_name']);
         }
+        // Scoped to the current workspace explicitly: accounts belong to
+        // workspaces through a pivot rather than a column, so `User` carries no
+        // global workspace scope and an unqualified query here returns every
+        // account on the installation — leaking one tenant's staff list into
+        // another's assignee picker.
         $assignees = $canSeeCoworkers
-            ? User::query()->where('status', 'active')->whereNull('archived_at')->orderBy('first_name')->get()
+            ? User::query()
+                ->inWorkspace(CurrentWorkspace::id())
+                ->where('status', 'active')
+                ->whereNull('archived_at')
+                ->orderBy('first_name')
+                ->get()
                 ->map(fn (User $coworker) => $this->userSummary($coworker))
             : collect();
 

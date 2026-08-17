@@ -88,6 +88,45 @@ class WorkspaceIsolationTest extends TestCase
     /**
      * @return array{workspace: int, task: Task}
      */
+    /**
+     * `/api/bootstrap` fills the assignee picker. Accounts belong to a
+     * workspace through a pivot rather than a column, so the query has to scope
+     * itself — nothing else will do it — and forgetting to hands one tenant the
+     * full staff list of every other tenant on the installation.
+     *
+     * The colleague below is what gives this test teeth: with only one account
+     * in the database an unscoped query and a scoped one return the same row.
+     */
+    public function test_bootstrap_lists_only_the_current_workspace_members(): void
+    {
+        $colleague = User::factory()->create([
+            'role_id' => $this->admin->role_id,
+            'first_name' => 'Only',
+            'last_name' => 'InTheFirst',
+        ]);
+        $this->assertTrue($colleague->fresh()->workspaces()->exists());
+
+        $this->assertContains(
+            $colleague->username,
+            array_column($this->getJson('/api/bootstrap')->assertOk()->json('data.assignees'), 'username'),
+            'the colleague should be visible from the workspace they belong to',
+        );
+
+        $this->postJson('/api/workspaces', ['name' => 'Second studio'])->assertCreated();
+
+        $usernames = array_column(
+            $this->getJson('/api/bootstrap')->assertOk()->json('data.assignees'),
+            'username',
+        );
+
+        $this->assertSame([$this->admin->username], $usernames);
+        $this->assertNotContains($colleague->username, $usernames);
+        $this->assertSame(
+            $usernames,
+            array_column($this->getJson('/api/bootstrap')->json('data.coworkers'), 'username'),
+        );
+    }
+
     private function makeClientProjectTask(string $clientName, string $projectName, string $taskTitle): array
     {
         $client = Client::query()->create(['name' => $clientName, 'created_by' => $this->admin->id]);
