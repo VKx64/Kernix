@@ -195,20 +195,11 @@ class TaskController extends ApiController
                     'created_by' => $request->user()->id,
                 ]);
             }
-            $actorName = trim($request->user()->first_name.' '.$request->user()->last_name) ?: $request->user()->username;
-            foreach ($assigneeIds as $assigneeId) {
-                if ((int) $assigneeId === (int) $request->user()->id) {
-                    continue;
-                }
-                $message = $task->notes()->create([
-                    'body' => "{$actorName} assigned this task to you.",
-                    'assigned_user_id' => $assigneeId,
-                    'created_by' => $request->user()->id,
-                    'is_message' => true,
-                ]);
-                $message->update(['conversation_id' => $message->id]);
-            }
-
+            // Being given a task is not a conversation. It shows in the
+            // assignee's own list and in the task's activity; opening a thread
+            // for it buried the messages that are actually somebody talking —
+            // asking for more time, flagging that the job is bigger than it
+            // looked. Messages is for those.
             return $task;
         });
         $this->audit($request, 'task.create', $task, $task->toArray() + ['assignee_user_ids' => $assigneeIds]);

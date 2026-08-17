@@ -53,11 +53,6 @@ class AiTaskBatchService
                 foreach ($subtasks as $index => $subtaskTitle) {
                     $task->subtasks()->create(['title' => trim((string) $subtaskTitle), 'status_value_id' => $pending, 'sort_order' => ($index + 1) * 10, 'actual_minutes' => 0, 'created_by' => $actor->id]);
                 }
-                if ($task->assignee_user_id && (int) $task->assignee_user_id !== (int) $actor->id) {
-                    $actorName = trim($actor->first_name.' '.$actor->last_name) ?: $actor->username;
-                    $message = $task->notes()->create(['body' => "{$actorName} assigned this AI-created task to you.", 'assigned_user_id' => $task->assignee_user_id, 'created_by' => $actor->id, 'is_message' => true]);
-                    $message->update(['conversation_id' => $message->id]);
-                }
                 $hash = $this->fingerprint($task);
                 $generation->generatedTasks()->create(['task_id' => $task->id, 'baseline_hash' => $hash]);
                 $tasks[] = $task;

@@ -150,6 +150,26 @@ class TaskAssigneesApiTest extends TestCase
         );
     }
 
+    public function test_assigning_somebody_starts_no_conversation_with_them(): void
+    {
+        // Messages is where a person raises something — that a job is bigger
+        // than it looked, that they need more hours. A thread per assignment
+        // buried those under traffic nobody wrote and nobody reads.
+        [, $project] = $this->workspace();
+        $assignee = User::factory()->create();
+
+        $taskId = (int) $this->postJson('/api/tasks', [
+            'project_id' => $project->id,
+            'title' => 'Cut the launch reel',
+            'assignee_user_ids' => [$assignee->id],
+        ])->assertCreated()->json('data.id');
+
+        $second = User::factory()->create();
+        $this->patchJson("/api/tasks/{$taskId}", ['assignee_user_ids' => [$second->id]])->assertOk();
+
+        $this->assertDatabaseCount('task_notes', 0);
+    }
+
     public function test_workspace_scoped_validation_rejects_a_foreign_workspace_user(): void
     {
         [, $project] = $this->workspace();

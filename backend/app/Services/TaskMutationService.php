@@ -47,20 +47,9 @@ class TaskMutationService
 
             $this->projectMemory->afterTaskUpdate($task, isset($before['status_value_id']) ? (int) $before['status_value_id'] : null);
 
-            $actorName = trim($actor->first_name.' '.$actor->last_name) ?: $actor->username;
-            foreach (array_diff($afterAssigneeIds, $beforeAssigneeIds) as $newlyAssignedId) {
-                if ((int) $newlyAssignedId === (int) $actor->id) {
-                    continue;
-                }
-                $message = $task->notes()->create([
-                    'body' => "{$actorName} assigned this task to you.",
-                    'assigned_user_id' => $newlyAssignedId,
-                    'created_by' => $actor->id,
-                    'is_message' => true,
-                ]);
-                $message->update(['conversation_id' => $message->id]);
-            }
-
+            // Reassignment writes no message. The change is in the task's
+            // activity and the task itself moves into the new assignee's list;
+            // a thread saying so only pushed real conversations down the page.
             return $before;
         });
     }
