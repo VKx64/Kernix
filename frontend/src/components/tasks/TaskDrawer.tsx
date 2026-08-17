@@ -8,7 +8,7 @@ import { TaskDrawerSubtasks } from '@/components/tasks/TaskDrawerSubtasks'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatMinutes, isTaskDone, taskLoggedMinutes } from '@/lib/taskSignals'
+import { formatClock, formatMinutes, isTaskDone, taskLoggedMinutes } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
 import type { Subtask, Task, UserSummary } from '@/types/api'
 
@@ -69,8 +69,10 @@ export function TaskDrawer({
   onComment,
   onComplete,
   timerRunning,
+  timerSeconds,
   timerBusy,
   canTrackTime,
+  canLogTime,
   onToggleTimer,
   canManageFiles,
   filesAdminOverride,
@@ -95,12 +97,15 @@ export function TaskDrawer({
   onPrevious: () => void
   onNext: () => void
   onToggleSubtask: (subtask: Subtask) => void
-  onComment: (body: string) => Promise<void>
+  onComment: (body: string, minutes: number) => Promise<void>
   onComplete: () => void
   /** True only when the timer is running against *this* task. */
   timerRunning: boolean
+  /** Seconds on this task's current run, for the clock in the footer. */
+  timerSeconds: number
   timerBusy: boolean
   canTrackTime: boolean
+  canLogTime: boolean
   onToggleTimer: () => void
   /** Whether the viewer may upload or delete files from the drawer. */
   canManageFiles: boolean
@@ -127,9 +132,14 @@ export function TaskDrawer({
     scrollRef.current?.scrollTo?.({ top: 0 })
   }, [taskId])
 
+  const [minutesDraft, setMinutesDraft] = useState('')
   const subtasks = task?.subtasks ?? []
   const attachments = task?.attachments ?? []
-  const logged = formatMinutes(taskLoggedMinutes(task ?? ({} as Task)))
+  // The run in progress counts towards the total on screen. Without it the
+  // task reads as untouched for the whole hour somebody is working on it, and
+  // the number only moves when they remember to stop the clock.
+  const loggedMinutes = taskLoggedMinutes(task ?? ({} as Task)) + (timerRunning ? Math.floor(timerSeconds / 60) : 0)
+  const logged = formatMinutes(loggedMinutes)
   const done = task ? isTaskDone(task) : false
 
   const meta = useMemo(() => {
@@ -141,9 +151,14 @@ export function TaskDrawer({
 
   const send = async () => {
     const body = draft.trim()
-    if (!body || commentBusy) return
-    await onComment(body)
+    const logged = parseMinutes(minutesDraft)
+    // Either half is enough on its own: a note about the work, or the time it
+    // took. Requiring both would mean inventing a sentence to log twenty
+    // minutes, which is how time stops being logged at all.
+    if ((!body && !logged) || commentBusy) return
+    await onComment(body, logged)
     setDraft('')
+    setMinutesDraft('')
   }
 
   return (
@@ -312,9 +327,29 @@ export function TaskDrawer({
               placeholder="Write a comment — ↵ to send"
               className="max-h-[120px] min-h-8 flex-1 resize-none border-0 bg-transparent py-1.5 text-body-lg leading-[1.5] text-t1 outline-none placeholder:text-t4"
             />
+            {canLogTime && (
+              // Beside the comment rather than behind a separate dialog: the
+              // moment somebody has to go looking for it is the moment the
+              // time goes unlogged.
+              <input
+                value={minutesDraft}
+                onChange={(event) => setMinutesDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    void send()
+                  }
+                }}
+                inputMode="decimal"
+                placeholder="0m"
+                aria-label="Time spent"
+                title="Time spent — 45, 45m, 1.5h or 1:30"
+                className="w-14 self-end rounded-sm border border-line-soft bg-transparent px-1.5 py-1 text-right font-mono text-body-sm text-t2 outline-none placeholder:text-t4 focus:border-line-strong"
+              />
+            )}
             <Button
               size="icon-sm"
-              disabled={!draft.trim() || commentBusy}
+              disabled={(!draft.trim() && !parseMinutes(minutesDraft)) || commentBusy}
               onClick={() => void send()}
               aria-label="Send comment"
             >
@@ -336,6 +371,13 @@ export function TaskDrawer({
                 {timerRunning ? 'Stop timer' : 'Start timer'}
               </Button>
             )}
+            {timerRunning && (
+              // A running clock with nothing on screen counting is
+              // indistinguishable from a button that did nothing.
+              <span className="font-mono text-body-sm tabular-nums text-ok" aria-label="Time on this run">
+                {formatClock(timerSeconds)}
+              </span>
+            )}
             <span className="flex-1" />
             <span className="font-mono text-[10.5px] text-t4">Esc</span>
           </div>
@@ -348,4 +390,27 @@ export function TaskDrawer({
 /** Grid children must be siblings, so the label/value pair needs no wrapper element. */
 function Fragmented({ children }: { children: React.ReactNode }) {
   return <>{children}</>
+}
+
+/**
+ * Reads the little time box beside the comment.
+ *
+ * `45`, `45m`, `1.5h` and `1:30` are all things a person writes for the same
+ * span, and the box is too small to explain itself, so it accepts all of them.
+ * Anything else reads as zero rather than guessing.
+ */
+function parseMinutes(input: string): number {
+  const text = input.trim().toLowerCase()
+  if (!text) return 0
+
+  const clock = /^(\d{1,2}):([0-5]\d)$/.exec(text)
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2])
+
+  const hours = /^(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)?$/.exec(text)
+  if (hours) return Math.round(Number(hours[1]) * 60)
+
+  const minutes = /^(\d+(?:\.\d+)?)\s*m?(?:ins?|inutes?)?$/.exec(text)
+  if (minutes) return Math.round(Number(minutes[1]))
+
+  return 0
 }

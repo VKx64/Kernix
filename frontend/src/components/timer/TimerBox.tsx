@@ -8,17 +8,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { HourChart } from '@/components/timer/HourChart'
-import { formatMinutes } from '@/lib/taskSignals'
+import { formatClock, formatMinutes } from '@/lib/taskSignals'
 import type { Timer } from '@/lib/useTimer'
 import { cn } from '@/lib/utils'
 import { BREAK_KINDS } from '@/types/api'
-
-/** `01:12:04` — the working clock, which is read in hours. */
-function hms(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds))
-  const parts = [Math.floor(safe / 3600), Math.floor((safe % 3600) / 60), safe % 60]
-  return parts.map((part) => String(part).padStart(2, '0')).join(':')
-}
 
 /** `12:04` — a break is short enough that the hour would be noise. */
 function ms(seconds: number): string {
@@ -57,7 +50,7 @@ export function TimerBox({ timer }: { timer: Timer }) {
       : 'Not tracking'
 
   // Idle, the clock has no run to report, so it reports the day instead.
-  const clock = onBreak ? ms(seconds) : working ? hms(seconds) : formatMinutes(timer.todayMinutes) || '0m'
+  const clock = onBreak ? ms(seconds) : working ? formatClock(seconds) : formatMinutes(timer.todayMinutes) || '0m'
 
   const dueLabel = !onBreak
     ? `${formatMinutes(timer.todayMinutes) || '0m'} today`
@@ -127,7 +120,7 @@ export function TimerBox({ timer }: { timer: Timer }) {
 
       {onBreak && (
         <span className="block truncate pb-[5px] pl-[23px] pr-[9px] text-[11px] text-t4">
-          {task?.title ?? 'Session'} paused · {hms(timer.pausedSeconds)}
+          {task?.title ?? 'Session'} paused · {formatClock(timer.pausedSeconds)}
         </span>
       )}
 

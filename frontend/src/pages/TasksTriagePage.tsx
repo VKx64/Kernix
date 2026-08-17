@@ -1365,10 +1365,16 @@ function TaskDrawerConnected({
     return [...comments, ...events].sort((a, b) => a.at - b.at)
   }, [task.notes, activity, showEvents])
 
-  const comment = async (body: string) => {
+  const comment = async (body: string, minutes = 0) => {
     setCommentBusy(true)
     try {
-      await api.post(`/api/tasks/${id}/notes`, { body, admin_override: adminOverride ? 1 : undefined })
+      await api.post(`/api/tasks/${id}/notes`, {
+        // The API wants a body; time logged on its own gets one that says so
+        // rather than an empty note nobody can read back later.
+        body: body || `Logged ${minutes} minutes.`,
+        ...(minutes > 0 && can('tasks.log_time') ? { time_minutes: minutes } : {}),
+        admin_override: adminOverride ? 1 : undefined,
+      })
       await load()
       await onReload()
     } catch (reason) {
@@ -1412,8 +1418,10 @@ function TaskDrawerConnected({
       onComment={comment}
       onComplete={() => onToggleDone(task)}
       timerRunning={timerRunning}
+      timerSeconds={timerRunning ? timer.seconds : 0}
       timerBusy={timer.busy}
       canTrackTime={can('time.track')}
+      canLogTime={can('tasks.log_time')}
       onToggleTimer={() => void (timerRunning ? timer.stop() : timer.start(task.id))}
       canManageFiles={can('tasks.attachments')}
       filesAdminOverride={adminOverride && canAdminOverride}

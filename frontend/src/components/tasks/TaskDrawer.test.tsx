@@ -51,8 +51,10 @@ function renderDrawer(task: Task | null, overrides: Partial<ComponentProps<typeo
         onComment={async () => {}}
         onComplete={() => {}}
         timerRunning={false}
+        timerSeconds={0}
         timerBusy={false}
         canTrackTime={false}
+        canLogTime={false}
         onToggleTimer={() => {}}
         canManageFiles={false}
         onFilesChanged={() => {}}
@@ -176,4 +178,56 @@ describe('TaskDrawer subtasks', () => {
 
     window.removeEventListener('keydown', listener)
   })
+})
+
+
+/**
+ * Two things the drawer used to leave to guesswork: how long a task has taken,
+ * and whether the timer somebody just started is running at all.
+ */
+it('counts the running clock where the person can see it', async () => {
+  renderDrawer(baseTask({ actual_minutes: 30 }), {
+    canTrackTime: true,
+    timerRunning: true,
+    timerSeconds: 4325,
+  })
+
+  expect(await screen.findByLabelText('Time on this run')).toHaveTextContent('01:12:05')
+  // The run counts towards the total as it happens, so 30m logged plus 72
+  // minutes on the clock reads as 1h 42m rather than a stale half hour.
+  expect(screen.getByText(/1h 42m logged/)).toBeInTheDocument()
+})
+
+it('says what a task has taken, and shows no clock when none is running', async () => {
+  renderDrawer(baseTask({ actual_minutes: 95 }), { canTrackTime: true })
+
+  expect(await screen.findByText(/1h 35m logged/)).toBeInTheDocument()
+  expect(screen.queryByLabelText('Time on this run')).not.toBeInTheDocument()
+})
+
+it('logs time beside the comment, in whatever shape it was written', async () => {
+  const onComment = vi.fn(async () => {})
+  const actor = userEvent.setup()
+  renderDrawer(baseTask(), { canComment: true, canLogTime: true, onComment })
+
+  await actor.type(screen.getByLabelText('Time spent'), '1.5h')
+  await actor.type(screen.getByPlaceholderText(/Write a comment/), 'Rebuilt the export{Enter}')
+
+  await waitFor(() => expect(onComment).toHaveBeenCalledWith('Rebuilt the export', 90))
+})
+
+it('lets time be logged on its own, with no comment to invent', async () => {
+  const onComment = vi.fn(async () => {})
+  const actor = userEvent.setup()
+  renderDrawer(baseTask(), { canComment: true, canLogTime: true, onComment })
+
+  await actor.type(screen.getByLabelText('Time spent'), '45{Enter}')
+
+  await waitFor(() => expect(onComment).toHaveBeenCalledWith('', 45))
+})
+
+it('keeps the time box away from anybody who may not log time', () => {
+  renderDrawer(baseTask(), { canComment: true, canLogTime: false })
+
+  expect(screen.queryByLabelText('Time spent')).not.toBeInTheDocument()
 })

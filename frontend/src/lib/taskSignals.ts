@@ -151,6 +151,16 @@ export function dueMeta(iso: string | null | undefined, now = new Date()): DueMe
 }
 
 /** `4h 20m`, `4h`, `20m`, or empty — never `0m`, which is noise in a row. */
+/**
+ * `01:12:04` — a running clock, which is read in hours and has to keep its
+ * columns still while the seconds change.
+ */
+export function formatClock(seconds: number | null | undefined): string {
+  const safe = Math.max(0, Math.floor(seconds ?? 0))
+  const parts = [Math.floor(safe / 3600), Math.floor((safe % 3600) / 60), safe % 60]
+  return parts.map((part) => String(part).padStart(2, '0')).join(':')
+}
+
 export function formatMinutes(minutes: number | null | undefined): string {
   const total = Math.max(0, Math.round(minutes ?? 0))
   if (!total) return ''
