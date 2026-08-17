@@ -63,6 +63,11 @@ final class DefaultRoles
                     'time.track',
                     'projects.view',
                     'tasks.view',
+                    // Writing down a job for yourself is allowed; being handed
+                    // it is not. A task created by someone who cannot assign
+                    // lands on the project manager with a work request
+                    // attached, so the manager decides who picks it up.
+                    'tasks.create',
                     'tasks.change_status',
                     'tasks.comment',
                     'tasks.log_time',

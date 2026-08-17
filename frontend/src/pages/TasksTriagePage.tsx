@@ -846,6 +846,12 @@ export function TasksTriagePage() {
           toast.error(reason instanceof Error ? reason.message : 'The task was created, but its files could not be uploaded.')
         }
       }
+      // Somebody who cannot assign work has just asked for this task rather
+      // than taken it. Saying so here saves them hunting for it in their own
+      // list and concluding the save failed.
+      if ((task as Task & { work_request_raised?: boolean }).work_request_raised) {
+        toast.success('Sent to your project manager. You can start once they approve it.')
+      }
       setCreateOpen(false)
       await reload()
       setParam('open', String(task.id))

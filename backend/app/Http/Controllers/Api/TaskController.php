@@ -8,6 +8,7 @@ use App\Models\Task;
 use App\Models\TaskAttachment;
 use App\Models\TaskCompletionProof;
 use App\Models\TaskFolder;
+use App\Models\TaskWorkRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\TaskMutationService;
@@ -211,6 +212,7 @@ class TaskController extends ApiController
             return $task;
         });
         $this->audit($request, 'task.create', $task, $task->toArray() + ['assignee_user_ids' => $assigneeIds]);
+        $workRequest = $this->askToWorkOnOwnTask($request, $task, $assigneeIds);
         if ($subtaskDrafts !== []) {
             foreach ($task->subtasks()->orderBy('sort_order')->orderBy('id')->get() as $subtask) {
                 $this->audit($request, 'task.subtask.create', $task, [
@@ -220,7 +222,47 @@ class TaskController extends ApiController
             }
         }
 
-        return $this->data($this->present($task, $request), 201);
+        // Told plainly rather than left for the client to infer: whoever just
+        // filled in the form needs to know the task is waiting on somebody
+        // else before they go looking for it in their own list.
+        $presented = $this->present($task, $request);
+        $presented->setAttribute('work_request_raised', $workRequest !== null);
+
+        return $this->data($presented, 201);
+    }
+
+    /**
+     * Somebody who cannot assign work has just written down a job for
+     * themselves. The task lands on the project manager either way — that is
+     * the rule above, not a new one — so this turns "I made a task" into the
+     * ask it plainly is, using the same review queue as any other request to
+     * pick up work that is not yours.
+     *
+     * Nothing here grants anything. Until a reviewer approves, the creator is
+     * exactly as unassigned as they were a moment before, which is the point:
+     * a person cannot route work to themselves by writing it down.
+     *
+     * Silent for anyone who can assign — a manager creating a task for a
+     * colleague is not asking permission — and for a task that did land on the
+     * creator, where there is nothing to approve.
+     */
+    private function askToWorkOnOwnTask(Request $request, Task $task, array $assigneeIds): ?TaskWorkRequest
+    {
+        $user = $request->user();
+
+        if ($user->canDo('tasks.assign') || ! $user->canDo('tasks.request_work')) {
+            return null;
+        }
+        if (in_array((int) $user->id, array_map('intval', $assigneeIds), true)) {
+            return null;
+        }
+
+        return TaskWorkRequest::create([
+            'task_id' => $task->id,
+            'requester_user_id' => $user->id,
+            'reason' => 'Raised this task and asked to work on it.',
+            'status' => TaskWorkRequest::PENDING,
+        ]);
     }
 
     public function show(Request $request, Task $task): JsonResponse

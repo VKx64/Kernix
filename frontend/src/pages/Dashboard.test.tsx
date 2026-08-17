@@ -15,6 +15,12 @@ import { DashboardPage } from './DashboardPage'
 const state = vi.hoisted(() => ({ data: null as unknown as Dashboard }))
 const apiGet = vi.hoisted(() => vi.fn(async () => ({ data: state.data })))
 
+// The approval queue fetches its own data and reads the signed-in role to
+// decide whether to render at all. It is covered by its own test file; here it
+// would only drag the auth context into cases that are about the dashboard's
+// numbers.
+vi.mock('@/components/dashboard/WorkRequestInbox', () => ({ WorkRequestInbox: () => null }))
+
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
   return { ...actual, api: { ...actual.api, get: apiGet } }

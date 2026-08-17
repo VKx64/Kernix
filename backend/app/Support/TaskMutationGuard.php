@@ -122,7 +122,12 @@ class TaskMutationGuard
         // A task defaults to the project's manager as assignee, so whoever
         // created it is frequently not the assignee. Locking them out of the
         // task they just made would be nonsense.
-        if ((int) $task->created_by === (int) $user->id) {
+        //
+        // Only for somebody who can hand out work, though. For anybody else,
+        // writing down a job is asking for it — the task lands on the manager
+        // with a work request attached, and this carve-out would quietly
+        // answer that request on their behalf.
+        if ((int) $task->created_by === (int) $user->id && $user->canDo('tasks.assign')) {
             return;
         }
         // Being handed a subtask is being handed work on its parent; without

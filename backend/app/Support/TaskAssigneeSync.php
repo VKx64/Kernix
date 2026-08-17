@@ -13,11 +13,11 @@ use Illuminate\Support\Facades\DB;
  *
  * Reads that need to know "is this task assigned to X" (`TaskMutationGuard`,
  * the controller's `mine`/`unassigned`/`'none'` filters) deliberately do NOT
- * trust the pivot alone. At least one call site this slice does not own
- * (`TaskWorkRequestController:154`) writes `assignee_user_id` through a bulk
- * `Builder::update()`, which never fires an Eloquent model event — the pivot
- * cannot be kept current for that path from inside this class. So during
- * this transition, "assigned" is defined as **pivot membership OR a matching
+ * trust the pivot alone. Single-assignee writes still happen outside this
+ * class (tests, factories, `AiTaskBatchService`, Oliver's undo replay), and a
+ * bulk `Builder::update()` never fires an Eloquent model event, so the pivot
+ * cannot be kept current for such a path from inside here. So during this
+ * transition, "assigned" is defined as **pivot membership OR a matching
  * `assignee_user_id`** everywhere it's checked, not pivot alone. That union
  * is what makes every legacy single-assignee write — synchronous or bulk,
  * inside this slice's files or outside them — visible immediately, even

@@ -88,16 +88,30 @@ class TaskWorkRequestApiTest extends TestCase
             ->assertStatus(201);
     }
 
-    public function test_the_creator_can_still_act_on_a_task_assigned_to_someone_else(): void
+    public function test_a_creator_who_assigns_work_can_still_act_on_a_task_assigned_to_someone_else(): void
     {
         // A task defaults to the project manager as assignee, so the person who
         // created it is routinely not the assignee.
-        $creator = $this->userWith(['tasks.comment']);
+        $creator = $this->userWith(['tasks.comment', 'tasks.assign']);
         $this->task->update(['created_by' => $creator->id]);
         Sanctum::actingAs($creator);
 
         $this->postJson("/api/tasks/{$this->task->id}/notes", ['body' => 'Adding the brief I promised.'])
             ->assertStatus(201);
+    }
+
+    public function test_a_creator_who_cannot_assign_work_is_held_to_the_same_gate(): void
+    {
+        // Writing down a job is asking for it. Without this the carve-out above
+        // would answer that request on the manager's behalf, and the approval
+        // step would exist only on paper.
+        $creator = $this->userWith(['tasks.comment', 'tasks.request_work']);
+        $this->task->update(['created_by' => $creator->id]);
+        Sanctum::actingAs($creator);
+
+        $this->postJson("/api/tasks/{$this->task->id}/notes", ['body' => 'Starting on this now.'])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'TASK_NOT_ASSIGNED');
     }
 
     public function test_a_subtask_assignee_can_act_on_the_parent_task(): void

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\Task;
 use App\Models\TaskWorkRequest;
 use App\Support\SingleClient;
+use App\Support\TaskAssigneeSync;
 use App\Support\TaskMutationGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -150,8 +151,13 @@ class TaskWorkRequestController extends ApiController
 
             // Approval is the assignment: saying yes without handing the task
             // over would leave the requester exactly as blocked as before.
+            //
+            // Through the sync rather than a bulk column write, so the
+            // `task_assignees` pivot agrees with the column afterwards. A bulk
+            // update fires no model event, which used to leave the previous
+            // assignee sitting in the pivot and counting as assigned.
             if ($approved) {
-                Task::query()->whereKey($task->id)->update(['assignee_user_id' => $locked->requester_user_id]);
+                TaskAssigneeSync::apply($task, [(int) $locked->requester_user_id]);
             }
         });
 

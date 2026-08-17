@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { Avatar, ErrorBanner } from '@/components/shared'
 import { RetainerBurn } from '@/components/dashboard/RetainerBurn'
 import { WeekChart } from '@/components/dashboard/WeekChart'
+import { WorkRequestInbox } from '@/components/dashboard/WorkRequestInbox'
 import { PanelSection } from '@/components/kernix/panel-section'
 import { MetricTile } from '@/components/kernix/metric-tile'
 import { Segmented } from '@/components/kernix/segmented'
@@ -110,6 +111,10 @@ export function DashboardPage() {
             </div>
             <Segmented label="Dashboard range" options={RANGES} value={range} onChange={setRange} />
           </header>
+
+          {/* Above the tiles: somebody is blocked until this is decided, and
+              that outranks a number that will read the same in an hour. */}
+          <WorkRequestInbox />
 
           <div className="grid grid-cols-2 gap-2.5 @[660px]:grid-cols-4">
             <MetricTile
