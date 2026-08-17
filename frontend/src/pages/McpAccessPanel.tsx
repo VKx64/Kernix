@@ -210,7 +210,21 @@ export function McpAccessPanel() {
                 {copied === 'snippet' ? 'Copied' : 'Copy'}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">{HINTS[client]}</p>
+            <div className="space-y-2 rounded-lg border border-line bg-muted/20 p-3">
+              <p className="text-sm text-muted-foreground">{STEPS[client].intro}</p>
+              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-t4">
+                {STEPS[client].steps.map((step) => (
+                  <li key={step} className="text-pretty leading-[1.5]">{step}</li>
+                ))}
+              </ol>
+              {STEPS[client].note && (
+                <p className="text-xs text-warn text-pretty">{STEPS[client].note}</p>
+              )}
+              <p className="text-xs text-muted-foreground text-pretty">
+                Once connected, try <span className="font-medium text-t2">“what is late right now, and who is it sitting with?”</span> —
+                it reads your work under your own permissions, and can only change what you could change yourself.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -245,11 +259,47 @@ export function McpAccessPanel() {
   )
 }
 
-const HINTS: Record<ClientKey, string> = {
-  'claude-desktop': 'Add this to claude_desktop_config.json, then restart Claude Desktop.',
-  'claude-code': 'Run this in your terminal from anywhere.',
-  chatgpt:
-    'Add it under Settings → Connectors as a custom MCP connector. ChatGPT reaches the endpoint over the public internet, so it must be published over HTTPS.',
+/**
+ * What to actually do with the block above, per client.
+ *
+ * Menu names in these apps move around between releases, so each step says
+ * what is being looked for as well as where it currently lives — a wording
+ * that survives the next redesign is worth more than one that matches today's
+ * label exactly.
+ */
+const STEPS: Record<ClientKey, { intro: string; steps: string[]; note?: string }> = {
+  'claude-desktop': {
+    intro: 'Claude Desktop reads its connectors from a config file.',
+    steps: [
+      'Open Settings → Developer → Edit Config. That opens claude_desktop_config.json.',
+      'Paste the block above. If the file already has an "mcpServers" section, add the "kernix" entry inside it rather than replacing it.',
+      'Save the file and fully quit Claude Desktop — closing the window is not enough.',
+      'Reopen it. Kernix appears in the tools menu under the message box.',
+    ],
+  },
+  'claude-code': {
+    intro: 'One command, run from anywhere.',
+    steps: [
+      'Paste the command above into your terminal.',
+      'Check it took with: claude mcp list',
+      'Start a session and ask "what is late?" — Claude will ask permission to use the Kernix tools the first time.',
+    ],
+  },
+  chatgpt: {
+    intro:
+      'ChatGPT reaches this server over the internet rather than running it on your machine, so it needs the address and token separately rather than a config file.',
+    steps: [
+      'Open ChatGPT → Settings → Connectors. This needs a paid plan; connectors are not on the free tier.',
+      'Under Advanced settings, turn on Developer mode. Custom MCP connectors are hidden until you do.',
+      'Back on Connectors, choose Create (or Add custom connector).',
+      'Name it Kernix, and paste the URL from the block above as the MCP Server URL.',
+      'For authentication pick the access-token option and paste the token on its own. If it asks for a header instead, the name is Authorization and the value is Bearer followed by a space and the token.',
+      'Save, then approve the connector when ChatGPT asks whether you trust it.',
+      'In a new chat, open the + menu and switch Kernix on for that conversation.',
+    ],
+    note:
+      'ChatGPT will only connect over HTTPS to a public address. If the endpoint above starts with http:// or points at localhost, it will not work until this server is published.',
+  },
 }
 
 function snippetFor(client: ClientKey, endpoint: string, token: string): string {
@@ -257,7 +307,16 @@ function snippetFor(client: ClientKey, endpoint: string, token: string): string 
     return `claude mcp add --transport http kernix ${endpoint} \\\n  --header "Authorization: Bearer ${token}"`
   }
   if (client === 'chatgpt') {
-    return `URL:     ${endpoint}\nAuth:    Bearer token\nToken:   ${token}`
+    // ChatGPT has no config file to paste into — these are the three values its
+    // form asks for, laid out so they can be copied one line at a time.
+    return [
+      `MCP Server URL:  ${endpoint}`,
+      `Authentication:  Access token / API key`,
+      `Token:           ${token}`,
+      ``,
+      `If it asks for a header instead:`,
+      `  Authorization: Bearer ${token}`,
+    ].join('\n')
   }
   return JSON.stringify(
     {

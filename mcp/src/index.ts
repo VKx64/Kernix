@@ -93,9 +93,12 @@ async function main(): Promise<void> {
   app.delete('/mcp', noSession);
 
   app.listen(config.port, config.host, () => {
-    const where = config.publicUrl ?? `http://${config.host}:${config.port}`;
+    // A public URL is just as likely to be written with the /mcp path already
+    // on it as without, and both are reasonable readings of "the address this
+    // answers on". Take either and print one endpoint.
+    const origin = (config.publicUrl ?? `http://${config.host}:${config.port}`).replace(/\/mcp$/, '');
     console.error(
-      `kernix-mcp ready on ${where}/mcp · ${config.baseUrl} · ` +
+      `kernix-mcp ready on ${origin}/mcp · ${config.baseUrl} · ` +
         `auth ${config.tokenSource === 'request' ? 'per request' : 'from environment'} · ` +
         `writes ${config.allowWrites ? 'enabled' : 'disabled'}`,
     );
