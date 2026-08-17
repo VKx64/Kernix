@@ -44,7 +44,7 @@ describe('OliverChat', () => {
     await actor.type(await screen.findByLabelText('Message Oliver'), 'Book the studio please')
     await actor.click(screen.getByRole('button', { name: /Send/ }))
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'Book the studio please' }))
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'Book the studio please', autopilot: true }))
     expect(screen.getByText('Book the studio please')).toBeInTheDocument()
     expect(await screen.findByText('Created “Book the studio”')).toBeInTheDocument()
     expect(screen.getByText('You do not have permission for that change.')).toBeInTheDocument()
@@ -95,6 +95,29 @@ describe('OliverChat', () => {
 
     await actor.click(await screen.findByRole('button', { name: 'What is on me?' }))
 
-    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'What is on me?' }))
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'What is on me?', autopilot: true }))
+  })
+
+  it('sends the autopilot switch so turning it off actually stops Oliver acting', async () => {
+    const actor = userEvent.setup()
+    apiPost.mockResolvedValue({
+      data: {
+        message: {
+          id: 8,
+          role: 'assistant',
+          body: 'Autopilot is off, so nothing was changed.',
+          actions: [{ type: 'assign_task', status: 'proposed', summary: 'Reassign task #4' }],
+        },
+      },
+    })
+    render(<OliverChat autopilot={false} />)
+
+    await actor.type(await screen.findByLabelText('Message Oliver'), 'Reassign task 4')
+    await actor.click(screen.getByRole('button', { name: /Send/ }))
+
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/api/oliver/messages', { body: 'Reassign task 4', autopilot: false }),
+    )
+    expect(await screen.findByText('Reassign task #4')).toBeInTheDocument()
   })
 })

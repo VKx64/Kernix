@@ -50,11 +50,14 @@ function groupedActions(actions: OliverMessage['actions']): Array<{ status: stri
  */
 export function OliverChat({
   prompts = [],
+  autopilot = true,
   hint,
   onActed,
   registerAsk,
 }: {
   prompts?: string[]
+  /** The autopilot switch. When off, Oliver proposes instead of acting. */
+  autopilot?: boolean
   /** The line under the composer — what the current mode will and will not do. */
   hint?: string
   /** Called after a turn that changed something, so the rail can refresh. */
@@ -98,7 +101,7 @@ export function OliverChat({
     setMessages((current) => [...current, { id: `pending-${Date.now()}`, role: 'user', body: trimmed, actions: [] }])
     setBody('')
     try {
-      const response = unwrap(await api.post<ApiEnvelope<{ message: OliverMessage }> | { message: OliverMessage }>('/api/oliver/messages', { body: trimmed }))
+      const response = unwrap(await api.post<ApiEnvelope<{ message: OliverMessage }> | { message: OliverMessage }>('/api/oliver/messages', { body: trimmed, autopilot }))
       setMessages((current) => [...current, response.message])
       if (response.message.actions?.some((action) => action.status === 'done')) onActed?.()
     } catch (reason) {
@@ -106,7 +109,7 @@ export function OliverChat({
     } finally {
       setBusy(false)
     }
-  }, [busy, available, onActed])
+  }, [busy, available, autopilot, onActed])
 
   useEffect(() => { registerAsk?.((text) => { void ask(text) }) }, [registerAsk, ask])
 
@@ -164,8 +167,15 @@ export function OliverChat({
                     )}
                   </div>
 
+                  {/*
+                    Oliver answers in lists far more often than in prose — what is
+                    late, who is free, what it just changed — and every one of those
+                    arrives with real newlines. Without pre-wrap they collapse into a
+                    single run-on paragraph, which is exactly the shape of answer that
+                    most needs its line breaks.
+                  */}
                   {message.body && (
-                    <span className={cn('text-body-lg leading-[1.6] text-pretty', mine ? 'text-title' : 'text-[#c8c8d0]')}>
+                    <span className={cn('whitespace-pre-wrap text-body-lg leading-[1.6] text-pretty', mine ? 'text-title' : 'text-[#c8c8d0]')}>
                       {message.body}
                     </span>
                   )}
@@ -179,9 +189,9 @@ export function OliverChat({
                           <span key={`${message.id}-${index}`} className="flex items-baseline gap-[9px]">
                             <span
                               aria-hidden="true"
-                              className={cn('size-[5px] flex-none rounded-full', row.status === 'done' ? 'bg-good' : 'bg-danger')}
+                              className={cn('size-[5px] flex-none rounded-full', row.status === 'done' ? 'bg-good' : row.status === 'proposed' ? 'bg-warn' : 'bg-danger')}
                             />
-                            <span className={cn('flex-1 text-body-sm leading-[1.5]', row.status === 'done' ? 'text-[#a8a8b0]' : 'text-danger')}>
+                            <span className={cn('flex-1 text-body-sm leading-[1.5]', row.status === 'done' ? 'text-[#a8a8b0]' : row.status === 'proposed' ? 'text-warn' : 'text-danger')}>
                               {row.summary}{row.count > 1 ? ` (×${row.count})` : ''}
                             </span>
                           </span>

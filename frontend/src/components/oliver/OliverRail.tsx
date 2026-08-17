@@ -2,17 +2,27 @@ import { formatMinutes } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
 import type { OliverInsights } from '@/types/api'
 
-/** The nine one-click tools, each an intent the composer would otherwise type. */
-export const OLIVER_TOOLS: Array<{ label: string; sub: string; intent: string; color: string }> = [
-  { label: 'What is on me', sub: 'Your late and blocked work, worst first', intent: 'risk', color: 'var(--danger)' },
-  { label: 'Free to pick up', sub: 'Unowned tasks in the projects you are on', intent: 'unowned', color: 'var(--warn)' },
-  { label: 'Lighten my week', sub: 'Move what can wait out of the next five days', intent: 'workload', color: 'var(--brand)' },
-  { label: 'Check my time', sub: 'Gaps between tracked hours and logged hours', intent: 'time', color: 'var(--danger)' },
-  { label: 'Draft a client update', sub: 'On the work you own · you approve before it sends', intent: 'client update', color: 'var(--warn)' },
-  { label: 'Plan my week', sub: 'Order your work by what gates what', intent: 'plan', color: 'var(--good)' },
-  { label: 'Split a heavy task', sub: 'Break anything of yours running long into steps', intent: 'split', color: 'var(--brand)' },
-  { label: 'Unblock me', sub: 'Push each of your blockers to whoever can clear it', intent: 'escalate', color: 'var(--warn)' },
-  { label: 'Retainer check', sub: 'Burn on the clients you work for', intent: 'retainer', color: 'var(--warn)' },
+/**
+ * The nine one-click tools.
+ *
+ * `prompt` is the sentence the composer would otherwise have to type, and it
+ * has to be a sentence. These once sent a bare keyword — "risk", "escalate",
+ * "retainer" — and Oliver, given one word and no verb, guessed: "Draft a client
+ * update" asked which client was meant, "Unblock me" asked what to escalate,
+ * "Split a heavy task" split work across people instead of splitting a task,
+ * and "Retainer check" answered that the workspace had no retainer data at all.
+ * A button whose label promises an outcome has to ask for that outcome.
+ */
+export const OLIVER_TOOLS: Array<{ label: string; sub: string; prompt: string; color: string }> = [
+  { label: 'What is on me', sub: 'Your late and blocked work, worst first', prompt: 'What of mine is late or blocked? Worst first.', color: 'var(--danger)' },
+  { label: 'Free to pick up', sub: 'Unowned tasks in the projects you are on', prompt: 'Which unassigned tasks are open on the projects I work on?', color: 'var(--warn)' },
+  { label: 'Lighten my week', sub: 'Move what can wait out of the next five days', prompt: 'My next five days look heavy. Which of my tasks could move later without causing a problem, and why?', color: 'var(--brand)' },
+  { label: 'Check my time', sub: 'Gaps between tracked hours and logged hours', prompt: 'Compare the hours I have tracked against the time logged on my tasks, and point out any gaps.', color: 'var(--danger)' },
+  { label: 'Draft a client update', sub: 'On the work you own · you approve before it sends', prompt: 'Draft a short client-facing progress update covering the work I own. Just write it — I will approve before anything is sent.', color: 'var(--warn)' },
+  { label: 'Plan my week', sub: 'Order your work by what gates what', prompt: 'Plan my week: order my open tasks by what blocks what, and say why each comes where it does.', color: 'var(--good)' },
+  { label: 'Split a heavy task', sub: 'Break anything of yours running long into steps', prompt: 'Which of my tasks is running long or looks too big? Break it into smaller steps.', color: 'var(--brand)' },
+  { label: 'Unblock me', sub: 'Push each of your blockers to whoever can clear it', prompt: 'List everything of mine that is blocked, and for each one say who can clear it and what they need to do.', color: 'var(--warn)' },
+  { label: 'Retainer check', sub: 'Burn on the clients you work for', prompt: 'How is retainer burn looking for the clients I work on? Name any that are over or heading over.', color: 'var(--warn)' },
 ]
 
 export interface ActedEntry {
@@ -70,9 +80,9 @@ export function OliverRail({
         <span className="px-[3px] pb-1.5 text-label uppercase text-label-fg">Tools</span>
         {OLIVER_TOOLS.map((tool) => (
           <button
-            key={tool.intent + tool.label}
+            key={tool.label}
             type="button"
-            onClick={() => onTool(tool.intent)}
+            onClick={() => onTool(tool.prompt)}
             className="flex w-full flex-col gap-0.5 rounded-lg px-[9px] py-2 text-left hover:bg-soft"
           >
             <span className="flex w-full items-center gap-2">

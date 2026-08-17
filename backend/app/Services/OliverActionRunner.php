@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskNote;
 use App\Models\User;
+use App\Support\CurrentWorkspace;
 use App\Support\TaskMutationGuard;
 use App\Support\TaskStatuses;
 use Throwable;
@@ -37,22 +38,66 @@ class OliverActionRunner
     public function __construct(private readonly TaskMutationService $taskMutations) {}
 
     /**
+     * What an action would do, said in the same words the runner uses after
+     * doing it. Used when autopilot is off: the teammate sees the proposal in
+     * the shape the confirmation will take.
+     *
+     * @param  array<int, array<string, mixed>>  $actions
+     * @return array<int, array<string, mixed>>
+     */
+    public function describe(array $actions): array
+    {
+        return array_map(function (array $action): array {
+            $type = (string) ($action['type'] ?? 'unknown');
+            $title = trim((string) ($action['title'] ?? ''));
+            $taskId = isset($action['task_id']) ? (int) $action['task_id'] : 0;
+            $subject = $title !== '' ? "“{$title}”" : ($taskId ? "task #{$taskId}" : 'a task');
+
+            return [
+                'type' => $type,
+                'status' => 'proposed',
+                'summary' => match ($type) {
+                    'create_task' => "Create {$subject}",
+                    'update_task' => "Update {$subject}",
+                    'assign_task' => "Reassign {$subject}",
+                    'comment_task' => "Add a note to {$subject}",
+                    default => "Run {$type}",
+                },
+            ];
+        }, array_slice($actions, 0, self::MAX_ACTIONS_PER_TURN));
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $actions
      * @return array<int, array<string, mixed>>
      */
     public function run(array $actions, User $actor): array
     {
         $results = [];
+        // "Create a task and add a note to it" is the most natural thing to ask
+        // for, and the model cannot name the new task's id because it does not
+        // exist yet when the turn is written. Anything later in the same turn
+        // that names no task falls back to the one just created, which is the
+        // only thing it could reasonably have meant.
+        $justCreated = null;
+
         foreach (array_slice($actions, 0, self::MAX_ACTIONS_PER_TURN) as $action) {
             $type = (string) ($action['type'] ?? '');
+            if (! isset($action['task_id']) || (int) $action['task_id'] === 0) {
+                $action['task_id'] = $justCreated;
+            }
             try {
-                $results[] = match ($type) {
+                $result = match ($type) {
                     'create_task' => $this->createTask($action, $actor),
                     'update_task' => $this->updateTask($action, $actor),
                     'assign_task' => $this->assignTask($action, $actor),
                     'comment_task' => $this->commentTask($action, $actor),
                     default => $this->refuse($type, 'That action is not supported.'),
                 };
+                if ($type === 'create_task' && isset($result['task_id'])) {
+                    $justCreated = (int) $result['task_id'];
+                }
+                $results[] = $result;
             } catch (Throwable $exception) {
                 $results[] = $this->refuse($type, $exception->getMessage());
             }
@@ -150,7 +195,12 @@ class OliverActionRunner
         $before = $this->snapshot($task, ['assignee_user_id']);
         $this->taskMutations->updateTask($task, ['assignee_user_id' => $assignee], $actor);
         $this->audit($actor, 'task.oliver.assign', $task->id, ['assignee_user_id' => $assignee]);
-        $name = $assignee ? trim((string) User::query()->whereKey($assignee)->value('first_name')) : 'nobody';
+        // Full name: two people sharing a first name is ordinary, and "assigned
+        // to Rosa" is not something a teammate should have to disambiguate.
+        $person = $assignee ? User::query()->whereKey($assignee)->first(['first_name', 'last_name', 'username']) : null;
+        $name = $person
+            ? (trim($person->first_name.' '.$person->last_name) ?: $person->username)
+            : 'nobody';
 
         $summary = "Assigned “{$task->title}” to {$name}";
         $record = $this->record($actor, 'assign_task', $task->id, $before, ['assignee_user_id' => $assignee], $summary);
@@ -290,15 +340,22 @@ class OliverActionRunner
     /** @param array<string, mixed> $action */
     private function assignee(array $action, User $actor, bool $required = false): ?int
     {
-        $id = $action['assignee_user_id'] ?? null;
+        // `assignee_id` is accepted as well: `response_format` is advisory on
+        // several providers, so a model that shortens the field name should not
+        // cost the teammate their change.
+        $id = $action['assignee_user_id'] ?? $action['assignee_id'] ?? null;
         if ($id === null) {
             abort_if($required, 422, 'That action needs someone to assign the task to.');
 
             return null;
         }
         $this->assertCan($actor, 'tasks.assign');
+        // Workspace scope is explicit here for the same reason it is in the
+        // prompt: `User` has no workspace column to scope it implicitly, so an
+        // id from another tenant would otherwise validate and stick.
         abort_unless(
-            User::query()->whereKey($id)->where('status', 'active')->whereNull('archived_at')->exists(),
+            User::query()->inWorkspace(CurrentWorkspace::id())
+                ->whereKey($id)->where('status', 'active')->whereNull('archived_at')->exists(),
             422,
             'That person cannot be assigned work.',
         );

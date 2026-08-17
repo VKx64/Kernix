@@ -70,7 +70,9 @@ class OliverUndoTest extends TestCase
         $rows = $this->getJson('/api/oliver/actions')->assertOk()->json('data');
 
         $this->assertSame(['assign_task', 'create_task'], array_column($rows, 'type'));
-        $this->assertSame('Assigned “Fix checkout” to Liam', $rows[0]['summary']);
+        // Full name, not just "Liam": two people sharing a first name is
+        // ordinary, and the rail is where somebody checks what was changed.
+        $this->assertSame('Assigned “Fix checkout” to Liam Cruz', $rows[0]['summary']);
         $this->assertSame('Task', $rows[0]['entity_type']);
         $this->assertSame($task->id, $rows[0]['entity_id']);
         $this->assertNull($rows[0]['undone_at']);

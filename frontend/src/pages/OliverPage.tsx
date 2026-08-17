@@ -127,6 +127,7 @@ export function OliverPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <OliverChat
             prompts={[...PROMPTS]}
+            autopilot={autopilot}
             hint={autopilot ? 'Client mail needs your approval' : 'Autopilot off — proposes only'}
             onActed={load}
             registerAsk={(fn) => { askRef.current = fn }}

@@ -8,11 +8,14 @@ use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\AiFeatures;
+use App\Support\CurrentWorkspace;
 use App\Support\TaskMutationGuard;
 
 class OliverPrompt
 {
     public const VERSION = 'oliver-operator-v1';
+
+    public function __construct(private readonly OliverInsights $insights) {}
 
     public function system(?SystemSetting $settings = null): string
     {
@@ -42,7 +45,7 @@ PROMPT;
 
     public function context(OliverConversation $conversation, User $actor): string
     {
-        $projects = Project::query()->whereNull('archived_at')->orderBy('name')->limit(40)
+        $projects = Project::query()->with('client:id,name')->whereNull('archived_at')->orderBy('name')->limit(40)
             ->get(['id', 'name', 'client_id', 'due_date', 'manager_user_id']);
         $tasks = Task::query()
             ->whereNull('archived_at')
@@ -55,6 +58,14 @@ PROMPT;
                 'message' => $message->body,
                 'actions_taken' => $message->actions ?? [],
             ])->values();
+
+        // The right rail already computes retainer burn and the gap between
+        // tracked and logged hours, and the chat could see neither — so
+        // "Retainer check" was answered with "there is no retainer data in this
+        // workspace", which is untrue and reads as authoritative. Two of the
+        // nine one-click tools ask about exactly this, so it belongs in the
+        // context the chat reasons over, not only in the panel beside it.
+        $insights = $this->insights->for($actor);
 
         return json_encode([
             'today' => now()->toDateString(),
@@ -74,6 +85,12 @@ PROMPT;
             'projects' => $projects->map(fn (Project $project) => [
                 'id' => $project->id,
                 'name' => $project->name,
+                // Which client a project belongs to. Without it Oliver could
+                // read the retainer figures but not say which of them were the
+                // requester's, and answered "I don't have a mapping of your
+                // projects to specific clients".
+                'client_id' => $project->client_id,
+                'client' => $project->client?->name,
                 'due_date' => optional($project->due_date)->toDateString(),
             ])->values(),
             'open_tasks' => $tasks->map(fn (Task $task) => [
@@ -83,18 +100,39 @@ PROMPT;
                 'project' => $task->project?->name,
                 'status' => $task->status?->label,
                 'assignee' => $task->assignee ? trim($task->assignee->first_name.' '.$task->assignee->last_name) : null,
-                'assignee_id' => $task->assignee_user_id,
+                // Named exactly as the action schema names it. When the context
+                // called this `assignee_id`, the model copied that name into
+                // its actions and every assignment was refused for having
+                // nobody to assign to — the schema said `assignee_user_id`, but
+                // not every provider enforces the schema, so the wording the
+                // model can see has to agree with it.
+                'assignee_user_id' => $task->assignee_user_id,
                 'due_date' => optional($task->due_date)->toDateString(),
                 'overdue' => $task->due_date && $task->due_date->isPast(),
                 'estimated_minutes' => (int) ($task->estimated_minutes ?? 0),
                 'logged_minutes' => (int) ($task->actual_minutes ?? 0),
             ])->values(),
-            'assignable_people' => User::query()->where('status', 'active')->whereNull('archived_at')
+            // Scoped to the workspace: accounts belong to one through a pivot
+            // rather than a column, so an unqualified query offers up every
+            // person on the installation and invites Oliver to hand a client's
+            // work to a stranger at another company.
+            'assignable_people' => User::query()->inWorkspace(CurrentWorkspace::id())
+                ->where('status', 'active')->whereNull('archived_at')
                 ->orderBy('first_name')->limit(60)->get(['id', 'first_name', 'last_name', 'username'])
                 ->map(fn (User $user) => [
                     'id' => $user->id,
                     'name' => trim($user->first_name.' '.$user->last_name) ?: $user->username,
                 ])->values(),
+            // Burn per client this month, and where the requester's own tracked
+            // hours differ from the time logged against their tasks.
+            'client_retainers' => $insights['retainer'],
+            'my_time' => [
+                'tracked_week_minutes' => $insights['workload']['tracked_week_minutes'] ?? 0,
+                'target_week_minutes' => $insights['workload']['target_week_minutes'] ?? 0,
+                'committed_minutes' => $insights['workload']['committed_minutes'] ?? 0,
+                'over_committed' => $insights['workload']['over_committed'] ?? false,
+                'gaps' => $insights['time_gaps'],
+            ],
             'conversation' => $history,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
