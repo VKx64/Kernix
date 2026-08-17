@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useNavigate, useSearchParams } from 'react-router'
 import { ListFilter, Plus, Rows2, Rows3, Search, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import { optimistic } from '@/lib/optimistic'
 import { useAuth } from '@/auth/AuthProvider'
 import { useWorkspace } from '@/auth/WorkspaceProvider'
 import { ClockGate, isClockGate } from '@/components/ClockGate'
@@ -149,7 +150,7 @@ export function TasksTriagePage() {
   }), [params])
 
   const lookups = useTaskLookups()
-  const { data, counts, total, loading, error, reload } = useTaskQueue({ view, search, archived, filters })
+  const { data, counts, total, loading, error, reload, refresh, apply } = useTaskQueue({ view, search, archived, filters })
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<string[]>([])
@@ -307,24 +308,87 @@ export function TasksTriagePage() {
     return false
   }
 
+  /**
+   * The permission each field needs, checked before anything is shown as done.
+   *
+   * Optimistic updates are only honest when the server almost always agrees. A
+   * teammate without `tasks.edit` is refused *every* due-date change, so
+   * without this the pattern would show them the new date and snatch it back
+   * every single time. Refusing here costs a wasted request as well as the
+   * flash, and the reason given is the real one.
+   */
+  const guardFields = (body: Record<string, unknown>) => {
+    const needed: Array<[string, string]> = [
+      ['status_value_id', 'tasks.change_status'],
+      ['assignee_user_id', 'tasks.assign'],
+      ['estimated_minutes', 'tasks.estimate'],
+      ['title', 'tasks.edit'],
+      ['description', 'tasks.edit'],
+      ['due_date', 'tasks.edit'],
+      ['type_value_id', 'tasks.edit'],
+      ['project_id', 'tasks.edit'],
+      ['task_folder_id', 'tasks.edit'],
+    ]
+    const missing = needed.find(([field, permission]) => field in body && !can(permission))
+    if (!missing) return true
+    toast.error('You do not have permission for that change.')
+    return false
+  }
+
+  /**
+   * What the rows will look like once the server agrees.
+   *
+   * The request speaks in ids — `status_value_id`, `assignee_user_id` — while a
+   * row renders the objects behind them, so showing the change immediately
+   * means translating one into the other here. Anything not listed is left to
+   * the reconciling refresh rather than guessed at.
+   */
+  const previewOf = useCallback((body: Record<string, unknown>): Partial<Task> => {
+    const preview: Record<string, unknown> = {}
+    if ('status_value_id' in body) preview.status = lookups.statusOptions.find((option) => String(option.id) === String(body.status_value_id))
+    if ('urgency_value_id' in body) preview.urgency = lookups.urgencyOptions.find((option) => String(option.id) === String(body.urgency_value_id))
+    if ('type_value_id' in body) preview.type = lookups.typeOptions.find((option) => String(option.id) === String(body.type_value_id))
+    if ('due_date' in body) preview.due_date = body.due_date as Task['due_date']
+    if ('project_id' in body) preview.project = lookups.projects.find((project) => String(project.id) === String(body.project_id))
+    if ('assignee_user_id' in body) {
+      const person = body.assignee_user_id === null
+        ? undefined
+        : lookups.users.find((candidate) => String(candidate.id) === String(body.assignee_user_id))
+      preview.assignee = person ?? null
+      // The row reads its avatars from the pivot, so it has to move too.
+      preview.task_assignees = person ? [person] : []
+    }
+    return preview as Partial<Task>
+  }, [lookups])
+
   const patch = useCallback(async (ids: EntityId[], body: Record<string, unknown>, message?: string) => {
     if (!ids.length) return
     if (!guardClock()) return
+    if (!guardFields(body)) return
     const payload = { ...body, admin_override: adminOverride ? 1 : undefined }
-    try {
-      await Promise.all(ids.map((id) => api.patch(`/api/tasks/${id}`, payload)))
-      await reload()
-      // The drawer holds a detail payload the list does not carry, so it cannot
-      // be refreshed by reloading the list alone.
-      setRevision((current) => current + 1)
-      if (message) toast(message)
-    } catch (reason) {
-      if (isClockGate(reason)) setClockBlocked(true)
-      toast.error(reason instanceof Error ? reason.message : 'That change did not save.')
-    }
+    const preview = previewOf(body)
+    const targets = new Set(ids.map(String))
+
+    await optimistic({
+      // The rows change now; the request only confirms it.
+      apply: () => apply((rows) => rows.map((row) => (targets.has(String(row.id)) ? { ...row, ...preview } : row))),
+      commit: () => Promise.all(ids.map((id) => api.patch(`/api/tasks/${id}`, payload))),
+      onSettled: () => {
+        // Quietly, because the rows already show the change — this is only
+        // here to pick up what the server recomputed, like a group total.
+        void refresh()
+        // The drawer holds a detail payload the list does not carry, so it
+        // cannot be refreshed by reloading the list alone.
+        setRevision((current) => current + 1)
+        if (message) toast(message)
+      },
+      onError: (reason) => {
+        if (isClockGate(reason)) setClockBlocked(true)
+      },
+    })
     // guardClock reads render-scope state that changes with the same inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminOverride, canAdminOverride, canMutateTasks, reload])
+  }, [adminOverride, canAdminOverride, canMutateTasks, apply, refresh, previewOf])
 
   /**
    * Completing a task is a status change, but "done" is a role rather than a

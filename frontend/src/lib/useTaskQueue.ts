@@ -39,8 +39,13 @@ export function useTaskQueue({ view, search = '', archived = false, filters = {}
   const [error, setError] = useState('')
   const filterKey = JSON.stringify(filters)
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
+  /**
+   * `quiet` refreshes without raising the loading flag. After an optimistic
+   * change the rows on screen are already right; flipping to a skeleton and
+   * back is the flash this pattern exists to remove.
+   */
+  const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const response = await api.get<TaskListResponse>('/api/tasks', {
@@ -73,5 +78,31 @@ export function useTaskQueue({ view, search = '', archived = false, filters = {}
     }
   }, [load, search])
 
-  return { data, counts, total, loading, error, reload: () => load() }
+  /**
+   * Change rows in place and hand back the undo.
+   *
+   * The caller decides what the change is; this only knows how to put the list
+   * back exactly as it was, which is the one thing a rollback must get right.
+   */
+  const apply = useCallback((change: (rows: Task[]) => Task[]) => {
+    let previous: Task[] = []
+    setData((current) => {
+      previous = current
+      return change(current)
+    })
+
+    return () => setData(previous)
+  }, [])
+
+  return {
+    data,
+    counts,
+    total,
+    loading,
+    error,
+    apply,
+    reload: () => load(),
+    /** Reconcile with the server without disturbing what is on screen. */
+    refresh: () => load(undefined, true),
+  }
 }
