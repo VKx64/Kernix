@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\FormSubmissionController;
 use App\Http\Controllers\Api\FormSubmissionFileController;
 use App\Http\Controllers\Api\InvitationAcceptanceController;
 use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Api\McpAccessController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\OliverController;
 use App\Http\Controllers\Api\ProfileController;
@@ -81,6 +82,12 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::post('/settings/ai/test', [SettingsController::class, 'testAi']);
 
     // Personal preferences, distinct from the workspace settings above.
+    // Personal AI-assistant access. Each token carries its own holder, so
+    // these need no permission beyond being signed in.
+    Route::get('/mcp/access', [McpAccessController::class, 'index']);
+    Route::post('/mcp/access', [McpAccessController::class, 'store']);
+    Route::delete('/mcp/access/{token}', [McpAccessController::class, 'destroy']);
+
     Route::get('/me/settings', [UserSettingsController::class, 'show']);
     Route::patch('/me/settings', [UserSettingsController::class, 'update']);
 

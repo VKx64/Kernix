@@ -18,6 +18,12 @@ return [
         'key' => env('POSTMARK_API_KEY'),
     ],
 
+    // Where the hosted MCP server answers. The setup screen prints this so a
+    // person can copy a working endpoint instead of guessing the hostname.
+    'mcp' => [
+        'url' => env('MCP_PUBLIC_URL'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

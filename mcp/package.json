@@ -1,0 +1,36 @@
+{
+  "name": "kernix-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Model Context Protocol server exposing Kernix to AI assistants as a project manager.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "kernix-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "start": "node dist/index.js",
+    "start:http": "node dist/index.js --http",
+    "typecheck": "tsc -b --noEmit false --dry 2>/dev/null || tsc --noEmit",
+    "check": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -341,6 +341,125 @@ For frontend changes: rebuild locally and re-upload `dist/` contents into
 
 ---
 
+## 11. MCP server (`mcp.ibmclients.com`)
+
+This is what lets Claude and ChatGPT work inside Kernix. It is a long-running
+Node process rather than PHP, and this account has no supervisor for such a
+thing — cPanel's **Setup Node.js App** (Passenger) is not on the plan, and
+there is no user systemd. So the pieces already on the box do the job:
+
+- **Node 22** via nvm, which is already here for the frontend build.
+- **cron** restarts the server within a minute of any stop — the same shape
+  already used for the queue worker, for the same reason.
+- **Apache** proxies `mcp.ibmclients.com` to the local port via `.htaccess`.
+  Verified working on this host: `mod_proxy` accepts `[P]` from `.htaccess`,
+  and the subdomain already carries a valid Let's Encrypt certificate.
+
+The server never touches the database. It calls the same public API the web
+client does, with each caller's own token, so it needs no credentials of its
+own and no access beyond HTTPS.
+
+All of this is optional. Kernix works fully without it.
+
+### 11.1 Point the subdomain at the app
+
+The subdomain exists already. Two things to set:
+
+1. **Domains → `mcp.ibmclients.com` → enable Force HTTPS Redirect.** Tokens
+   travel in an `Authorization` header on every call, and ChatGPT refuses
+   plain-HTTP connectors outright.
+2. Put this in `~/public_html/mcp.ibmclients.com/.htaccess`, **above** the
+   cPanel-generated PHP block (append is fine; leave the PHP directives alone):
+
+```apache
+# Everything on this subdomain is the MCP server, which listens on a local
+# port. Nothing is served from this folder.
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+RewriteRule ^(.*)$ http://127.0.0.1:31380/$1 [P,L]
+```
+
+Keep the port here and in `.env.production` the same.
+
+### 11.2 Configure the server
+
+```bash
+cd ~/kernix/mcp
+cp .env.production.example .env.production
+```
+
+Defaults in that file are correct for this account. Do **not** add
+`KERNIX_API_TOKEN`: in hosted mode each caller presents their own, and a token
+here would hand every caller that one account.
+
+### 11.3 Tell Kernix where it lives
+
+In `~/kernix/backend/.env`:
+
+```
+MCP_PUBLIC_URL=https://mcp.ibmclients.com/mcp
+```
+
+Then re-run `deploy.sh` (or `php artisan config:cache`). Without it the
+settings screen prints a localhost address nobody can connect to.
+
+### 11.4 Keep it running
+
+```bash
+chmod +x ~/kernix/mcp/keepalive.sh
+```
+
+Then in **cPanel → Cron Jobs**, add a third entry beside the two Laravel ones:
+
+```
+* * * * * /home/ibmclients/kernix/mcp/keepalive.sh >> /dev/null 2>&1
+```
+
+It exits immediately when the server is already answering, so the cost of
+running every minute is negligible. Its log is `~/logs/kernix-mcp.log`.
+
+`deploy.sh` stops the old process after each build and lets this cron start
+the new one, so there is only ever one supervisor.
+
+### 11.5 Check it
+
+```bash
+curl https://mcp.ibmclients.com/healthz     # {"ok":true,...}
+curl -X POST https://mcp.ibmclients.com/mcp # 401 — correct without a token
+```
+
+A 401 from `/mcp` is the right answer, not a fault. `/healthz` is what to point
+uptime monitoring at.
+
+Then in Kernix: **Settings → Workspace → AI assistant access** → create a
+connection and paste the config it prints into Claude or ChatGPT.
+
+### 11.6 Known limits of this arrangement
+
+- **Up to a minute of downtime per crash.** cron is the supervisor, so a dead
+  process is not noticed until the next run. Acceptable for an assistant;
+  worth knowing before someone reports it as flaky.
+- **A reboot is covered**, since cron restarts regardless of why it stopped.
+- **No zero-downtime deploys.** The old process stops at build time and the new
+  one starts on the next minute.
+
+If Setup Node.js App is ever enabled on this plan, Passenger removes all three
+limits and the `.htaccess` proxy and cron entry can go.
+
+### 11.7 If it will not start
+
+- **Check `~/logs/kernix-mcp.log`** first — a missing `KERNIX_BASE_URL` exits
+  at boot with the reason, rather than failing on the first call.
+- **502 or 503 from the subdomain** — the server is not listening. Run
+  `~/kernix/mcp/keepalive.sh` by hand and read the log.
+- **Every request answers 401** — the proxy is stripping `Authorization`. That
+  header carries the whole credential and has to arrive intact.
+- **The public URL returns the cPanel default page** — the `.htaccess` rule is
+  not being applied; confirm it sits in the subdomain's own document root.
+
+---
+
 ## Open questions to resolve with AspirationHosting support if you hit walls
 
 - Confirm the exact Composer binary/path for `ea-php84` on this account
@@ -348,5 +467,9 @@ For frontend changes: rebuild locally and re-upload `dist/` contents into
   PATH; if not, Terminal or a quick support ticket will confirm it).
 - Ask whether long-running SSH processes (`nohup`/`screen`) are permitted,
   in case the cron-based queue worker's ~1 min latency isn't good enough.
+- Whether **Setup Node.js App** (Passenger) can be enabled on this plan. It is
+  not present today, so section 11 supervises the MCP server with cron instead.
+  Passenger would remove the up-to-a-minute restart gap and allow zero-downtime
+  deploys, but nothing is blocked without it.
 - If `/backend/...` 404s after Step 5, confirm `AllowOverride All` and
   `Options +FollowSymLinks` are in effect for this account's vhost.

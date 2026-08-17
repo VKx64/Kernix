@@ -9,6 +9,7 @@ import { Avatar, ErrorBanner, PageHeader, Panel } from '@/components/shared'
 import { api, ApiError, displayName, normalizePage, unwrap } from '@/lib/api'
 import type { ApiEnvelope, Paginated, User, WorkspaceFeature } from '@/types/api'
 import { SettingsNav } from './EntityPages'
+import { McpAccessPanel } from './McpAccessPanel'
 
 interface DependentDataError {
   message?: string
@@ -148,7 +149,7 @@ export function WorkspaceSettingsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Settings" title="Workspace" description="Rename this workspace, choose what it uses, and manage who belongs to it." />
+      <PageHeader eyebrow="Settings" title="Workspace" description="Rename this workspace, choose what it uses, manage who belongs to it, and connect an AI assistant." />
       <SettingsNav />
 
       <Panel title="Name">
@@ -242,6 +243,8 @@ export function WorkspaceSettingsPage() {
           {!members.length && <li className="py-2 text-sm text-muted-foreground">No members yet.</li>}
         </ul>
       </Panel>
+
+      <McpAccessPanel />
     </div>
   )
 }

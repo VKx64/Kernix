@@ -11,6 +11,17 @@ backend/storage/framework/views/*
 backend/storage/logs/*
 frontend/node_modules/
 frontend/dist/
+mcp/node_modules/
+mcp/dist/
+mcp/*.tsbuildinfo
+# Names the site and its ports; lives on the server only.
+mcp/.env.production
+
+# QA work products: findings and screenshots from review passes, kept locally
+# rather than in the repo.
+visual-qa/
+OLIVER-QC.md
+mcp/QC.md
 
 *.bak-*
 _install*.php

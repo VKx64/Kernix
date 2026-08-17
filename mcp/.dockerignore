@@ -1,0 +1,6 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+qc.mjs
+qc2.mjs

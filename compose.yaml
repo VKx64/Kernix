@@ -80,6 +80,7 @@ services:
       QUEUE_CONNECTION: database
       FILESYSTEM_DISK: local
       MAIL_MAILER: log
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env (minimum 12 characters)}
       RUN_MIGRATIONS: "true"
@@ -111,6 +112,27 @@ services:
     command: ["php", "artisan", "schedule:work"]
     healthcheck:
       disable: true
+
+  mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MCP_PORT:-8765}:8765"
+    environment:
+      # Container-to-container, so this is the service name rather than the
+      # published host port.
+      KERNIX_BASE_URL: http://backend:8000
+      KERNIX_MCP_HOSTED: "1"
+      KERNIX_MCP_HOST: 0.0.0.0
+      KERNIX_MCP_PORT: 8765
+      KERNIX_MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://127.0.0.1:8765}
+      KERNIX_ALLOW_WRITES: ${MCP_ALLOW_WRITES:-1}
+      KERNIX_ADMIN_OVERRIDE: ${MCP_ADMIN_OVERRIDE:-0}
+    depends_on:
+      backend:
+        condition: service_healthy
 
   mysql:
     image: mysql:8.4
