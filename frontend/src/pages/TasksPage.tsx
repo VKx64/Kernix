@@ -40,7 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { api, displayName, fieldLabel, unwrap } from '../lib/api'
 import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
-import { isAdministrator, useCan } from '../lib/permissions'
+import { isAdministrator, isAssignmentGranted, useCan } from '../lib/permissions'
 import { taskDueDate, taskLoggedMinutes, taskProjectId, taskStatusValue, taskUrgencyValue } from '../lib/taskSignals'
 import { folderTree, useTaskFolderCatalog } from '../lib/useTaskFolders'
 import { useTaskLookups } from '../lib/useTaskLookups'
@@ -48,21 +48,6 @@ import type { ApiEnvelope, EntityId, EstimateRequest, FieldValue, FormPayload, N
 
 function estimated(task: Task) { return task.estimatedMinutes ?? task.estimated_minutes ?? 0 }
 function taskFolderId(task: Task) { return task.taskFolderId ?? task.task_folder_id ?? task.folder?.id ?? null }
-
-/**
- * Task work is restricted to the assignee server-side. This mirrors the
- * exceptions the backend honors so the UI can gate controls the same way
- * instead of letting mutations 409.
- */
-function isAssignmentGranted(task: Task, userId: EntityId | undefined, can: (permission: string) => boolean, isAdmin: boolean): boolean {
-  return Boolean(
-    isAdmin
-    || can('tasks.work_unassigned')
-    || String(task.creator?.id ?? '') === String(userId ?? '')
-    || String(task.assignee?.id ?? '') === String(userId ?? '')
-    || (task.subtasks ?? []).some((subtask) => String(subtask.assignee?.id ?? '') === String(userId ?? '')),
-  )
-}
 
 type DetailTab = 'notes' | 'subtasks' | 'files' | 'emails' | 'activity'
 

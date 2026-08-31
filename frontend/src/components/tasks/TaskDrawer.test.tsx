@@ -62,6 +62,13 @@ function renderDrawer(task: Task | null, overrides: Partial<ComponentProps<typeo
         onFilesChanged={() => {}}
         canCreateSubtasks={false}
         onSubtasksChanged={() => {}}
+        canEmail={false}
+        onEmailsChanged={() => {}}
+        estimateRequests={[]}
+        workRequests={[]}
+        canRequestEstimate={false}
+        canReviewWorkRequests={false}
+        onRequestsChanged={() => {}}
         {...overrides}
       />
     </MemoryRouter>,

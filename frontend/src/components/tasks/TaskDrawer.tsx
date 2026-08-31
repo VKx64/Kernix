@@ -3,14 +3,16 @@ import { ChevronLeft, ChevronRight, ExternalLink, SendHorizontal, Timer, X } fro
 import { Link } from 'react-router'
 import { LabelRow } from '@/components/kernix/label-row'
 import { Avatar } from '@/components/shared'
+import { TaskDrawerEmails } from '@/components/tasks/TaskDrawerEmails'
 import { TaskDrawerFiles } from '@/components/tasks/TaskDrawerFiles'
+import { TaskDrawerRequests } from '@/components/tasks/TaskDrawerRequests'
 import { TaskDrawerSubtasks } from '@/components/tasks/TaskDrawerSubtasks'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatClock, formatMinutes, isTaskDone, taskLoggedMinutes } from '@/lib/taskSignals'
 import { cn } from '@/lib/utils'
-import type { Subtask, Task, UserSummary } from '@/types/api'
+import type { EntityId, EstimateRequest, Subtask, Task, TaskWorkRequest, UserSummary } from '@/types/api'
 
 /**
  * The task drawer. It slides over the list rather than replacing it, because the
@@ -22,10 +24,10 @@ import type { Subtask, Task, UserSummary } from '@/types/api'
  * the comments are one chronological thread rather than two tabs, so "what
  * happened" reads in order regardless of who or what caused it.
  *
- * Attachments already on the task are shown here so nothing uploaded from
- * elsewhere goes unseen, but uploading and deleting stay on the full task
- * page along with the other heavier surfaces — emails, completion proof,
- * estimate and work requests — which the header links to.
+ * Files, subtasks, correspondence and the two requests — for more time, and to
+ * work on something you are not assigned to — are all here, so reading a task
+ * and acting on it cost no navigation. What is left on the full task page is
+ * completion proof and the edit form, which the header still links to.
  */
 export interface TaskDrawerField {
   key: string
@@ -82,6 +84,16 @@ export function TaskDrawer({
   canCreateSubtasks,
   subtasksAdminOverride,
   onSubtasksChanged,
+  canEmail,
+  emailsAdminOverride,
+  onEmailsChanged,
+  estimateRequests,
+  workRequests,
+  canRequestEstimate,
+  canReviewWorkRequests,
+  currentUserId,
+  requestsAdminOverride,
+  onRequestsChanged,
 }: {
   task: Task | null
   loading: boolean
@@ -120,6 +132,18 @@ export function TaskDrawer({
   canCreateSubtasks: boolean
   subtasksAdminOverride?: boolean
   onSubtasksChanged: () => void | Promise<void>
+  /** Whether the viewer may read and send this task's correspondence. */
+  canEmail: boolean
+  emailsAdminOverride?: boolean
+  onEmailsChanged: () => void | Promise<void>
+  estimateRequests: EstimateRequest[]
+  workRequests: TaskWorkRequest[]
+  /** Only the assignee asks for more time, and only while the task is live. */
+  canRequestEstimate: boolean
+  canReviewWorkRequests: boolean
+  currentUserId?: EntityId
+  requestsAdminOverride?: boolean
+  onRequestsChanged: () => void | Promise<void>
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -142,6 +166,8 @@ export function TaskDrawer({
   const [totalBusy, setTotalBusy] = useState(false)
   const subtasks = task?.subtasks ?? []
   const attachments = task?.attachments ?? []
+  const emails = task?.emails ?? []
+  const archived = Boolean(task?.archivedAt ?? task?.archived_at)
   // The run in progress counts towards the total on screen. Without it the
   // task reads as untouched for the whole hour somebody is working on it, and
   // the number only moves when they remember to stop the clock.
@@ -287,6 +313,26 @@ export function TaskDrawer({
                 adminOverride={subtasksAdminOverride}
                 onToggle={onToggleSubtask}
                 onCreated={onSubtasksChanged}
+              />
+
+              <TaskDrawerEmails
+                taskId={task.id}
+                emails={emails}
+                canManage={canEmail}
+                readOnly={archived}
+                adminOverride={emailsAdminOverride}
+                onChanged={onEmailsChanged}
+              />
+
+              <TaskDrawerRequests
+                taskId={task.id}
+                estimateRequests={estimateRequests}
+                workRequests={workRequests}
+                canRequestEstimate={canRequestEstimate}
+                canReviewWork={canReviewWorkRequests}
+                currentUserId={currentUserId}
+                adminOverride={requestsAdminOverride}
+                onChanged={onRequestsChanged}
               />
 
               <section className="flex flex-col gap-3.5">

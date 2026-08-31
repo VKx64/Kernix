@@ -22,7 +22,7 @@ import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
 import { relativeTime, uploadTaskAttachments } from '@/lib/attachments'
 import { useFeature } from '@/lib/features'
-import { useCan } from '@/lib/permissions'
+import { isAdministrator, isAssignmentGranted, useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { activityPhrase } from '@/lib/taskActivity'
 import {
@@ -59,7 +59,7 @@ import { useTaskQueue } from '@/lib/useTaskQueue'
 import { folderTree, useTaskFolderCatalog } from '@/lib/useTaskFolders'
 import { useTaskLookups } from '@/lib/useTaskLookups'
 import { cn } from '@/lib/utils'
-import type { ApiEnvelope, EntityId, FieldValue, Note, Subtask, Task, TaskFolder } from '@/types/api'
+import type { ApiEnvelope, EntityId, EstimateRequest, FieldValue, Note, Subtask, Task, TaskFolder, TaskWorkRequest } from '@/types/api'
 import { AiCreateTaskModal } from './AiCreateTaskModal'
 import { CreateTaskModal, type CreateTaskPayload } from './CreateTaskModal'
 
@@ -1253,6 +1253,8 @@ function TaskDrawerConnected({
   onToggleDone: (task: Task) => void
 }) {
   const can = useCan()
+  const { user } = useAuth()
+  const isAdmin = isAdministrator(user)
   const { adminOverride, canAdminOverride } = useWorkspace()
   const timer = useTimerContext()
   // The footer button acts on this task only. A timer running on some other
@@ -1260,6 +1262,8 @@ function TaskDrawerConnected({
   const timerRunning = timer.state === 'working' && String(timer.task?.id ?? '') === String(listTask.id)
   const [detail, setDetail] = useState<Task | null>(null)
   const [activity, setActivity] = useState<Array<Record<string, unknown>>>([])
+  const [estimateRequests, setEstimateRequests] = useState<EstimateRequest[]>([])
+  const [workRequests, setWorkRequests] = useState<TaskWorkRequest[]>([])
   const [showEvents, setShowEvents] = useState(true)
   const [loading, setLoading] = useState(true)
   const [commentBusy, setCommentBusy] = useState(false)
@@ -1275,14 +1279,36 @@ function TaskDrawerConnected({
         api.get<ApiEnvelope<Task> | Task>(`/api/tasks/${id}`),
         can('tasks.view') ? api.get<ApiEnvelope<Array<Record<string, unknown>>>>(`/api/tasks/${id}/activity`) : Promise.resolve(null),
       ])
-      if (taskResponse.status === 'fulfilled') setDetail(unwrap(taskResponse.value))
+      if (taskResponse.status === 'fulfilled') {
+        const nextTask = unwrap(taskResponse.value)
+        setDetail(nextTask)
+        // Both request lists are their own endpoints rather than fields on the
+        // task, and both are gated the way the full task page gates them, so a
+        // person who may neither ask nor answer never asks for them at all.
+        const isAssignee = String(nextTask.assignee?.id ?? '') === String(user?.id ?? '')
+        const maySeeEstimates = isAdmin
+          || (can('tasks.request_estimate') && isAssignee)
+          || can('tasks.review_estimate_requests')
+        const maySeeWork = !isAssignmentGranted(nextTask, user?.id, can, isAdmin)
+          || can('tasks.review_work_requests')
+        const [estimates, work] = await Promise.allSettled([
+          maySeeEstimates
+            ? api.get<ApiEnvelope<EstimateRequest[]> | EstimateRequest[]>(`/api/tasks/${id}/estimate-requests`)
+            : Promise.resolve(null),
+          maySeeWork
+            ? api.get<ApiEnvelope<TaskWorkRequest[]> | TaskWorkRequest[]>(`/api/tasks/${id}/work-requests`)
+            : Promise.resolve(null),
+        ])
+        setEstimateRequests(estimates.status === 'fulfilled' && estimates.value ? unwrap(estimates.value) ?? [] : [])
+        setWorkRequests(work.status === 'fulfilled' && work.value ? unwrap(work.value) ?? [] : [])
+      }
       if (activityResponse.status === 'fulfilled' && activityResponse.value) {
         setActivity(unwrap(activityResponse.value) ?? [])
       }
     } finally {
       setLoading(false)
     }
-  }, [can, id, revision])
+  }, [can, id, isAdmin, revision, user?.id])
 
   useEffect(() => { void load() }, [load])
 
@@ -1449,6 +1475,20 @@ function TaskDrawerConnected({
       canCreateSubtasks={can('tasks.subtasks')}
       subtasksAdminOverride={adminOverride && canAdminOverride}
       onSubtasksChanged={async () => { await load(); await onReload() }}
+      canEmail={can('tasks.email')}
+      emailsAdminOverride={adminOverride && canAdminOverride}
+      onEmailsChanged={async () => { await load(); await onReload() }}
+      estimateRequests={estimateRequests}
+      workRequests={workRequests}
+      canRequestEstimate={
+        !(task.archivedAt ?? task.archived_at)
+        && can('tasks.request_estimate')
+        && String(task.assignee?.id ?? '') === String(user?.id ?? '')
+      }
+      canReviewWorkRequests={can('tasks.review_work_requests')}
+      currentUserId={user?.id}
+      requestsAdminOverride={adminOverride && canAdminOverride}
+      onRequestsChanged={async () => { await load(); await onReload() }}
     />
   )
 }
