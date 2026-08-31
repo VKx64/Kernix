@@ -342,6 +342,55 @@ describe('CreateTaskModal', () => {
     expect(onSubmit).toHaveBeenCalledWith({ project_id: '5', title: 'Ship campaign' }, [storyboard])
   })
 
+
+  it('attaches a file without anybody opening the detail panel', async () => {
+    // The picker used to be rendered inside the collapsed panel, so the whole
+    // feature read as missing until somebody found "Add details".
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal({ canAttach: true })
+
+    await actor.type(title(), 'Ship campaign')
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeInTheDocument()
+
+    const storyboard = new File(['frame'], 'storyboard.png', { type: 'image/png' })
+    await actor.upload(screen.getByLabelText('Attach files'), storyboard)
+
+    // The count reports what is staged without the panel being opened.
+    expect(screen.getByRole('button', { name: '1 attached' })).toBeInTheDocument()
+
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
+    expect(onSubmit).toHaveBeenCalledWith({ project_id: '5', title: 'Ship campaign' }, [storyboard])
+  })
+
+  it('offers no attach control without the permission', () => {
+    renderModal({ canAttach: false })
+
+    expect(screen.queryByRole('button', { name: 'Attach' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Attach files')).not.toBeInTheDocument()
+  })
+
+  it('lets Enter build paragraphs in the description instead of submitting', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal()
+
+    await actor.type(title(), 'Ship campaign')
+    await openDetails(actor)
+
+    const notes = screen.getByLabelText('Notes')
+    await actor.type(notes, 'First line.{Enter}{Enter}Second paragraph.')
+
+    // Enter stayed in the textarea — the task was not submitted out from under
+    // the person still writing.
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(notes).toHaveValue('First line.\n\nSecond paragraph.')
+
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'First line.\n\nSecond paragraph.' }),
+      [],
+    )
+  })
+
   it('hides attachments entirely without the permission', async () => {
     const actor = userEvent.setup()
     renderModal({ canAttach: false })

@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { CalendarIcon, File, FileImage, FileVideo, Music, Trash2, X } from 'lucide-react'
+import { CalendarIcon, File, FileImage, FileVideo, Music, Paperclip, Trash2, X } from 'lucide-react'
 import { fromIsoDate, toIsoDate } from '@/components/date-picker'
 import { InlineMenu, type InlineMenuItem, type InlineMenuState } from '@/components/tasks/InlineMenu'
 import { Monogram, initialsOf } from '@/components/kernix/monogram'
@@ -881,6 +881,15 @@ export function CreateTaskModal({
                 value={notes}
                 placeholder="Anything the person picking this up needs to know…"
                 onChange={(event) => setNotes(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter belongs to the text here. Without this it reaches the
+                  // modal's own handler and submits the task, which is why a
+                  // description could never have a second paragraph. The chords
+                  // still bubble, so ⌘↵ and ⌘⇧↵ keep working from this field.
+                  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+                    event.stopPropagation()
+                  }
+                }}
                 className="min-h-[68px] w-full resize-y rounded-[9px] border border-[#26262c] bg-[#0f0f11] px-[11px] py-2.5 text-body-lg text-[#c4c4cc] outline-none placeholder:text-t4"
               />
             </div>
@@ -946,17 +955,6 @@ export function CreateTaskModal({
                     add · up to {formatBytes(MAX_ATTACHMENT_BYTES)} each
                   </button>
                 </div>
-                <input
-                  ref={fileRef}
-                  className="sr-only"
-                  type="file"
-                  multiple
-                  aria-label="Attach files"
-                  onChange={(event) => {
-                    addFiles(event.target.files)
-                    event.target.value = ''
-                  }}
-                />
                 {files.length > 0 && (
                   <ul className="-mx-2 flex flex-col">
                     {files.map((file) => {
@@ -1012,6 +1010,22 @@ export function CreateTaskModal({
           </p>
         )}
 
+        {/* Outside the detail panel: the picker has to exist for the footer's
+            attach button to open it, and the panel is collapsed by default. */}
+        {canAttach && (
+          <input
+            ref={fileRef}
+            className="sr-only"
+            type="file"
+            multiple
+            aria-label="Attach files"
+            onChange={(event) => {
+              addFiles(event.target.files)
+              event.target.value = ''
+            }}
+          />
+        )}
+
         <div className="flex items-center gap-[7px] border-t border-line bg-[#101012] py-2.5 pr-3 pl-[13px]">
           <button
             type="button"
@@ -1026,6 +1040,23 @@ export function CreateTaskModal({
             </svg>
             {detailOpen ? 'Hide details' : 'Add details'}
           </button>
+
+          {/* Attaching used to live inside the detail panel, which is collapsed
+              when the modal opens — so the feature read as missing to anybody
+              who did not go looking for it. The count is here so files picked
+              from this button are visible without expanding anything. */}
+          {canAttach && (
+            <button
+              type="button"
+              disabled={files.length >= MAX_ATTACHMENTS_PER_UPLOAD}
+              onClick={() => fileRef.current?.click()}
+              title={`Attach files — up to ${formatBytes(MAX_ATTACHMENT_BYTES)} each`}
+              className="inline-flex h-[30px] items-center gap-[7px] rounded-lg px-[11px] text-body-sm font-[550] text-t2 disabled:pointer-events-none disabled:opacity-50 hover:bg-[#1f1f24] hover:text-t1"
+            >
+              <Paperclip className="size-3" />
+              {files.length ? `${files.length} attached` : 'Attach'}
+            </button>
+          )}
 
           <button
             type="button"

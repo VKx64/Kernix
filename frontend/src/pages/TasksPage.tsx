@@ -654,7 +654,8 @@ export function TaskDetailPage() {
           {task.description && (
             <Card>
               <CardHeader><CardTitle>Brief</CardTitle></CardHeader>
-              <CardContent><p className="text-sm text-pretty">{task.description}</p></CardContent>
+              {/* Pre-wrap, or the paragraphs somebody wrote come back as one block. */}
+              <CardContent><p className="text-sm whitespace-pre-wrap text-pretty">{task.description}</p></CardContent>
             </Card>
           )}
           <Card>
