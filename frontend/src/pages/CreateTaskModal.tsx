@@ -398,10 +398,31 @@ export function CreateTaskModal({
     inputRef.current?.focus()
   }
 
+  /**
+   * Everything the person has typed or chosen since the modal opened. The open
+   * effect resets all of it, so anything non-empty here was put there by hand
+   * and is what a close would throw away.
+   */
+  const hasUnsavedInput = Boolean(
+    text.trim()
+    || notes.trim()
+    || step.trim()
+    || subs.length
+    || files.length
+    || Object.keys(resolved).length,
+  )
+
+  /**
+   * Closing is deliberate: Cancel or Escape, never a stray click on the
+   * backdrop. A half-written task is worth more than the convenience of
+   * dismissing the modal by missing it, so a close that would discard work
+   * asks first.
+   */
   const requestClose = useCallback(() => {
     if (busy) return
+    if (hasUnsavedInput && !window.confirm('Discard this task? What you have entered will be lost.')) return
     onClose()
-  }, [busy, onClose])
+  }, [busy, hasUnsavedInput, onClose])
 
   // Escape closes capture wherever focus happens to be — including inside a
   // popover menu, which the spec puts *below* capture in the precedence list.
@@ -698,9 +719,6 @@ export function CreateTaskModal({
   return (
     <div
       className="fixed inset-0 z-[65] flex animate-v-fade justify-center overflow-y-auto bg-[rgba(4,4,6,.58)] pt-[16vh] pb-10"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) requestClose()
-      }}
     >
       <div
         role="dialog"

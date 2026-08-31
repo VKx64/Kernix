@@ -351,17 +351,52 @@ describe('CreateTaskModal', () => {
     expect(screen.queryByLabelText('Attach files')).not.toBeInTheDocument()
   })
 
-  it('closes on Escape and on a click outside the panel', async () => {
+  it('closes on Escape while the form is still empty, with nothing to lose', async () => {
+    const actor = userEvent.setup()
+    const { onClose } = renderModal()
+
+    await actor.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a click on the scrim, however much has been typed', async () => {
+    // A stray click beside the modal used to discard the whole draft. Nothing
+    // about missing the panel says "throw this away".
     const actor = userEvent.setup()
     const { onClose, container } = renderModal()
 
     await actor.type(title(), 'Ship campaign')
-    await actor.keyboard('{Escape}')
-    expect(onClose).toHaveBeenCalledOnce()
-
     const scrim = container.firstElementChild as HTMLElement
     await actor.click(scrim)
-    expect(onClose).toHaveBeenCalledTimes(2)
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(title()).toHaveValue('Ship campaign')
+  })
+
+  it('asks before discarding a started task, and stays open when the answer is no', async () => {
+    const actor = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { onClose } = renderModal()
+
+    await actor.type(title(), 'Ship campaign')
+    await actor.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(confirm).toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(title()).toHaveValue('Ship campaign')
+    confirm.mockRestore()
+  })
+
+  it('discards the draft once that is what the person actually asked for', async () => {
+    const actor = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { onClose } = renderModal()
+
+    await actor.type(title(), 'Ship campaign')
+    await actor.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    confirm.mockRestore()
   })
 
   it('picks a project up from the sentence when the modal was not opened inside one', async () => {
