@@ -40,7 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { api, displayName, fieldLabel, unwrap } from '../lib/api'
 import { latestProof, proofState, settleCompletionProof, submitCompletionProof } from '../lib/completionProof'
-import { isAdministrator, isAssignmentGranted, useCan } from '../lib/permissions'
+import { isAdministrator, isAssignmentGranted, ownsRecentNote, useCan } from '../lib/permissions'
 import { taskDueDate, taskLoggedMinutes, taskProjectId, taskStatusValue, taskUrgencyValue } from '../lib/taskSignals'
 import { folderTree, useTaskFolderCatalog } from '../lib/useTaskFolders'
 import { useTaskLookups } from '../lib/useTaskLookups'
@@ -230,12 +230,7 @@ export function TaskDetailPage() {
     ? ['notes', 'subtasks', 'files', 'emails', 'activity']
     : ['notes', 'subtasks', 'files', 'activity']
   const tabLabels: Record<DetailTab, string> = { notes: 'Notes', subtasks: 'Subtasks', files: 'Files', emails: 'Emails', activity: 'Activity' }
-  const ownsRecentNote = (note: Note) => {
-    if (isAdmin) return true
-    const creator = note.author?.id ?? (typeof note.createdBy === 'object' ? note.createdBy.id : note.createdBy) ?? (typeof note.created_by === 'object' ? note.created_by.id : note.created_by)
-    const created = note.createdAt ?? note.created_at
-    return String(creator) === String(user?.id) && Boolean(created) && Date.now() - new Date(created!).getTime() <= 86_400_000
-  }
+  const ownsNote = (note: Note) => ownsRecentNote(note, user?.id, isAdmin)
 
   const editFields: FormFieldSpec[] = task ? [
     ...(can('tasks.edit') ? [
@@ -676,7 +671,7 @@ export function TaskDetailPage() {
                   ))}
                 </TabsList>
                 <TabsContent value="notes" className="pt-4">
-                  <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy || blockedByAssignment} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsRecentNote(note)} canDelete={(note) => !isArchived && canComment && ownsRecentNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />
+                  <NotesTab notes={noteList} body={noteBody} minutes={noteMinutes} notifyUserId={notifyUserId} users={lookups.users} busy={busy || blockedByAssignment} canComment={!isArchived && canComment} canLogTime={canLogTime} canEdit={(note) => !isArchived && canComment && ownsNote(note)} canDelete={(note) => !isArchived && canComment && ownsNote(note) && (Number(note.timeMinutes ?? note.time_minutes ?? 0) === 0 || canLogTime)} onBody={setNoteBody} onMinutes={setNoteMinutes} onNotifyUser={setNotifyUserId} onAdd={() => void addNote()} onEdit={openNoteEditor} onDelete={(note) => void deleteNote(note)} />
                 </TabsContent>
                 <TabsContent value="subtasks" className="pt-4">
                   <SubtasksTab subtasks={subtasks} title={subtaskTitle} busy={busy || blockedByAssignment} canManage={!isArchived && canManageSubtasks} canComplete={!isArchived && canChangeStatus} canEditAny={!isArchived && (canManageSubtasks || canChangeStatus || can('tasks.assign') || can('tasks.estimate'))} onTitle={setSubtaskTitle} onAdd={() => void addSubtask()} onComplete={(subtask) => void completeSubtask(subtask)} onEdit={setEditingSubtask} onDelete={(subtask) => void deleteSubtask(subtask)} onMove={(subtask, direction) => void moveSubtask(subtask, direction)} />

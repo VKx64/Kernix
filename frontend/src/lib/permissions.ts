@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useAuth } from '../auth/AuthProvider'
-import type { EntityId, Task, User } from '../types/api'
+import type { EntityId, Note, Task, User } from '../types/api'
 
 export const administrationPermissions = ['settings.view', 'users.view', 'roles.view', 'fields.view'] as const
 
@@ -34,6 +34,24 @@ export function isAssignmentGranted(task: Task, userId: EntityId | undefined, ca
     || String(task.assignee?.id ?? '') === String(userId ?? '')
     || (task.subtasks ?? []).some((subtask) => String(subtask.assignee?.id ?? '') === String(userId ?? '')),
   )
+}
+
+/**
+ * Whether somebody may still change a comment they wrote: their own, for a day
+ * after writing it. An administrator is not held to the clock.
+ *
+ * Both the task detail page and the drawer gate their edit and delete controls
+ * on this, so it lives here rather than in either of them.
+ */
+export function ownsRecentNote(note: Note, userId: EntityId | undefined, isAdmin: boolean): boolean {
+  if (isAdmin) return true
+  const creator = note.author?.id
+    ?? (typeof note.createdBy === 'object' ? note.createdBy?.id : note.createdBy)
+    ?? (typeof note.created_by === 'object' ? note.created_by?.id : note.created_by)
+  const created = note.createdAt ?? note.created_at
+  return String(creator) === String(userId)
+    && Boolean(created)
+    && Date.now() - new Date(created!).getTime() <= 86_400_000
 }
 
 export function useCan() {

@@ -69,6 +69,10 @@ function renderDrawer(task: Task | null, overrides: Partial<ComponentProps<typeo
         canRequestEstimate={false}
         canReviewWorkRequests={false}
         onRequestsChanged={() => {}}
+        canEditDescription={false}
+        onSaveDescription={async () => {}}
+        onEditComment={async () => {}}
+        onDeleteComment={async () => {}}
         {...overrides}
       />
     </MemoryRouter>,
@@ -259,4 +263,117 @@ it('lets a manager correct the total, and keeps it away from everyone else', asy
 
   renderDrawer(baseTask({ actual_minutes: 240 }), { canAdjustTime: false })
   expect(screen.queryByRole('button', { name: '4h logged' })).not.toBeInTheDocument()
+})
+
+
+/**
+ * The brief and the comments were readable in the drawer but only changeable
+ * on the full task page, which is the trip the quick view exists to avoid.
+ */
+describe('TaskDrawer notes', () => {
+  it('leaves the brief as plain text for somebody who may not edit it', () => {
+    renderDrawer(baseTask({ description: 'Original brief.' }), { canEditDescription: false })
+
+    expect(screen.getByText('Original brief.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+  })
+
+  it('saves a rewritten brief', async () => {
+    const onSaveDescription = vi.fn(async () => {})
+    const actor = userEvent.setup()
+    renderDrawer(baseTask({ description: 'Original brief.' }), { canEditDescription: true, onSaveDescription })
+
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const field = screen.getByLabelText('Notes')
+    await actor.clear(field)
+    await actor.type(field, 'Rewritten from the drawer.')
+    await actor.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(onSaveDescription).toHaveBeenCalledWith('Rewritten from the drawer.'))
+  })
+
+  it('keeps the line breaks somebody wrote into the brief', () => {
+    renderDrawer(baseTask({ description: 'First line.\nSecond line.' }), { canEditDescription: true })
+
+    expect(screen.getByText(/First line/)).toHaveClass('whitespace-pre-wrap')
+  })
+
+  it('abandons an edit on Escape without closing the drawer', async () => {
+    const onSaveDescription = vi.fn(async () => {})
+    const onWindowEscape = vi.fn()
+    const listener = (event: KeyboardEvent) => { if (event.key === 'Escape') onWindowEscape() }
+    window.addEventListener('keydown', listener)
+
+    const actor = userEvent.setup()
+    renderDrawer(baseTask({ description: 'Original brief.' }), { canEditDescription: true, onSaveDescription })
+
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    await actor.type(screen.getByLabelText('Notes'), ' and more')
+    await actor.keyboard('{Escape}')
+
+    expect(screen.queryByLabelText('Notes')).not.toBeInTheDocument()
+    expect(onSaveDescription).not.toHaveBeenCalled()
+    expect(onWindowEscape).not.toHaveBeenCalled()
+    expect(screen.getByText('Original brief.')).toBeInTheDocument()
+
+    window.removeEventListener('keydown', listener)
+  })
+
+  it('does not write when the brief came back unchanged', async () => {
+    const onSaveDescription = vi.fn(async () => {})
+    const actor = userEvent.setup()
+    renderDrawer(baseTask({ description: 'Original brief.' }), { canEditDescription: true, onSaveDescription })
+
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    await actor.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onSaveDescription).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskDrawer comment editing', () => {
+  const comment = (noteId?: number) => ({
+    key: 'note-4',
+    who: 'Admin User',
+    what: 'commented',
+    when: 'just now',
+    body: 'First pass is up.',
+    at: 1,
+    ...(noteId === undefined ? {} : { noteId }),
+  })
+
+  it('offers nothing on a comment the viewer may not change', () => {
+    renderDrawer(baseTask(), { feed: [comment()] })
+
+    expect(screen.getByText('First pass is up.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+  })
+
+  it('saves an edited comment', async () => {
+    const onEditComment = vi.fn(async () => {})
+    const actor = userEvent.setup()
+    renderDrawer(baseTask(), { feed: [comment(4)], onEditComment })
+
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const field = screen.getByLabelText('Edit comment')
+    await actor.clear(field)
+    await actor.type(field, 'Second pass is up.{Enter}')
+
+    await waitFor(() => expect(onEditComment).toHaveBeenCalledWith(4, 'Second pass is up.'))
+  })
+
+  it('asks before deleting a comment', async () => {
+    const onDeleteComment = vi.fn(async () => {})
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const actor = userEvent.setup()
+    renderDrawer(baseTask(), { feed: [comment(4)], onDeleteComment })
+
+    await actor.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(onDeleteComment).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    await actor.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(onDeleteComment).toHaveBeenCalledWith(4))
+    confirm.mockRestore()
+  })
 })

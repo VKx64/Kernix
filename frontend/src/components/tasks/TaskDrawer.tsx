@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ChevronLeft, ChevronRight, ExternalLink, SendHorizontal, Timer, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ExternalLink, Pencil, SendHorizontal, Timer, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { LabelRow } from '@/components/kernix/label-row'
 import { Avatar } from '@/components/shared'
@@ -24,10 +24,10 @@ import type { EntityId, EstimateRequest, Subtask, Task, TaskWorkRequest, UserSum
  * the comments are one chronological thread rather than two tabs, so "what
  * happened" reads in order regardless of who or what caused it.
  *
- * Files, subtasks, correspondence and the two requests — for more time, and to
- * work on something you are not assigned to — are all here, so reading a task
- * and acting on it cost no navigation. What is left on the full task page is
- * completion proof and the edit form, which the header still links to.
+ * Files, subtasks, correspondence, the brief itself and the two requests — for
+ * more time, and to work on something you are not assigned to — are all here,
+ * so reading a task and acting on it cost no navigation. What is left on the
+ * full task page is completion proof, which the header still links to.
  */
 export interface TaskDrawerField {
   key: string
@@ -49,6 +49,8 @@ export interface FeedEntry {
   body?: string
   /** Epoch millis, so comments and events can be interleaved in order. */
   at: number
+  /** Set on comments the viewer may still change; events never carry one. */
+  noteId?: EntityId
 }
 
 export function TaskDrawer({
@@ -94,6 +96,10 @@ export function TaskDrawer({
   currentUserId,
   requestsAdminOverride,
   onRequestsChanged,
+  canEditDescription,
+  onSaveDescription,
+  onEditComment,
+  onDeleteComment,
 }: {
   task: Task | null
   loading: boolean
@@ -144,6 +150,11 @@ export function TaskDrawer({
   currentUserId?: EntityId
   requestsAdminOverride?: boolean
   onRequestsChanged: () => void | Promise<void>
+  /** Whether the viewer may rewrite the brief from here. */
+  canEditDescription: boolean
+  onSaveDescription: (description: string) => Promise<void>
+  onEditComment: (noteId: EntityId, body: string) => Promise<void>
+  onDeleteComment: (noteId: EntityId) => Promise<void>
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -164,6 +175,11 @@ export function TaskDrawer({
   const [minutesDraft, setMinutesDraft] = useState('')
   const [totalDraft, setTotalDraft] = useState<string | null>(null)
   const [totalBusy, setTotalBusy] = useState(false)
+  // null means "not editing"; an empty string is a brief being cleared.
+  const [notesDraft, setNotesDraft] = useState<string | null>(null)
+  const [notesBusy, setNotesBusy] = useState(false)
+  const [commentDraft, setCommentDraft] = useState<{ id: EntityId; body: string } | null>(null)
+  const [commentEditBusy, setCommentEditBusy] = useState(false)
   const subtasks = task?.subtasks ?? []
   const attachments = task?.attachments ?? []
   const emails = task?.emails ?? []
@@ -197,6 +213,46 @@ export function TaskDrawer({
       await onAdjustTime(minutes)
     } finally {
       setTotalBusy(false)
+    }
+  }
+
+  /** Saves the brief, leaving the editor open if the write fails. */
+  const commitNotes = async () => {
+    if (notesDraft === null || notesBusy) return
+    if (notesDraft === (task?.description ?? '')) {
+      setNotesDraft(null)
+      return
+    }
+    setNotesBusy(true)
+    try {
+      await onSaveDescription(notesDraft)
+      setNotesDraft(null)
+    } finally {
+      setNotesBusy(false)
+    }
+  }
+
+  const commitComment = async () => {
+    if (!commentDraft || commentEditBusy) return
+    const body = commentDraft.body.trim()
+    if (!body) return
+    setCommentEditBusy(true)
+    try {
+      await onEditComment(commentDraft.id, body)
+      setCommentDraft(null)
+    } finally {
+      setCommentEditBusy(false)
+    }
+  }
+
+  const removeComment = async (noteId: EntityId) => {
+    if (commentEditBusy) return
+    if (!window.confirm('Delete this comment?')) return
+    setCommentEditBusy(true)
+    try {
+      await onDeleteComment(noteId)
+    } finally {
+      setCommentEditBusy(false)
     }
   }
 
@@ -291,10 +347,81 @@ export function TaskDrawer({
               </div>
 
               <section className="flex flex-col gap-[9px]">
-                <LabelRow>Notes</LabelRow>
-                <p className="text-[14px] leading-[1.66] text-[#a8a8b0]">
-                  {task.description?.trim() || 'No notes yet.'}
-                </p>
+                <div className="flex items-center gap-2.5">
+                  <LabelRow>Notes</LabelRow>
+                  <span className="flex-1" />
+                  {canEditDescription && notesDraft === null && (
+                    <button
+                      type="button"
+                      onClick={() => setNotesDraft(task.description ?? '')}
+                      className="inline-flex h-6 flex-none items-center gap-1 rounded-[7px] px-2 text-[11.5px] whitespace-nowrap text-t3 hover:bg-soft hover:text-t1"
+                    >
+                      <Pencil className="size-3" />
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {notesDraft === null ? (
+                  // `whitespace-pre-wrap` keeps the line breaks somebody wrote;
+                  // collapsing them here is how a formatted brief reads as one
+                  // run-on paragraph the moment it comes back from the API.
+                  <p
+                    onClick={canEditDescription ? () => setNotesDraft(task.description ?? '') : undefined}
+                    className={cn(
+                      'text-[14px] leading-[1.66] whitespace-pre-wrap text-[#a8a8b0]',
+                      canEditDescription && 'cursor-text rounded-[7px] hover:bg-soft',
+                    )}
+                  >
+                    {task.description?.trim() || 'No notes yet.'}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <textarea
+                      autoFocus
+                      value={notesDraft}
+                      disabled={notesBusy}
+                      rows={5}
+                      onChange={(event) => setNotesDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        // Escape is the drawer's own close key, so cancelling
+                        // the edit must stop it reaching the window handler.
+                        if (event.key === 'Escape') {
+                          event.stopPropagation()
+                          setNotesDraft(null)
+                          return
+                        }
+                        // Enter belongs to the text — a brief is written in
+                        // paragraphs — so saving is the deliberate chord.
+                        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                          event.preventDefault()
+                          void commitNotes()
+                        }
+                      }}
+                      aria-label="Notes"
+                      placeholder="What this task is about…"
+                      className="resize-none rounded-[7px] border border-line bg-transparent px-2.5 py-1.5 text-[14px] leading-[1.66] text-t1 outline-none placeholder:text-t4 focus:border-line-strong"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={notesBusy}
+                        onClick={() => void commitNotes()}
+                        className="h-7 rounded-[7px] bg-soft px-2.5 text-[11.5px] text-t1 disabled:opacity-40 hover:bg-line-soft"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        disabled={notesBusy}
+                        onClick={() => setNotesDraft(null)}
+                        className="h-7 rounded-[7px] px-2.5 text-[11.5px] text-t3 hover:bg-soft hover:text-t1"
+                      >
+                        Cancel
+                      </button>
+                      <span className="font-mono text-[10.5px] text-t4">⌘↵</span>
+                    </div>
+                  </div>
+                )}
               </section>
 
               <TaskDrawerFiles
@@ -365,10 +492,69 @@ export function TaskDrawer({
                         <span className="text-body font-[550] text-[#d4d4d9]">{entry.who}</span>
                         <span className="text-meta text-t3">{entry.what}</span>
                         <span className="text-meta-sm text-t4">{entry.when}</span>
+                        {entry.noteId !== undefined && commentDraft?.id !== entry.noteId && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setCommentDraft({ id: entry.noteId!, body: entry.body ?? '' })}
+                              className="text-meta-sm text-t4 hover:text-t1"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeComment(entry.noteId!)}
+                              className="text-meta-sm text-t4 hover:text-destructive"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
                       </span>
-                      {entry.body && (
-                        <span className="text-body-lg leading-[1.6] text-[#c8c8d0] text-pretty">{entry.body}</span>
-                      )}
+                      {entry.noteId !== undefined && commentDraft?.id === entry.noteId ? (
+                        <span className="flex flex-col gap-1.5">
+                          <textarea
+                            autoFocus
+                            value={commentDraft.body}
+                            disabled={commentEditBusy}
+                            rows={3}
+                            onChange={(event) => setCommentDraft({ id: commentDraft.id, body: event.target.value })}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                event.stopPropagation()
+                                setCommentDraft(null)
+                                return
+                              }
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                void commitComment()
+                              }
+                            }}
+                            aria-label="Edit comment"
+                            className="resize-none rounded-[7px] border border-line bg-transparent px-2.5 py-1.5 text-body-lg leading-[1.5] text-t1 outline-none focus:border-line-strong"
+                          />
+                          <span className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={commentEditBusy || !commentDraft.body.trim()}
+                              onClick={() => void commitComment()}
+                              className="h-7 rounded-[7px] bg-soft px-2.5 text-[11.5px] text-t1 disabled:opacity-40 hover:bg-line-soft"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              disabled={commentEditBusy}
+                              onClick={() => setCommentDraft(null)}
+                              className="h-7 rounded-[7px] px-2.5 text-[11.5px] text-t3 hover:bg-soft hover:text-t1"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        </span>
+                      ) : entry.body ? (
+                        <span className="text-body-lg leading-[1.6] whitespace-pre-wrap text-[#c8c8d0] text-pretty">{entry.body}</span>
+                      ) : null}
                     </span>
                   </div>
                 ))}

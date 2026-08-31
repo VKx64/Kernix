@@ -22,7 +22,7 @@ import { usePageFill } from '@/layout/page-fill'
 import { api, displayName, fieldLabel, unwrap } from '@/lib/api'
 import { relativeTime, uploadTaskAttachments } from '@/lib/attachments'
 import { useFeature } from '@/lib/features'
-import { isAdministrator, isAssignmentGranted, useCan } from '@/lib/permissions'
+import { isAdministrator, isAssignmentGranted, ownsRecentNote, useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { activityPhrase } from '@/lib/taskActivity'
 import {
@@ -1371,6 +1371,7 @@ function TaskDrawerConnected({
         when: relativeTime(note.createdAt ?? note.created_at),
         body: note.body,
         at: new Date(note.createdAt ?? note.created_at ?? 0).getTime(),
+        ...(can('tasks.comment') && ownsRecentNote(note, user?.id, isAdmin) ? { noteId: note.id } : {}),
       }))
 
     const events: FeedEntry[] = showEvents
@@ -1389,7 +1390,7 @@ function TaskDrawerConnected({
       : []
 
     return [...comments, ...events].sort((a, b) => a.at - b.at)
-  }, [task.notes, activity, showEvents])
+  }, [task.notes, activity, showEvents, can, isAdmin, user?.id])
 
   /**
    * Correcting the total, which only a manager sees. The API takes the new
@@ -1425,6 +1426,49 @@ function TaskDrawerConnected({
       toast.error(reason instanceof Error ? reason.message : 'That comment did not send.')
     } finally {
       setCommentBusy(false)
+    }
+  }
+
+  /**
+   * The brief, rewritten from the drawer. It goes through the same PATCH the
+   * edit form uses, so the clock gate and the permission check are the ones
+   * already in force everywhere else.
+   */
+  const saveDescription = async (description: string) => {
+    try {
+      await api.patch(`/api/tasks/${id}`, {
+        description,
+        admin_override: adminOverride ? 1 : undefined,
+      })
+      await load()
+      await onReload()
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'Those notes did not save.')
+    }
+  }
+
+  const editComment = async (noteId: EntityId, body: string) => {
+    try {
+      await api.patch(`/api/tasks/${id}/notes/${noteId}`, {
+        body,
+        admin_override: adminOverride ? 1 : undefined,
+      })
+      await load()
+      await onReload()
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'That comment did not change.')
+    }
+  }
+
+  const deleteComment = async (noteId: EntityId) => {
+    try {
+      await api.delete(`/api/tasks/${id}/notes/${noteId}`, {
+        admin_override: adminOverride ? 1 : undefined,
+      })
+      await load()
+      await onReload()
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'That comment did not delete.')
     }
   }
 
@@ -1489,6 +1533,10 @@ function TaskDrawerConnected({
       currentUserId={user?.id}
       requestsAdminOverride={adminOverride && canAdminOverride}
       onRequestsChanged={async () => { await load(); await onReload() }}
+      canEditDescription={can('tasks.edit') && !(task.archivedAt ?? task.archived_at)}
+      onSaveDescription={saveDescription}
+      onEditComment={editComment}
+      onDeleteComment={deleteComment}
     />
   )
 }
