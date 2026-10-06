@@ -41,18 +41,46 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
 import { api, unwrap } from '@/lib/api'
+import { useCollection } from '@/lib/useCollection'
 import { useFeature } from '@/lib/features'
 import { useCan } from '@/lib/permissions'
 import { useTimerContext } from '@/lib/useTimer'
 import { cn } from '@/lib/utils'
 import { PageFillProvider } from '@/layout/page-fill'
-import type { ApiEnvelope } from '@/types/api'
+import type { ApiEnvelope, Project } from '@/types/api'
+
+function ProjectNavigation({ canViewTasks }: { canViewTasks: boolean }) {
+  const { data: projects, error } = useCollection<Project>('/api/projects', { all: true })
+  const location = useLocation()
+  const selected = new URLSearchParams(location.search).get('project_id')
+
+  if (!projects.length && !error) return null
+  return (
+    <SidebarMenuSub className="max-h-64 overflow-y-auto">
+      {error && <li className="px-2 py-1 text-xs text-muted-foreground">Projects could not be loaded.</li>}
+      {projects.map((project) => (
+        <SidebarMenuSubItem key={project.id}>
+          <SidebarMenuSubButton asChild isActive={canViewTasks
+            ? location.pathname === '/tasks' && selected === String(project.id)
+            : location.pathname === `/projects/${project.id}`}>
+            <NavLink to={canViewTasks ? `/tasks?project_id=${encodeURIComponent(project.id)}` : `/projects/${project.id}`} title={project.name}>
+              <span>{project.name}</span>
+            </NavLink>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      ))}
+    </SidebarMenuSub>
+  )
+}
 
 interface NavigationItem {
   to: string
@@ -205,6 +233,9 @@ export function AppShell() {
                           <span>{item.label}</span>
                         </NavLink>
                       </SidebarMenuButton>
+                      {item.to === '/projects' && (
+                        <ProjectNavigation key={user?.id} canViewTasks={can('tasks.view')} />
+                      )}
                       {item.live && (
                         <SidebarMenuBadge>
                           <span aria-hidden="true" className="size-1.5 rounded-full bg-good" />

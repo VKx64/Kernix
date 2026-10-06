@@ -1177,6 +1177,7 @@ export function TasksTriagePage() {
       {createOpen && (
         <CreateTaskModal
           open={createOpen}
+          initialProjectId={filters.project_id}
           projects={lookups.projects}
           projectsEnabled={hasFeature('projects')}
           folders={createFolders}

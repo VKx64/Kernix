@@ -48,9 +48,10 @@ function renderModal(overrides: Partial<ComponentProps<typeof CreateTaskModal>> 
 
 type Actor = ReturnType<typeof userEvent.setup>
 
-/** Opens the detail panel through the footer control. */
+/** Restores details if a test has manually collapsed them. */
 async function openDetails(actor: Actor) {
-  await actor.click(screen.getByRole('button', { name: 'Add details' }))
+  const button = screen.queryByRole('button', { name: 'Add details' })
+  if (button) await actor.click(button)
 }
 
 const title = () => screen.getByLabelText('Task title')
@@ -68,9 +69,9 @@ describe('CreateTaskModal', () => {
     await actor.click(create)
     expect(onSubmit).not.toHaveBeenCalled()
 
-    // No form grid until it is asked for.
-    expect(screen.queryByRole('button', { name: 'Assignee' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Notes')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Assignee' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Notes')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add details' })).not.toBeInTheDocument()
   })
 
   it('lifts @assignee, !priority and a due date out of the title and shows them as chips', async () => {
@@ -82,14 +83,14 @@ describe('CreateTaskModal', () => {
     // The last token is still being typed, so it stays in the field until
     // something follows it — otherwise a longer name could never be finished.
     expect(title()).toHaveValue('Ship copy !high')
-    expect(screen.getByText('Casey Worker')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Assignee' })).toHaveTextContent('Casey Worker')
     expect(screen.getByText('Tomorrow')).toBeInTheDocument()
 
     // The space the user just pressed survives, so the next word does not land
     // against the last one.
     await actor.type(title(), ' ')
     expect(title()).toHaveValue('Ship copy ')
-    expect(screen.getByText('High')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Urgency' })).toHaveTextContent('High')
   })
 
   it('leaves unmatched tokens in the title untouched', async () => {
@@ -181,6 +182,8 @@ describe('CreateTaskModal', () => {
     const { onSubmit } = renderModal()
 
     await actor.type(title(), 'Ship campaign')
+    await actor.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(screen.queryByRole('button', { name: 'Status' })).not.toBeInTheDocument()
     await actor.keyboard('{Meta>}{Enter}{/Meta}')
 
     await actor.click(screen.getByRole('button', { name: 'Status' }))

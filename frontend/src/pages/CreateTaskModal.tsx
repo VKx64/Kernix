@@ -35,9 +35,8 @@ import type { EntityId, FieldValue, Project, Task, TaskFolder, UserSummary } fro
  *
  * The person types a sentence, the parser lifts owner, urgency, project and
  * date out of it, and what it understood comes back as chips rather than as a
- * form. Details exist, but stay collapsed — the modal has to be usable end to
- * end with the keyboard in a couple of seconds, and a grid of eight selects is
- * not that.
+ * form. Details are visible on opening so fields can be edited immediately,
+ * while the title retains focus for quick keyboard capture.
  *
  * Geometry, states, parser grammar and the dirty-tracking rule below all come
  * from "UI Spec — New Task Modal" rev 1.0. Values that read as magic numbers
@@ -220,7 +219,7 @@ export function CreateTaskModal({
   const fileRef = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
   const [resolved, setResolved] = useState<ResolvedFacts>({})
-  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(true)
   const [aiBusy, setAiBusy] = useState(false)
   const [draft, setDraft] = useState<CaptureDraft>(EMPTY_DRAFT)
   const [dirty, setDirty] = useState<Partial<Record<DraftField, boolean>>>({})
@@ -239,7 +238,7 @@ export function CreateTaskModal({
     if (!open) return
     setText('')
     setResolved({})
-    setDetailOpen(false)
+    setDetailOpen(true)
     setAiBusy(false)
     setDraft(EMPTY_DRAFT)
     setDirty({})
@@ -1010,8 +1009,7 @@ export function CreateTaskModal({
           </p>
         )}
 
-        {/* Outside the detail panel: the picker has to exist for the footer's
-            attach button to open it, and the panel is collapsed by default. */}
+        {/* Keep the picker available even when details are manually collapsed. */}
         {canAttach && (
           <input
             ref={fileRef}
