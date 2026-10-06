@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Client;
+use App\Models\FieldValue;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\Task;
@@ -18,6 +19,62 @@ class TaskFolderApiTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
+    public function test_sidebar_archive_restore_and_duplicate_keep_contents_safe(): void
+    {
+        [$project, $other] = $this->projects();
+        $rootId = $this->createFolder($project, 'Root');
+        $childId = $this->createFolder($project, 'Child', $rootId);
+        $otherId = $this->createFolder($other, 'Other');
+        $url = "/api/projects/{$project->id}/task-folders/{$rootId}";
+        $this->patchJson($url, ['parent_id' => $otherId])->assertUnprocessable();
+        $task = Task::create(['project_id' => $project->id, 'task_folder_id' => $childId, 'title' => 'Original task', 'actual_minutes' => 80, 'created_by' => $this->admin->id]);
+        $task->subtasks()->create(['title' => 'Original step', 'completed_at' => now()]);
+        $this->postJson($url.'/archive')->assertConflict();
+        $this->postJson($url.'/duplicate', ['name' => 'Copy', 'with_tasks' => true])->assertConflict();
+        $copyId = $this->postJson($url.'/duplicate', ['name' => 'Copy', 'with_tasks' => true, 'admin_override' => true])->assertCreated()->json('data.id');
+        $childCopy = TaskFolder::where('parent_id', $copyId)->firstOrFail();
+        $taskCopy = Task::where('task_folder_id', $childCopy->id)->firstOrFail();
+        $this->assertSame(0, (int) $taskCopy->actual_minutes);
+        $this->assertNull($taskCopy->assignee_user_id);
+        $this->assertNull($taskCopy->subtasks()->firstOrFail()->completed_at);
+        $task->update(['archived_at' => now()]);
+        $this->postJson($url.'/archive')->assertOk();
+        $this->assertNotNull(TaskFolder::findOrFail($childId)->archived_at);
+        $this->getJson("/api/projects/{$project->id}/task-folders")->assertJsonMissing(['id' => $rootId]);
+        $this->getJson("/api/projects/{$project->id}/task-folders?archived=with")->assertJsonFragment(['id' => $rootId]);
+        $this->postJson("/api/projects/{$project->id}/task-folders/{$childId}/restore")->assertConflict();
+        $this->postJson($url.'/restore')->assertOk();
+        $this->postJson("/api/projects/{$project->id}/task-folders/{$childId}/restore")->assertOk();
+    }
+
+    public function test_project_duplicate_and_delete_are_non_destructive(): void
+    {
+        [$project] = $this->projects();
+        $this->createFolder($project, 'Keep me');
+        $this->deleteJson("/api/projects/{$project->id}")->assertConflict();
+        $copyId = $this->postJson("/api/projects/{$project->id}/duplicate", ['name' => 'Copied project'])->assertCreated()->json('data.id');
+        $this->assertDatabaseHas('task_folders', ['project_id' => $copyId, 'name' => 'Keep me']);
+        $empty = Project::create(['client_id' => $project->client_id, 'name' => 'Empty']);
+        $this->deleteJson("/api/projects/{$empty->id}")->assertNoContent();
+        $this->assertSoftDeleted($empty);
+    }
+
+    public function test_folder_filter_optionally_includes_descendants_but_not_siblings(): void
+    {
+        [$project] = $this->projects();
+        $parent = TaskFolder::query()->create(['project_id' => $project->id, 'name' => 'Parent']);
+        $child = TaskFolder::query()->create(['project_id' => $project->id, 'parent_id' => $parent->id, 'name' => 'Child']);
+        $grandchild = TaskFolder::query()->create(['project_id' => $project->id, 'parent_id' => $child->id, 'name' => 'Grandchild']);
+        $sibling = TaskFolder::query()->create(['project_id' => $project->id, 'name' => 'Other']);
+        $pending = FieldValue::where('key_name', 'pending')->whereHas('field', fn ($query) => $query->where('key_name', 'task_status'))->value('id');
+        foreach ([$parent, $child, $grandchild, $sibling] as $folder) {
+            Task::query()->create(['project_id' => $project->id, 'task_folder_id' => $folder->id, 'title' => $folder->name, 'status_value_id' => $pending, 'actual_minutes' => 0, 'created_by' => $this->admin->id]);
+        }
+        $url = "/api/tasks?view=all&project_id={$project->id}&task_folder_id={$parent->id}";
+        $this->getJson($url)->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson($url.'&include_descendants=1')->assertOk()->assertJsonCount(3, 'data');
+    }
 
     protected function setUp(): void
     {

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Project;
 use App\Models\TaskFolder;
+use App\Models\Task;
+use App\Services\ProjectStructureDuplicator;
 use App\Support\SingleClient;
 use App\Support\TaskMutationGuard;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,7 +24,7 @@ class TaskFolderController extends ApiController
 
         // Flat, but in tree order: a parent always precedes its children, so a
         // client can render the list as-is or nest it without a second sort.
-        $folders = $project->taskFolders()
+        $folders = $this->archived($project->taskFolders()->getQuery(), $request)
             ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id')
@@ -35,6 +37,7 @@ class TaskFolderController extends ApiController
     {
         $this->permission($request, 'projects.edit');
         $this->withinClient($project);
+        abort_if($project->archived_at, 409, 'Restore this project before adding folders.');
         $data = $this->validated($request, $project);
         $parent = $this->parentFolder($project, $data['parent_id'] ?? null);
         if ($parent && $parent->depth() >= TaskFolder::MAX_DEPTH) {
@@ -55,6 +58,7 @@ class TaskFolderController extends ApiController
     {
         $this->permission($request, 'projects.edit');
         $this->withinClient($project);
+        abort_if($project->archived_at || $taskFolder->archived_at, 409, 'Restore this item before editing it.');
         $data = $this->validated($request, $project, $taskFolder, true);
         $before = $taskFolder->getAttributes();
 
@@ -70,6 +74,49 @@ class TaskFolderController extends ApiController
             'after' => $taskFolder->getAttributes(),
         ]);
 
+        return $this->data($taskFolder);
+    }
+
+    public function duplicate(Request $request, Project $project, TaskFolder $taskFolder, ProjectStructureDuplicator $duplicator): JsonResponse
+    {
+        $this->permission($request, 'projects.edit');
+        $this->withinClient($project);
+        abort_if($project->archived_at || $taskFolder->archived_at, 409, 'Restore this item before duplicating it.');
+        $data = $request->validate(['name' => ['required', 'string', 'max:191'], 'with_tasks' => ['sometimes', 'boolean']]);
+        $withTasks = $request->boolean('with_tasks');
+        if ($withTasks) {
+            $this->permission($request, 'tasks.view');
+            $this->permission($request, 'tasks.create');
+            $this->permission($request, 'tasks.subtasks');
+            TaskMutationGuard::enforce($request);
+        }
+        $copy = DB::transaction(function () use ($request, $project, $taskFolder, $duplicator, $data, $withTasks) {
+            $taken = $project->taskFolders()->where('parent_id', $taskFolder->parent_id)->pluck('name')->map(fn ($name) => mb_strtolower($name))->all();
+            return $duplicator->copy($project, $project, $taskFolder, $this->availableName($data['name'], $taken), $withTasks, $request->user()->id);
+        });
+        $this->audit($request, 'task_folder.duplicate', $copy, ['source_id' => $taskFolder->id, 'with_tasks' => $withTasks]);
+        return $this->data($copy, 201);
+    }
+
+    public function archive(Request $request, Project $project, TaskFolder $taskFolder): JsonResponse
+    {
+        $this->permission($request, 'projects.edit');
+        $this->withinClient($project);
+        $ids = [$taskFolder->id, ...$taskFolder->descendantIds()];
+        abort_if(Task::query()->where('project_id', $project->id)->whereIn('task_folder_id', $ids)->whereNull('archived_at')->exists(), 409, 'Archive the tasks in this folder and its subfolders first.');
+        $project->taskFolders()->whereIn('id', $ids)->whereNull('archived_at')->update(['archived_at' => now()]);
+        $this->audit($request, 'task_folder.archive', $taskFolder, ['folder_ids' => $ids]);
+        return $this->data($taskFolder->fresh());
+    }
+
+    public function restore(Request $request, Project $project, TaskFolder $taskFolder): JsonResponse
+    {
+        $this->permission($request, 'projects.edit');
+        $this->withinClient($project);
+        abort_if($project->archived_at || $taskFolder->parent?->archived_at, 409, 'Restore the parent project or folder first.');
+        // Restore one node at a time; independently archived descendants stay archived.
+        $taskFolder->update(['archived_at' => null]);
+        $this->audit($request, 'task_folder.restore', $taskFolder);
         return $this->data($taskFolder);
     }
 
@@ -206,6 +253,8 @@ class TaskFolderController extends ApiController
             ]);
         }
 
+        abort_if($parent->archived_at, 409, 'Restore the destination folder first.');
+
         return $parent;
     }
 
@@ -246,6 +295,9 @@ class TaskFolderController extends ApiController
 
     private function validated(Request $request, Project $project, ?TaskFolder $taskFolder = null, bool $partial = false): array
     {
+        if ($partial && $request->exists('parent_id') && ! $request->exists('name')) {
+            $request->merge(['name' => $taskFolder->name]);
+        }
         $parentId = $request->input('parent_id', $partial ? $taskFolder?->parent_id : null);
         $parentId = ($parentId === '' || $parentId === null) ? null : $parentId;
 

@@ -62,6 +62,11 @@ class TaskController extends ApiController
             $base->whereHas('urgency', fn ($urgency) => $urgency->whereIn('key_name', ['urgent', 'high']));
         }
         foreach (['project_id', 'task_folder_id', 'status_value_id', 'type_value_id', 'urgency_value_id'] as $filter) {
+            if ($filter === 'task_folder_id' && $request->filled($filter) && $request->boolean('include_descendants')) {
+                $folder = TaskFolder::query()->findOrFail($request->integer($filter));
+                $base->whereIn('task_folder_id', [$folder->id, ...$folder->descendantIds()]);
+                continue;
+            }
             if ($request->filled($filter)) {
                 $base->where($filter, $request->integer($filter));
             }
@@ -591,7 +596,7 @@ class TaskController extends ApiController
             return;
         }
 
-        if (! TaskFolder::query()->whereKey($taskFolderId)->where('project_id', $projectId)->exists()) {
+        if (! TaskFolder::query()->whereKey($taskFolderId)->where('project_id', $projectId)->whereNull('archived_at')->exists()) {
             throw ValidationException::withMessages([
                 'task_folder_id' => ['Select a task folder from the task project.'],
             ]);

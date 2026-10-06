@@ -165,6 +165,8 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
     Route::middleware('feature:projects')->group(function () {
         Route::post('/projects/{project}/archive', [ProjectController::class, 'archive']);
         Route::post('/projects/{project}/restore', [ProjectController::class, 'restore']);
+        Route::post('/projects/{project}/duplicate', [ProjectController::class, 'duplicate']);
+        Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
         Route::post('/projects/{project}/ai-task-generations', [AiTaskGenerationController::class, 'store']);
         Route::get('/ai-task-generations/{generation}', [AiTaskGenerationController::class, 'show']);
         Route::post('/ai-task-generations/{generation}/messages', [AiTaskGenerationController::class, 'reply']);
@@ -178,6 +180,9 @@ Route::middleware(['auth:sanctum', 'active', 'workspace.timezone', 'web-api', Re
             Route::post('/projects/{project}/task-folders', [TaskFolderController::class, 'store']);
             Route::patch('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'update']);
             Route::delete('/projects/{project}/task-folders/{taskFolder}', [TaskFolderController::class, 'destroy']);
+            Route::post('/projects/{project}/task-folders/{taskFolder}/duplicate', [TaskFolderController::class, 'duplicate']);
+            Route::post('/projects/{project}/task-folders/{taskFolder}/archive', [TaskFolderController::class, 'archive']);
+            Route::post('/projects/{project}/task-folders/{taskFolder}/restore', [TaskFolderController::class, 'restore']);
         });
         Route::apiResource('projects', ProjectController::class)->except(['destroy']);
 

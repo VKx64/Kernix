@@ -8,6 +8,8 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\PortfolioStats;
+use App\Services\ProjectStructureDuplicator;
+use App\Support\TaskMutationGuard;
 use App\Support\CurrentWorkspace;
 use App\Support\SingleClient;
 use App\Support\WorkspaceFeatures;
@@ -16,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class ProjectController extends ApiController
 {
@@ -102,6 +105,49 @@ class ProjectController extends ApiController
         $this->audit($request, 'project.archive', $project);
 
         return $this->data($project);
+    }
+
+    public function duplicate(Request $request, Project $project, ProjectStructureDuplicator $duplicator): JsonResponse
+    {
+        $this->permission($request, 'projects.view');
+        $this->permission($request, 'projects.create');
+        $this->assertNotDefault($project);
+        $this->withinClient($project->client_id);
+        abort_if($project->archived_at || $project->client?->archived_at, 409, 'Restore the project and client first.');
+        $data = $request->validate(['name' => ['required', 'string', 'max:191'], 'with_tasks' => ['sometimes', 'boolean']]);
+        $withTasks = $request->boolean('with_tasks');
+        if ($withTasks) {
+            $this->permission($request, 'tasks.view');
+            $this->permission($request, 'tasks.create');
+            $this->permission($request, 'tasks.subtasks');
+            TaskMutationGuard::enforce($request);
+        }
+        $copy = DB::transaction(function () use ($request, $project, $duplicator, $data, $withTasks) {
+            $copy = Project::create([
+                'client_id' => $project->client_id,
+                'name' => $data['name'],
+                'description' => $project->description,
+                'created_by' => $request->user()->id,
+            ]);
+            $duplicator->copy($project, $copy, null, $data['name'], $withTasks, $request->user()->id);
+            return $copy;
+        });
+        $this->audit($request, 'project.duplicate', $copy, ['source_id' => $project->id, 'with_tasks' => $withTasks]);
+        return $this->data($this->present($copy), 201);
+    }
+
+    public function destroy(Request $request, Project $project): JsonResponse
+    {
+        $this->permission($request, 'projects.edit');
+        $this->permission($request, 'projects.archive');
+        $this->assertNotDefault($project);
+        $this->withinClient($project->client_id);
+        abort_if($project->tasks()->withTrashed()->exists() || $project->taskFolders()->exists()
+            || $project->projectForms()->exists() || $project->memoryEntries()->exists(), 409,
+            'Only empty projects can be deleted. Archive projects with content instead.');
+        $project->delete();
+        $this->audit($request, 'project.delete', $project);
+        return response()->json(null, 204);
     }
 
     public function restore(Request $request, int $project): JsonResponse
