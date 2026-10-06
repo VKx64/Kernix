@@ -56,7 +56,7 @@ import {
   type TaskSort,
 } from '@/lib/taskTriage'
 import { useTaskQueue } from '@/lib/useTaskQueue'
-import { folderTree, useTaskFolderCatalog } from '@/lib/useTaskFolders'
+import { folderTree, folderDescendantIds, useTaskFolderCatalog } from '@/lib/useTaskFolders'
 import { useTaskLookups } from '@/lib/useTaskLookups'
 import { cn } from '@/lib/utils'
 import type { ApiEnvelope, EntityId, EstimateRequest, FieldValue, Note, Subtask, Task, TaskFolder, TaskWorkRequest } from '@/types/api'
@@ -144,6 +144,8 @@ export function TasksTriagePage() {
 
   const filters = useMemo(() => ({
     project_id: params.get('project_id') || undefined,
+    task_folder_id: params.get('task_folder_id') || undefined,
+    include_descendants: params.get('task_folder_id') ? '1' : undefined,
     assignee_user_id: params.get('assignee_user_id') || undefined,
     status_value_id: params.get('status_value_id') || undefined,
     urgency_value_id: params.get('urgency_value_id') || undefined,
@@ -151,6 +153,15 @@ export function TasksTriagePage() {
 
   const lookups = useTaskLookups()
   const { data, counts, total, loading, error, reload, refresh, apply } = useTaskQueue({ view, search, archived, filters })
+  useEffect(() => {
+    const update = () => { void reload() }
+    window.addEventListener('kernix:task-folders-changed', update)
+    window.addEventListener('kernix:projects-changed', update)
+    return () => {
+      window.removeEventListener('kernix:task-folders-changed', update)
+      window.removeEventListener('kernix:projects-changed', update)
+    }
+  }, [reload])
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<string[]>([])
@@ -272,6 +283,18 @@ export function TasksTriagePage() {
 
   const groups = useMemo(() => {
     const sorted = sortTasks(data, sort)
+    if (filters.task_folder_id && filters.project_id && layout !== 'board' && !archived) {
+      const folders = folderCatalog.foldersByProject[filters.project_id] ?? []
+      const ids = folderDescendantIds(folders, filters.task_folder_id)
+      ids.add(filters.task_folder_id)
+      return folderTree(folders).filter(node => ids.has(String(node.folder.id))).map(node => ({
+        key: `folder:${filters.task_folder_id}:${node.folder.id}`,
+        label: node.path,
+        color: undefined,
+        hint: undefined,
+        tasks: sorted.filter(task => String(task.taskFolderId ?? task.task_folder_id) === String(node.folder.id)),
+      }))
+    }
     const all = groupTasks(sorted, groupBy, {
       statusOptions: lookups.statusOptions,
       urgencyOptions: lookups.urgencyOptions,
@@ -280,12 +303,17 @@ export function TasksTriagePage() {
     // A list drops the groups nothing landed in; a board keeps them, because an
     // empty column is the thing you are looking for.
     return layout === 'board' ? all : all.filter((group) => group.tasks.length > 0)
-  }, [data, sort, groupBy, layout, lookups.statusOptions, lookups.urgencyOptions, lookups.users])
+  }, [data, sort, groupBy, layout, lookups.statusOptions, lookups.urgencyOptions, lookups.users, filters.task_folder_id, filters.project_id, folderCatalog.foldersByProject, archived])
+
+  const folderView = Boolean(filters.task_folder_id && filters.project_id && layout !== 'board' && !archived)
+  const effectiveCollapsed = useMemo(() => folderView
+    ? Object.fromEntries(groups.map(group => [group.key, collapsed[group.key] ?? true]))
+    : collapsed, [folderView, groups, collapsed])
 
   // Only the grouped list can hide rows behind a collapsed heading.
   const orderedIds = useMemo(
-    () => flatTaskIds(groups, layout === 'grouped' ? collapsed : {}),
-    [groups, collapsed, layout],
+    () => flatTaskIds(groups, layout === 'grouped' || folderView ? effectiveCollapsed : {}),
+    [groups, effectiveCollapsed, layout, folderView],
   )
   const taskById = useMemo(() => new Map(data.map((task) => [String(task.id), task])), [data])
   // The board keeps empty columns, so "are there groups" is not the same
@@ -1043,7 +1071,7 @@ export function TasksTriagePage() {
             </div>
           )}
 
-          {!loading && !hasRows && !error && (
+          {!loading && !hasRows && !error && !(folderView && groups.length) && (
             <div className="pt-24">
               <EmptyState
                 title={activeFilters.length ? 'Nothing matches' : 'Nothing here'}
@@ -1089,24 +1117,25 @@ export function TasksTriagePage() {
               <section key={group.key}>
                 {/* A flat list is the same rows without the reasons above
                     them — the grouping stays, so going back to it is free. */}
-                {groupBy !== 'none' && layout === 'grouped' && (
+                {(folderView || (groupBy !== 'none' && layout === 'grouped')) && (
                   <TaskGroupHeader
                     label={group.label}
                     count={group.tasks.length}
                     color={group.color}
                     hint={group.hint}
-                    collapsed={Boolean(collapsed[group.key])}
+                    collapsed={Boolean(effectiveCollapsed[group.key])}
                     first={index === 0}
                     allSelected={allSelected}
-                    onToggle={() => setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))}
+                    onToggle={() => setCollapsed((current) => ({ ...current, [group.key]: !effectiveCollapsed[group.key] }))}
                     onSelectGroup={() => setSelected((current) => allSelected
                       ? current.filter((id) => !groupIds.includes(id))
                       : [...current, ...groupIds.filter((id) => !current.includes(id))])}
-                    onAdd={can('tasks.create') ? () => setCreateOpen(true) : undefined}
+                    onAdd={!folderView && can('tasks.create') ? () => setCreateOpen(true) : undefined}
                   />
                 )}
-                {(layout === 'list' || !collapsed[group.key]) && (
+                {((!folderView && layout === 'list') || !effectiveCollapsed[group.key]) && (
                   <div className="flex flex-col">
+                    {folderView && !group.tasks.length && <p className="px-4 py-3 text-sm text-muted-foreground">No tasks match this view in this folder.</p>}
                     {group.tasks.map((task) => {
                       const id = String(task.id)
                       return (
@@ -1178,6 +1207,8 @@ export function TasksTriagePage() {
         <CreateTaskModal
           open={createOpen}
           initialProjectId={filters.project_id}
+          initialFolderId={filters.task_folder_id}
+          notice={!canMutateTasks && !(canAdminOverride && adminOverride) ? <ClockGate compact showOverride={false} /> : undefined}
           projects={lookups.projects}
           projectsEnabled={hasFeature('projects')}
           folders={createFolders}

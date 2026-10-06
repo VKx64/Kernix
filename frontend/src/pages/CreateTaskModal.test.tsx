@@ -57,6 +57,36 @@ async function openDetails(actor: Actor) {
 const title = () => screen.getByLabelText('Task title')
 
 describe('CreateTaskModal', () => {
+  it('searches folder paths and reports no matches', async () => {
+    const actor = userEvent.setup()
+    renderModal({ folders: [...folders, { id: 12, project_id: 5, parent_id: 11, name: 'Design' }] })
+    await actor.click(screen.getByRole('button', { name: 'Folder' }))
+    await actor.type(screen.getByRole('textbox', { name: 'Search folders' }), 'design')
+    expect(screen.getByRole('menuitem', { name: /Pre-production \/ Design/ })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Ungrouped' })).not.toBeInTheDocument()
+    await actor.clear(screen.getByRole('textbox', { name: 'Search folders' }))
+    await actor.type(screen.getByRole('textbox', { name: 'Search folders' }), 'no-such-folder')
+    expect(screen.getByText('No folders found.')).toBeInTheDocument()
+  })
+  it('keeps the draft when the clock-in notice disappears', async () => {
+    const actor = userEvent.setup()
+    const { props, rerender } = renderModal({ notice: <p>Start tracking</p> })
+    await actor.type(title(), 'Keep this draft')
+    await actor.type(screen.getByLabelText('Notes'), 'Keep these notes')
+    rerender(<CreateTaskModal {...props} notice={undefined} />)
+    expect(title()).toHaveValue('Keep this draft')
+    expect(screen.getByLabelText('Notes')).toHaveValue('Keep these notes')
+  })
+
+  it('creates the task in the folder selected in navigation', async () => {
+    const actor = userEvent.setup()
+    const { onSubmit } = renderModal({ initialFolderId: '11' })
+    expect(screen.getByRole('button', { name: 'Folder' })).toHaveTextContent('Pre-production')
+    await actor.type(title(), 'File this task')
+    await actor.click(screen.getByRole('button', { name: /Create/ }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ project_id: '5', task_folder_id: '11' }), [])
+  })
+
   it('opens focused on one field, with Create inert until something is typed', async () => {
     const actor = userEvent.setup()
     const { onSubmit } = renderModal()

@@ -35,6 +35,12 @@ export function fieldValues(fields: CustomField[], key: string): FieldValue[] {
 
 export function useTaskLookups(enabled = true): TaskLookups {
   const can = useCan()
+  const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    const refresh = () => setRevision(value => value + 1)
+    window.addEventListener('kernix:projects-changed', refresh)
+    return () => window.removeEventListener('kernix:projects-changed', refresh)
+  }, [])
   const [state, setState] = useState<{ projects: Project[]; users: UserSummary[]; fields: CustomField[]; loading: boolean }>({
     projects: [], users: [], fields: [], loading: enabled,
   })
@@ -62,7 +68,7 @@ export function useTaskLookups(enabled = true): TaskLookups {
       })
     })
     return () => { active = false }
-  }, [can, enabled])
+  }, [can, enabled, revision])
 
   // Memoised because callers put these arrays in dependency lists. Deriving
   // them inline would hand back a new array on every render and invalidate

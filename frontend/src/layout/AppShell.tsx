@@ -6,6 +6,8 @@ import {
   Clock,
   Contact,
   ChevronsUpDown,
+  ChevronDown,
+  ChevronRight,
   Inbox,
   LayoutDashboard,
   LogOut,
@@ -18,6 +20,8 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useWorkspace } from '@/auth/WorkspaceProvider'
 import { Avatar } from '@/components/shared'
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher'
+import { ProjectFolderNavigation } from '@/components/ProjectFolderNavigation'
+import { SidebarItemActions } from '@/components/SidebarItemActions'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,23 +63,33 @@ import { PageFillProvider } from '@/layout/page-fill'
 import type { ApiEnvelope, Project } from '@/types/api'
 
 function ProjectNavigation({ canViewTasks }: { canViewTasks: boolean }) {
-  const { data: projects, error } = useCollection<Project>('/api/projects', { all: true })
+  const [showArchived, setShowArchived] = useState(false)
+  const { data: projects, error, reload } = useCollection<Project>('/api/projects', { all: true, filters: { archived: showArchived ? 'with' : undefined } })
+  const navigate = useNavigate()
   const location = useLocation()
   const selected = new URLSearchParams(location.search).get('project_id')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
-  if (!projects.length && !error) return null
   return (
     <SidebarMenuSub className="max-h-64 overflow-y-auto">
+      <li><label className="flex items-center gap-1 px-1 py-1 text-xs text-muted-foreground"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} />Show archived</label></li>
       {error && <li className="px-2 py-1 text-xs text-muted-foreground">Projects could not be loaded.</li>}
       {projects.map((project) => (
         <SidebarMenuSubItem key={project.id}>
+          <div className="flex items-center">
+          {canViewTasks && <button type="button" aria-label={`Toggle folders for ${project.name}`} aria-expanded={expanded[String(project.id)] ?? true} onClick={() => setExpanded(value => ({ ...value, [String(project.id)]: !(value[String(project.id)] ?? true) }))}>
+            {(expanded[String(project.id)] ?? true) ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          </button>}
           <SidebarMenuSubButton asChild isActive={canViewTasks
             ? location.pathname === '/tasks' && selected === String(project.id)
             : location.pathname === `/projects/${project.id}`}>
-            <NavLink to={canViewTasks ? `/tasks?project_id=${encodeURIComponent(project.id)}` : `/projects/${project.id}`} title={project.name}>
-              <span>{project.name}</span>
+            <NavLink to={canViewTasks ? `/tasks?project_id=${encodeURIComponent(project.id)}${project.archived_at ? '&archived=1' : ''}` : `/projects/${project.id}`} title={project.name}>
+              <span className={project.archived_at ? 'text-muted-foreground italic' : ''}>{project.name}{project.archived_at ? ' (archived)' : ''}</span>
             </NavLink>
           </SidebarMenuSubButton>
+          <SidebarItemActions name={project.name} path={`/api/projects/${project.id}`} href={canViewTasks ? `/tasks?project_id=${project.id}` : `/projects/${project.id}`} archived={Boolean(project.archived_at)} onSaved={() => { reload(); window.dispatchEvent(new Event('kernix:projects-changed')); window.dispatchEvent(new Event('kernix:task-folders-changed')) }} onRemoved={() => { if (selected === String(project.id) || location.pathname === `/projects/${project.id}`) navigate('/tasks') }} />
+          </div>
+          {canViewTasks && (expanded[String(project.id)] ?? true) && <ProjectFolderNavigation projectId={project.id} showArchived={showArchived} projectArchived={Boolean(project.archived_at)} />}
         </SidebarMenuSubItem>
       ))}
     </SidebarMenuSub>
@@ -116,6 +130,7 @@ export function AppShell() {
   const [openTasks, setOpenTasks] = useState(0)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [projectsOpen, setProjectsOpen] = useState(true)
   const location = useLocation()
   const navigate = useNavigate()
   const can = useCan()
@@ -234,7 +249,12 @@ export function AppShell() {
                         </NavLink>
                       </SidebarMenuButton>
                       {item.to === '/projects' && (
-                        <ProjectNavigation key={user?.id} canViewTasks={can('tasks.view')} />
+                        <>
+                          <button type="button" aria-label="Toggle projects" aria-expanded={projectsOpen} onClick={() => setProjectsOpen(value => !value)} className="absolute right-1 top-1 grid size-6 place-items-center rounded bg-sidebar hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden">
+                            {projectsOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          </button>
+                          {projectsOpen && <ProjectNavigation key={user?.id} canViewTasks={can('tasks.view')} />}
+                        </>
                       )}
                       {item.live && (
                         <SidebarMenuBadge>

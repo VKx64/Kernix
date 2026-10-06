@@ -83,6 +83,7 @@ interface CreateTaskModalProps {
   busy: boolean
   error?: string
   initialProjectId?: string
+  initialFolderId?: string
   projects: Project[]
   /** Projects is turned off for this workspace: no picker, no requirement — the server attaches the hidden default project. */
   projectsEnabled?: boolean
@@ -192,6 +193,7 @@ export function CreateTaskModal({
   busy,
   error,
   initialProjectId,
+  initialFolderId,
   projects,
   projectsEnabled = true,
   folders,
@@ -270,7 +272,7 @@ export function CreateTaskModal({
   const dueDate = dirty.due ? draft.due_date : resolved.due ?? ''
   const statusValueId = dirty.status ? draft.status_value_id : ''
   const typeValueId = dirty.type ? draft.type_value_id : ''
-  const folderId = dirty.folder ? draft.task_folder_id : ''
+  const folderId = dirty.folder ? draft.task_folder_id : (initialFolderId ?? '')
   const estimateText = dirty.estimate ? draft.estimate_text : ''
 
   const project = projects.find((candidate) => String(candidate.id) === String(projectId))
@@ -1107,7 +1109,7 @@ export function CreateTaskModal({
         </div>
       </div>
 
-      <InlineMenu state={menu} title={menuItems.title} items={menuItems.items} onClose={closeMenu} />
+      <InlineMenu state={menu} title={menuItems.title} items={menuItems.items} onClose={closeMenu} searchable={menu?.kind === 'folder'} />
     </div>
   )
 }

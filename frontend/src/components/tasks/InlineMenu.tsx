@@ -52,6 +52,7 @@ export function InlineMenu({
   items,
   onClose,
   children,
+  searchable = false,
 }: {
   state: InlineMenuState | null
   title?: string
@@ -59,10 +60,13 @@ export function InlineMenu({
   onClose: () => void
   /** Replaces the item list entirely, for a menu that is not a list of choices. */
   children?: ReactNode
+  searchable?: boolean
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
+    setQuery('')
     if (!state) {
       setRect(null)
       return
@@ -89,7 +93,9 @@ export function InlineMenu({
       <DropdownMenuContent align="start" sideOffset={4} className="z-[80] min-w-[212px] p-[5px]">
         {title && <DropdownMenuLabel className="px-2.5 pt-[7px] pb-[5px] text-label uppercase text-label-fg">{title}</DropdownMenuLabel>}
         {children}
-        {items.map((item) => (
+        {searchable && <input aria-label="Search folders" placeholder="Search folders…" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation() }} className="mb-1 w-full rounded border bg-background px-2 py-1.5 text-sm" />}
+        {searchable && !items.some(item => item.label.toLowerCase().includes(query.trim().toLowerCase())) && <p className="p-2 text-xs text-muted-foreground">No folders found.</p>}
+        {items.filter(item => !searchable || item.label.toLowerCase().includes(query.trim().toLowerCase())).map((item) => (
           <div key={item.key}>
             {item.separated && <DropdownMenuSeparator />}
             <DropdownMenuItem

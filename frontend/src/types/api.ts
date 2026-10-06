@@ -147,6 +147,7 @@ export interface Project {
 }
 
 export interface TaskFolder {
+  archived_at?: string | null
   id: EntityId
   projectId?: EntityId
   project_id?: EntityId

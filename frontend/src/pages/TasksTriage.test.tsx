@@ -56,6 +56,10 @@ const apiGet = vi.hoisted(() => vi.fn(async (path: string, query?: Record<string
     }
   }
   // Task detail and activity, for the drawer.
+  if (path === '/api/projects/5/task-folders') return { data: [
+    { id: 15, project_id: 5, name: 'Production' },
+    { id: 17, project_id: 5, parent_id: 15, name: 'Design' },
+  ] }
   if (/^\/api\/tasks\/\d+$/.test(path)) {
     const id = Number(path.split('/').pop())
     return { data: listState.tasks.find((task) => Number(task.id) === id) }
@@ -147,6 +151,19 @@ function groupHeadings(): string[] {
 }
 
 describe('Triage grouping', () => {
+  it('shows descendant folder sections collapsed and expands their tasks', async () => {
+    const actor = userEvent.setup()
+    listState.tasks = [task(80, 'Nested design task', { task_folder_id: 17 })]
+    listState.total = 1
+    renderPage('/tasks?project_id=5&task_folder_id=15')
+    const heading = await screen.findByRole('button', { name: /Production \/ Design/ })
+    expect(heading).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Nested design task')).not.toBeInTheDocument()
+    expect(requests.tasks.some(query => query?.include_descendants === '1')).toBe(true)
+    await actor.click(heading)
+    expect(await screen.findByText('Nested design task')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Production\s*0$/ })).toHaveAttribute('aria-expanded', 'false')
+  })
   it('heads each group with the reason its rows need attention', async () => {
     // Grouped is no longer the default layout, so the grouped view is asked
     // for explicitly here — this test is about the grouping engine, not

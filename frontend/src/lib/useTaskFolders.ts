@@ -147,6 +147,16 @@ export function useTaskFolderCatalog(projectIds: EntityId[]) {
     return () => { current = false }
   }, [load])
 
+  useEffect(() => {
+    let current = true
+    const refresh = () => { void load(() => current, true) }
+    window.addEventListener('kernix:task-folders-changed', refresh)
+    return () => {
+      current = false
+      window.removeEventListener('kernix:task-folders-changed', refresh)
+    }
+  }, [load])
+
   return {
     foldersByProject,
     errorsByProject,
